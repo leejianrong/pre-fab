@@ -33,6 +33,15 @@ Note the split, because it was initially conflated: Workers for Platforms serves
 publish orchestration — is not required to run there and can be hosted anywhere
 (ADR-0013).
 
+## Verified versions
+
+Checked 2026-08-27 against the npm registry: `@astrojs/react` v6.0.4 peers
+`react` and `react-dom` at `^17.0.2 || ^18.0.0 || ^19.0.0`, and has done since
+v4. `@puckeditor/core` 0.23.0 peers `react` at `^18.0.0 || ^19.0.0`. **React 19
+satisfies both**, so the editor and the publish pipeline share one React
+(ADR-0004). `@astrojs/react` v6 depends on Vite 8; the editor SPA should track
+the same Vite major.
+
 ## What Astro is actually load-bearing for
 
 Worth stating plainly, because it is easy to over-attribute.

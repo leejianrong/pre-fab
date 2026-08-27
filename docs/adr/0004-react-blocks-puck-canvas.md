@@ -24,6 +24,9 @@ Facts gathered:
 | Fact | Consequence |
 |---|---|
 | Puck: 13.2k stars, 2,104 commits, MIT, stores pages as a JSON tree keyed to component props | Mature, and its data model closely matches ADR-0002 |
+| The maintained package is **`@puckeditor/core`** (0.23.0, published 2026-08-07), not `@measured/puck` (0.20.2, last published 2025-09-05) | The project renamed; depend on the former |
+| `@puckeditor/core` peer range: `react: ^18.0.0 \|\| ^19.0.0`. `@astrojs/react` v6 peers `react`/`react-dom` at `^17.0.2 \|\| ^18.0.0 \|\| ^19.0.0` | **React 19 satisfies both.** No version conflict between the editor and the publish pipeline |
+| Puck is **pre-1.0** | Breaking changes across minor versions are normal. See consequences |
 | Svaro, the closest Svelte analogue, is explicitly Puck-inspired: 23 stars, marked work-in-progress | No Svelte equivalent exists |
 | svelte-visual-builder: 30 stars, MIT, properly packaged | Closest Svelte option; still not a Puck |
 | Svelte island runtime ~1–10 KB vs React ~45 KB gzipped | Real advantage, quantified below |
@@ -102,6 +105,17 @@ blocks, generation quality is a product input.
 - We inherit Puck's constraints and its release cadence. Mitigated by the schema
   boundary: Puck is a dependency of the editor package only, and the renderer and
   runtime do not import it.
+- **Puck is pre-1.0 (0.23.0)**, so breaking changes between minor versions should
+  be expected rather than treated as incidents. This does not change the
+  decision — it is actively maintained, and the schema boundary already required
+  by this ADR is exactly the mitigation. It does mean the Puck version is pinned
+  exactly, upgrades are deliberate, and the canvas-versus-published parity test
+  is what gates them.
+- React 19 is the target: it is the only major satisfying both `@puckeditor/core`
+  and `@astrojs/react` v6 at their newest, and it keeps the editor and the
+  publish pipeline on one React. Note `@astrojs/react` v6 depends on Vite 8, so
+  the editor SPA should stay on the same Vite major to avoid two copies in the
+  monorepo.
 - Interactive-island pages carry ~40 KB gz more than they would with Svelte. R3
   must therefore be defended on image discipline, font loading, and keeping the
   island count per page low.
