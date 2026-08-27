@@ -200,7 +200,8 @@ proposal of Svelte + Vite + FastAPI.
 | svelte-visual-builder is 30 stars, MIT, properly packaged | github.com/BluePointDigital/svelte-visual-builder | Closest Svelte option; still not a Puck |
 | Puck is 13.2k stars, 2,104 commits, MIT, JSON-tree data model | github.com/puckeditor/puck | Matches ADR-0002's document model closely |
 | Svelte island ~1-10 KB runtime vs React ~45 KB gz | Astro islands benchmarks | Real, but static blocks ship 0 KB either way under ADR-0007 |
-| Python Workers is open beta; ~1 s cold start with snapshots, requirements.txt deploy still landing | blog.cloudflare.com/python-workers-advancements | FastAPI cannot host the control plane on the platform chosen in ADR-0007 |
+| Python Workers is open beta; ~1 s cold start with snapshots, requirements.txt deploy still landing | blog.cloudflare.com/python-workers-advancements | Neither Python nor Go can run the control plane *on Workers* — but see the correction below: it does not need to |
+| Go on Workers is WASM-only via TinyGo, 1 MB script limit | developers.cloudflare.com/workers/languages | Same as above, and equally not decisive |
 | Publishing requires rendering Astro + block components | — | Node is in production regardless of backend language |
 
 ### FORK-4 (reopened) — block framework and editor canvas
@@ -231,14 +232,45 @@ product beats an unshipped React one.
 
 ### FORK-10 (new) — backend language
 
-Recommendation: **TypeScript end-to-end for the core write path** (API, schema,
-renderer, CLI, MCP). The schema is the product's core asset and lives in both the
-API and the renderer; two languages means defining it twice and drifting. OpenAPI
-codegen fixes API types but not block schemas or migration functions.
+Opened as FastAPI-vs-TypeScript; widened by the user to Go and anything else.
 
-Python reserved for analytics/data jobs and AI/ML services — a clean seam at a
-process boundary.
+**Correction to the round-2 framing.** "Python Workers is beta, so FastAPI cannot
+live on Cloudflare" was stated as if disqualifying. It is not. Workers for
+Platforms exists to *serve tenant sites at the edge*; the control plane (editor
+API, auth, billing, publish orchestration) can run anywhere. The real cost of a
+non-JS backend is schema duplication, not hosting. Go is in the same position and
+is disqualified from Workers for the same irrelevant reason.
 
-Fair alternative: FastAPI control plane on Fly/Cloud Run + Node render service,
-Cloudflare demoted to CDN + SSL for SaaS + R2. Costs a permanent
-schema-duplication tax and a cross-process hop on the publish path.
+**Where Go genuinely wins for this product**
+
+- The publish pipeline is concurrent I/O orchestration: build fan-out, domain
+  provisioning, webhook delivery, calendar-sync polling.
+- The self-host runtime (ADR-0010) could ship as a single static binary. Because
+  ADR-0007 chose static-first, that runtime **never renders React** — publishing
+  pre-renders, and the runtime only serves static files plus the dynamic API
+  (form submit, booking, checkout webhook). A JS-free target, and a far better
+  self-host story than "install Node, npm i".
+
+**Where it loses.** Block types, validation, defaults and migrations must execute
+in the API, the CLI and the renderer. The renderer is JS permanently, so Go means
+two definitions. The strongest counter is to make the schema *data* — declarative
+JSON Schema evaluated in any language, with only rendering in JS. That works for
+validation and breaks on migrations (functions) and conditional field logic, so
+it shrinks the tax rather than removing it.
+
+Recommendation: **TypeScript end-to-end for milestone 1.** The schema churns
+hardest in the first three months, which is when a duplication tax costs most,
+and slice 1's risk (schema → editor → renderer) is entirely JS.
+
+Planned Go extractions once the schema settles, both at real process boundaries
+and neither a rewrite — to be recorded in ADR-0013 so the code keeps the seams:
+
+1. The self-host runtime as a single Go binary.
+2. The publish orchestrator, if build fan-out profiles badly on Node.
+
+Legitimate override: if the single-binary self-host runtime is the headline
+marketing claim, build it in Go from day one — retrofitting "one binary" onto a
+Node runtime later is a rewrite, not a refactor.
+
+Python: no unique advantage over the other two for this workload. Reserved for
+analytics/data jobs and AI/ML services later.
