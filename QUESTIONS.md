@@ -8,7 +8,8 @@ pass; only `FORK` items went to the user.
   visible here rather than absent.
 - `DEFERRED` — genuinely not needed until after milestone 1.
 
-Round 1 derived 41 questions, of which 9 were forks.
+Round 1 derived 41 questions, of which 9 were forks. Eight were accepted as
+recommended; FORK-4 reopened into round 2 alongside a new FORK-10.
 
 ---
 
@@ -168,39 +169,76 @@ Round 1 derived 41 questions, of which 9 were forks.
 
 ---
 
-## Forks escalated to the user
+## Round 1 forks — resolved
 
-### FORK-1 — Beachhead user for milestone 1
-Non-technical business owner, or agent-operated/technical builder.
-Recommendation: **non-technical owner, with agent parity built in from day one.**
+All nine escalated. User accepted eight recommendations; FORK-4 was reopened.
 
-### FORK-2 — Milestone-1 feature scope
-Which of landing pages / blog / payments / scheduling / event signups ship first.
-Recommendation: **pages + blog + forms, then scheduling. Payments and events in milestone 2.**
+| Fork | Question | Outcome | ADR |
+|---|---|---|---|
+| FORK-1 | Beachhead user | **Non-technical business owner**, with agent parity from day one | ADR-0001 |
+| FORK-2 | Milestone-1 scope | **Pages + blog + forms, then scheduling.** Payments and events to milestone 2 | ADR-0001 |
+| FORK-3 | Source of truth | **Database of record, file tree as a first-class bidirectional projection** (`pull`/`push`, Terraform-like, not git-like) | ADR-0002 |
+| FORK-4 | Editor engine | **Reopened — see round 2** | ADR-0004 |
+| FORK-5 | Payments | **BYO Stripe via OAuth, zero platform fee.** Money never touches us | ADR-0005 |
+| FORK-6 | Rendering model | **Static-first pre-render with islands**, dynamic bits via a small runtime API | ADR-0007 |
+| FORK-7 | Lock-in promise | **All three tiers**: static bundle, Apache-2.0 self-host runtime, eject to Astro. Runtime is separable from commit one | ADR-0010 |
+| FORK-8 | Block library | **First-party only in milestone 1.** Block contract public but explicitly unstable | ADR-0011 |
+| FORK-9 | Pricing | **Flat tiers, no transaction fee, BYO domain, free tier on subdomain.** Export free on every tier | ADR-0012 |
 
-### FORK-3 — Canonical source of truth
-Git-style tree of human-readable files, or a database with export-on-demand.
-Recommendation: **database of record, file tree as a first-class bidirectional projection.**
+---
 
-### FORK-4 — Editor engine
-Adopt Puck (MIT), or build the canvas.
-Recommendation: **Puck for milestone 1, behind our own document schema.**
+## Round 2 forks — open
 
-### FORK-5 — Payments architecture
-Stripe Connect (we are the platform) or bring-your-own Stripe keys.
-Recommendation: **BYO Stripe connected via OAuth, zero platform fee.**
+Smaller round, as required. Both stem from FORK-4 being reopened with a
+proposal of Svelte + Vite + FastAPI.
 
-### FORK-6 — Published-site rendering model
-Static pre-render, or server-render per request.
-Recommendation: **static-first with islands, dynamic bits via a small runtime API.**
+### Research findings that decide most of it
 
-### FORK-7 — What "no vendor lock-in" actually promises
-Static bundle / open-source self-host runtime / source-code eject.
-Recommendation: **all three tiers, self-host runtime being the differentiator.**
+| Fact | Source | Consequence |
+|---|---|---|
+| Svaro (Svelte, Puck-inspired) is 23 stars, marked WIP | github.com/dotnize/svaro | No Svelte equivalent to Puck exists |
+| svelte-visual-builder is 30 stars, MIT, properly packaged | github.com/BluePointDigital/svelte-visual-builder | Closest Svelte option; still not a Puck |
+| Puck is 13.2k stars, 2,104 commits, MIT, JSON-tree data model | github.com/puckeditor/puck | Matches ADR-0002's document model closely |
+| Svelte island ~1-10 KB runtime vs React ~45 KB gz | Astro islands benchmarks | Real, but static blocks ship 0 KB either way under ADR-0007 |
+| Python Workers is open beta; ~1 s cold start with snapshots, requirements.txt deploy still landing | blog.cloudflare.com/python-workers-advancements | FastAPI cannot host the control plane on the platform chosen in ADR-0007 |
+| Publishing requires rendering Astro + block components | — | Node is in production regardless of backend language |
 
-### FORK-8 — Block library openness
-First-party fixed set, or third-party extensible ecosystem.
-Recommendation: **first-party only in milestone 1; the block contract is public but unstable.**
+### FORK-4 (reopened) — block framework and editor canvas
 
-### FORK-9 — Pricing shape
-Recommendation: **flat subscription tiers, no transaction fee on tenant revenue, BYO domain.**
+The decision splits into three, of which only the first is high-stakes:
+
+- **(a) Block framework** — hard to reverse. It is the eject target (ADR-0010),
+  the third-party contract (ADR-0011), and the WYSIWYG guarantee.
+- **(b) Editor chrome framework** — trivially reversible, purely internal.
+- **(c) Backend language** — separate axis, see FORK-10.
+
+Scoring (a): React wins editor build cost (6-10 weeks), eject value, third-party
+supply, agent-authored block quality, and hiring. Svelte wins island bundle size
+(~40 KB gz delta, only on pages with an interactive block, ~0.1-0.2 s on 4G) and
+authoring ergonomics. React wins the irreversible criteria.
+
+Rejected: framework-agnostic blocks via Web Components. Declarative shadow DOM
+SSR is immature, shadow-boundary styling fights the `theme.json` token system,
+form participation is fiddly, and the canvas still has to be built.
+
+Mitigation applied either way: the framework stays out of the data. The document
+format is framework-agnostic JSON, so the framework is a replaceable rendering
+layer and a switch costs a renderer rewrite, not a data migration.
+
+Recommendation: **React blocks + Puck, behind our own schema.**
+Legitimate override: solo-founder velocity in Svelte. Pre-PMF, a shipped Svelte
+product beats an unshipped React one.
+
+### FORK-10 (new) — backend language
+
+Recommendation: **TypeScript end-to-end for the core write path** (API, schema,
+renderer, CLI, MCP). The schema is the product's core asset and lives in both the
+API and the renderer; two languages means defining it twice and drifting. OpenAPI
+codegen fixes API types but not block schemas or migration functions.
+
+Python reserved for analytics/data jobs and AI/ML services — a clean seam at a
+process boundary.
+
+Fair alternative: FastAPI control plane on Fly/Cloud Run + Node render service,
+Cloudflare demoted to CDN + SSL for SaaS + R2. Costs a permanent
+schema-duplication tax and a cross-process hop on the publish path.
