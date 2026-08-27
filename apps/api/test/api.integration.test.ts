@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import pg from "pg";
+import sharp from "sharp";
 import { newUlid, type PageDocument } from "@prefab/schema";
 import { withTenantContext, runMigrations, createAccount } from "@prefab/db";
 import { buildApp } from "../src/app.js";
@@ -248,6 +249,91 @@ describe("apps/api — the one write path", () => {
       headers: { authorization: `Bearer ${token}` },
     });
     expect(otherSite.statusCode).toBe(403);
+  });
+
+  it("asset.upload deduplicates identical files by hash, and serves the bytes back unauthenticated", async () => {
+    const { cookie } = await seedAccountAndLogin(`asset-${newUlid()}@example.com`);
+    const created = await app.inject({
+      method: "POST",
+      url: "/v1/sites",
+      headers: { cookie },
+      payload: { slug: `asset-${newUlid()}`, name: "Asset" },
+    });
+    const { site } = created.json() as CreatedSite;
+
+    const png = await sharp({ create: { width: 2000, height: 1000, channels: 3, background: "#4f46e5" } })
+      .png()
+      .toBuffer();
+    const body = { filename: "hero.png", contentType: "image/png", dataBase64: png.toString("base64") };
+
+    const first = await app.inject({ method: "POST", url: `/v1/sites/${site.id}/assets`, headers: { cookie }, payload: body });
+    expect(first.statusCode).toBe(200);
+    const firstAsset = first.json() as {
+      id: string;
+      sha256: string;
+      width: number;
+      height: number;
+      variants: Array<{ width: number; key: string }>;
+    };
+    expect(firstAsset.width).toBe(2000);
+    expect(firstAsset.height).toBe(1000);
+    // 2000px source: every variant width narrower than the source generates (processImage skips
+    // only widths >= the source), so all three of 480/960/1600 should be present here.
+    expect(firstAsset.variants.map((v) => v.width).sort((a, b) => a - b)).toEqual([480, 960, 1600]);
+
+    const second = await app.inject({ method: "POST", url: `/v1/sites/${site.id}/assets`, headers: { cookie }, payload: body });
+    expect(second.statusCode).toBe(200);
+    const secondAsset = second.json() as { id: string; sha256: string };
+    expect(secondAsset.id).toBe(firstAsset.id);
+    expect(secondAsset.sha256).toBe(firstAsset.sha256);
+
+    const list = await app.inject({ method: "GET", url: `/v1/sites/${site.id}/assets`, headers: { cookie } });
+    expect((list.json() as unknown[]).length).toBe(1);
+
+    // Unauthenticated on purpose (published pages have no API token to send).
+    const served = await app.inject({ method: "GET", url: `/v1/assets/${firstAsset.sha256}.png` });
+    expect(served.statusCode).toBe(200);
+    expect(served.headers["content-type"]).toContain("image/png");
+
+    const servedVariant = await app.inject({ method: "GET", url: `/v1/assets/${firstAsset.variants[0]!.key}` });
+    expect(servedVariant.statusCode).toBe(200);
+    expect(servedVariant.headers["content-type"]).toContain("image/webp");
+  });
+
+  it("rejects an asset over the byte-size cap, and a non-image upload stores with no variants", async () => {
+    const { cookie } = await seedAccountAndLogin(`asset-limits-${newUlid()}@example.com`);
+    const created = await app.inject({
+      method: "POST",
+      url: "/v1/sites",
+      headers: { cookie },
+      payload: { slug: `asset-limits-${newUlid()}`, name: "Asset limits" },
+    });
+    const { site } = created.json() as CreatedSite;
+
+    const tooBig = Buffer.alloc(8 * 1024 * 1024 + 1, 1);
+    const oversized = await app.inject({
+      method: "POST",
+      url: `/v1/sites/${site.id}/assets`,
+      headers: { cookie },
+      payload: { filename: "big.bin", contentType: "application/octet-stream", dataBase64: tooBig.toString("base64") },
+    });
+    expect(oversized.statusCode).toBe(400);
+
+    const notAnImage = Buffer.from("not actually a png", "utf8");
+    const uploaded = await app.inject({
+      method: "POST",
+      url: `/v1/sites/${site.id}/assets`,
+      headers: { cookie },
+      payload: {
+        filename: "fake.png",
+        contentType: "image/png",
+        dataBase64: notAnImage.toString("base64"),
+      },
+    });
+    expect(uploaded.statusCode).toBe(200);
+    const asset = uploaded.json() as { width: number | null; variants: unknown[] };
+    expect(asset.width).toBeNull();
+    expect(asset.variants).toEqual([]);
   });
 });
 

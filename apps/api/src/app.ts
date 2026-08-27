@@ -86,7 +86,12 @@ async function siteManifestFor(client: PoolClient, site: SiteRow): Promise<SiteM
 
 export function buildApp(deps: AppDeps): FastifyInstance {
   const { pool, bundleStoreDir, assetStoreDir } = deps;
-  const app = Fastify({ logger: false });
+  // Default is 1 MiB — too small for asset.upload's JSON+base64 body (up
+  // to ~10.9 MiB for an 8 MiB file at base64's ~4/3 expansion). Comfortably
+  // above that so a legitimately-sized upload never hits Fastify's own
+  // body-size rejection before reaching UploadAssetBodySchema's own,
+  // precise byte-size validation.
+  const app = Fastify({ logger: false, bodyLimit: 12 * 1024 * 1024 });
 
   app.register(cookie);
   // The editor SPA runs on its own Vite dev-server origin (ADR-0004 —
@@ -105,6 +110,14 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   app.setErrorHandler((error, _request, reply) => {
     if (error instanceof ApiError) {
       reply.status(error.statusCode).send({ error: { code: error.code, message: error.message, details: error.details } });
+      return;
+    }
+    // A framework-level rejection (oversized body, malformed JSON) already
+    // carries its own 4xx statusCode — surface that as a validation error
+    // rather than the internal 500 catch-all below, which is for genuine
+    // unexpected failures only.
+    if (typeof error.statusCode === "number" && error.statusCode >= 400 && error.statusCode < 500) {
+      reply.status(error.statusCode).send({ error: { code: "validation_error", message: error.message } });
       return;
     }
     app.log.error(error);
