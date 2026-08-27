@@ -50,3 +50,6 @@ pnpm-debug.log*
 .cache/
 .turbo/
 .eslintcache
+
+# Subagent slot counter (runtime state, see .claude/hooks/agent-limit.sh)
+.claude/.agent-slots/
