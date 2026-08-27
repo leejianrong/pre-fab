@@ -12,6 +12,17 @@ export function Columns(props: ColumnsProps & BlockRenderProps) {
     gap: cssVar("spacing", gap),
   };
 
+  // Without real content (true nested child slots are the follow-up noted
+  // below), an empty grid cell has zero intrinsic height and the whole
+  // block collapses to nothing — never actually rendering as a visible
+  // layout placeholder. A token-driven min-height keeps it a real,
+  // visible section regardless of what (if anything) ends up inside it.
+  const columnStyle: CSSProperties = {
+    minHeight: cssVar("spacing", "section"),
+    background: cssVar("color", "surface"),
+    borderRadius: cssVar("radius", "card"),
+  };
+
   // True nested child slots (Puck zones, per ADR-0002/PLAN.md mechanism 1)
   // are a follow-up — this slice renders `count` empty placeholder cells
   // rather than a real parent/order child tree.
@@ -25,7 +36,7 @@ export function Columns(props: ColumnsProps & BlockRenderProps) {
     >
       <ResponsiveStyle blockId={blockId ?? ""} responsive={responsive ?? {}} naturalDisplay="grid" />
       {Array.from({ length: count }, (_, index) => (
-        <div key={index} className="pf-column" />
+        <div key={index} className="pf-column" style={columnStyle} />
       ))}
     </div>
   );

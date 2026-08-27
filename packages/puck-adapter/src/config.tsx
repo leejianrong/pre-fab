@@ -174,7 +174,9 @@ export function createPuckConfig(tokens: ThemeTokens): Config {
   return {
     root: {
       render: ({ children }: DefaultRootRenderProps) => (
-        <div style={themeTokensToStyleVars(resolvedTokens)}>{children}</div>
+        <div data-pf-theme-root="" style={themeTokensToStyleVars(resolvedTokens)}>
+          {children}
+        </div>
       ),
     },
     components: Object.fromEntries(BLOCK_ENTRIES.map((entry) => [entry.type, registerBlock(entry)])),
