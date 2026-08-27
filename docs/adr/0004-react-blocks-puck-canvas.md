@@ -35,6 +35,34 @@ on pages containing at least one interactive block, around 0.1–0.2 s on 4G.
 Against R3's 1.5 s p75 LCP target that is meaningful but not decisive, and images
 and fonts dominate LCP on marketing sites by a wide margin.
 
+## The two bets, which keep getting conflated
+
+"Use Svelte and build a Puck for Svelte" reads as one decision and is two, with
+very different reversal costs:
+
+| Bet | Reversed by | Cost |
+|---|---|---|
+| **Puck as the canvas** | Swapping the canvas, keeping every block | Weeks. The blocks are ours either way |
+| **React as the block framework** | Rewriting every block, every template, the eject target and the third-party contract | Months, and customer-visible |
+
+The canvas is the cheap, reversible half, so it should not drive the framework
+decision in either direction. "Build a Puck for Svelte" is therefore not a canvas
+argument — it is *choose Svelte, and accept that no canvas exists* as the entry
+fee. It must be argued on Svelte's merits, which is how it is scored below.
+
+A first canvas is 6–10 weeks: nested drop zones and insertion indicators,
+selection and hover overlays, the schema-driven inspector including array and
+nested-object fields, undo/redo with coalescing, copy/paste/duplicate, canvas
+iframe isolation so tenant CSS cannot reach editor chrome, position tracking
+across scroll and resize, breakpoint preview, the layer navigator, and canvas
+keyboard a11y. The tail is much longer than the first version; Puck has 2,104
+commits of it.
+
+Note also that Astro supports Svelte 5 as a first-class island framework, so
+**Astro and the framework choice are orthogonal** (ADR-0007). Choosing Svelte
+would not have cost us Astro, and this ADR should not be re-opened on that
+mistaken belief.
+
 ## Decision
 
 **React for blocks. Puck for the editor canvas in milestone 1, behind our own
@@ -80,12 +108,30 @@ blocks, generation quality is a product input.
 - If Puck's model fights ours during slice 1, the fallback is React plus a
   hand-built canvas — the block investment is preserved either way. This is why
   slice 1 exists.
+- **Puck never runs inside Astro.** It runs in a Vite React SPA; the publish
+  pipeline only ever sees our block components, and Puck ships a `<Render>`
+  component separate from its editor in any case. The real constraint is
+  narrower than a compatibility bet: block components must be **SSR-safe and free
+  of Puck-specific context**, enforced by a lint rule and asserted by slice 1's
+  canvas-versus-published parity test.
+- We may outgrow Puck. The editor *is* this product, and mature competitors do
+  things Puck does not — inline rich-text editing on canvas, precise spacing
+  controls, layout modes. That day is a canvas swap, not a framework migration,
+  which is exactly why the two bets are kept separate.
 
 ## Rejected
 
 **Svelte plus a hand-built canvas.** Adds 6–10 weeks to a scope-constrained
-milestone 1 and trades the ecosystem advantages for ~40 KB. Legitimate only on
-founder-velocity grounds, which were considered and declined.
+milestone 1, spent on something no customer can perceive, at the point where
+there are no customers. Trades the ecosystem advantages for ~40 KB.
+
+Reconsidered once, explicitly, and held. It becomes the right call if any of
+these change: site speed becomes a headline marketing claim, so ~40 KB is worth
+more than the schedule; a distinctive editor is committed to anyway, making
+Puck's saving a loan rather than a gift; or founder velocity in Svelte is
+materially higher. Owning an open-source Svelte page builder as a marketing
+asset was weighed and rejected — Svaro at 23 stars and svelte-visual-builder at
+30 show the demand for one is thin, which is also why none exists.
 
 **Framework-agnostic blocks via Web Components.** Tempting, because it decouples
 the export contract from any framework. But declarative shadow DOM SSR is still

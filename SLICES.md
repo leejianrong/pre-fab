@@ -55,7 +55,11 @@ we find out — while the fallback is still cheap.
   here because bundles are immutable and going live is a pointer swap — and far
   more expensive to add once anything depends on publish behaviour.
 - Local build and preview against a checkout with no network access (R16).
-- CI: the parity conformance test (R12), the round-trip test (R8).
+- CI: the parity conformance test (R12), the round-trip test (R8), and the import
+  containment checks — nothing outside the publish pipeline may import Astro
+  (ADR-0007), and block components may not import Puck context (ADR-0004).
+- Lint rule enforcing that block components are SSR-safe: no browser-only APIs
+  outside effects.
 
 ### Tests
 
@@ -66,6 +70,9 @@ we find out — while the fallback is still cheap.
   reload.
 - The same mutation performed via API, CLI and MCP produces byte-identical
   documents.
+- The Hero block renders identically in the Puck canvas and in the published
+  output — the concrete form of the WYSIWYG guarantee, and the test that would
+  catch a block reaching for Puck context or a browser-only API (ADR-0004).
 - `export → import → export` produces byte-identical output (R8).
 - A write with a stale base version is rejected with exit code 2 and a diff, and
   the earlier write survives intact (R17).
@@ -82,6 +89,8 @@ we find out — while the fallback is still cheap.
 #### Integration
 - API against real Postgres with RLS active: a cross-tenant read fails.
 - Publish writes a bundle to real object storage and swaps the pointer atomically.
+- The import containment checks fail the build when a block package imports Astro
+  or Puck context.
 - MCP tool invocation reaches the same handler as the equivalent CLI command.
 
 #### Unit
@@ -243,7 +252,10 @@ place to prove that content-heavy sites publish within R4's budget.
 #### End-to-end
 - Creating, publishing and reading a post through the editor, then editing the
   same post as a file and pushing it back.
-- A 50-post site publishes within 10 s p95 (R4).
+- A 50-post site publishes within 10 s p95, and a 500-post site within 90 s p95
+  (R4). The second number exists because Astro full-rebuilds; breaching it is the
+  documented trigger for ADR-0007's incremental-renderer escape hatch, and this
+  slice is where publish time is first profiled against page count.
 - RSS validates and the sitemap lists every published post.
 - A scheduled or draft post is not reachable on the live site.
 

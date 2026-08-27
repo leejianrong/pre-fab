@@ -33,6 +33,46 @@ Note the split, because it was initially conflated: Workers for Platforms serves
 publish orchestration — is not required to run there and can be hosted anywhere
 (ADR-0013).
 
+## What Astro is actually load-bearing for
+
+Worth stating plainly, because it is easy to over-attribute.
+
+Technically Astro buys us less than it appears. We generate every page from a
+document, so we need none of a meta-framework's file-based routing, layouts or
+conventions. What it provides is a maintained build pipeline — bundling, CSS,
+image optimization, island hydration — for a block set we control and could
+hydrate ourselves.
+
+**Astro's real load is R11, the eject target.** ADR-0010 tier (c) is worth
+something only because Astro is popular and community-supported. Ejecting to a
+bespoke pre-fab renderer would not be an eject; it would be lock-in in different
+clothing. Astro is therefore more load-bearing for the *portability promise* than
+for publishing.
+
+Two consequences follow, and both are recorded now rather than discovered later.
+
+**The known scaling limit.** Astro rebuilds the whole site. Fifty pages in ten
+seconds is comfortable; a 500-page blog rebuilding entirely to fix one typo is
+not, and publish time is linear in page count (R4).
+
+**The planned escape hatch — decouple the publish renderer from the eject
+target.** They need not be the same pipeline. Publish can move to a custom
+renderer doing incremental per-page builds, while eject continues to *generate*
+an Astro project as an export artifact. This is safe rather than reckless because
+R9's screenshot-diff test already asserts that two rendering paths produce
+identical output; the safety net for the drift it introduces is a test we
+committed to building regardless.
+
+Milestone 1 uses Astro for both paths — one pipeline, simplest thing that works.
+The escape hatch is triggered by measured publish times at scale, not by
+speculation. Same pattern as ADR-0013's Go seams: name the seam, do not build it.
+
+**Containment constraint.** Nothing outside the publish pipeline and the eject
+generator may import Astro. Blocks, schema, write path, editor and runtime API
+stay Astro-free, so being wrong about Astro costs a pipeline rather than a
+product. Enforced by the same CI import check that guards ADR-0010's runtime
+separability.
+
 ## Consequences
 
 - R4 atomicity and R5 instant rollback fall out of immutable bundles plus a

@@ -121,7 +121,11 @@ Each is stated so a test can check it.
 - **R3** A published page derived from any shipped template scores LCP < 1.5 s
   p75 on simulated 4G and Lighthouse performance ≥ 90.
 - **R4** Publishing a 50-page site completes within 10 s p95, and is atomic: a
-  failed publish leaves the live site byte-identical to before.
+  failed publish leaves the live site byte-identical to before. Publish time is
+  **linear in page count** under the initial full-rebuild pipeline, so the bound
+  at scale is stated separately: a 500-page site within 90 s p95. Breaching that
+  is the trigger for ADR-0007's incremental-renderer escape hatch, not a reason
+  to relax the number.
 - **R5** Any previous publish can be restored in one action, within 10 s.
 - **R6** Every first-party block passes axe-core with zero criticals, and shipped
   templates meet WCAG 2.2 AA contrast.
