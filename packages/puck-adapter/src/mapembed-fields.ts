@@ -1,5 +1,5 @@
 import type { Fields } from "@puckeditor/core";
-import type { MapEmbedProps } from "@prefab/blocks/mapembed";
+import type { MapEmbedProps } from "@prefab/blocks";
 
 export const mapembedFields: Fields<MapEmbedProps> = {
   query: { type: "text", label: "Location (place name or address)" },

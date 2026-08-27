@@ -8,6 +8,30 @@ import { Button } from "./button/Button.js";
 import { buttonBlockDefinition, type ButtonProps } from "./button/schema.js";
 import { Embed } from "./embed/Embed.js";
 import { embedBlockDefinition, type EmbedProps } from "./embed/schema.js";
+import { Spacer } from "./spacer/Spacer.js";
+import { spacerBlockDefinition, type SpacerProps } from "./spacer/schema.js";
+import { RichText } from "./richtext/RichText.js";
+import { richTextBlockDefinition, type RichTextProps } from "./richtext/schema.js";
+import { Footer } from "./footer/Footer.js";
+import { footerBlockDefinition, type FooterProps } from "./footer/schema.js";
+import { Nav } from "./nav/Nav.js";
+import { navBlockDefinition, type NavProps } from "./nav/schema.js";
+import { Testimonial } from "./testimonial/Testimonial.js";
+import { testimonialBlockDefinition, type TestimonialProps } from "./testimonial/schema.js";
+import { Faq } from "./faq/Faq.js";
+import { faqBlockDefinition, type FaqProps } from "./faq/schema.js";
+import { ContactDetails } from "./contactdetails/ContactDetails.js";
+import { contactdetailsBlockDefinition, type ContactDetailsProps } from "./contactdetails/schema.js";
+import { MapEmbed } from "./mapembed/MapEmbed.js";
+import { mapembedBlockDefinition, type MapEmbedProps } from "./mapembed/schema.js";
+import { Image } from "./image/Image.js";
+import { imageBlockDefinition, type ImageProps } from "./image/schema.js";
+import { Gallery } from "./gallery/Gallery.js";
+import { galleryBlockDefinition, type GalleryProps } from "./gallery/schema.js";
+import { Columns } from "./columns/Columns.js";
+import { columnsBlockDefinition, type ColumnsProps } from "./columns/schema.js";
+import { CardGrid } from "./cardgrid/CardGrid.js";
+import { cardGridBlockDefinition, type CardGridProps } from "./cardgrid/schema.js";
 
 /**
  * One entry per first-party block: its schema-half definition
@@ -33,6 +57,46 @@ const BLOCK_ENTRIES: BlockEntry[] = [
     definition: embedBlockDefinition,
     Component: Embed,
     summary: (props: EmbedProps) => (props.html.trim() ? "embedded content" : "empty embed"),
+  },
+  { definition: spacerBlockDefinition, Component: Spacer, summary: (props: SpacerProps) => `spacer (${props.height})` },
+  {
+    definition: richTextBlockDefinition,
+    Component: RichText,
+    summary: (props: RichTextProps) => props.html.slice(0, 60),
+  },
+  { definition: footerBlockDefinition, Component: Footer, summary: (props: FooterProps) => props.text },
+  { definition: navBlockDefinition, Component: Nav, summary: (props: NavProps) => props.brand },
+  {
+    definition: testimonialBlockDefinition,
+    Component: Testimonial,
+    summary: (props: TestimonialProps) => props.quote.slice(0, 60),
+  },
+  { definition: faqBlockDefinition, Component: Faq, summary: (props: FaqProps) => `${props.items.length} FAQ items` },
+  {
+    definition: contactdetailsBlockDefinition,
+    Component: ContactDetails,
+    summary: (props: ContactDetailsProps) => props.heading,
+  },
+  {
+    definition: mapembedBlockDefinition,
+    Component: MapEmbed,
+    summary: (props: MapEmbedProps) => props.query || "no location set",
+  },
+  { definition: imageBlockDefinition, Component: Image, summary: (props: ImageProps) => props.alt || props.src },
+  {
+    definition: galleryBlockDefinition,
+    Component: Gallery,
+    summary: (props: GalleryProps) => `${props.images.length} images`,
+  },
+  {
+    definition: columnsBlockDefinition,
+    Component: Columns,
+    summary: (props: ColumnsProps) => `${props.count} columns`,
+  },
+  {
+    definition: cardGridBlockDefinition,
+    Component: CardGrid,
+    summary: (props: CardGridProps) => `${props.cards.length} cards`,
   },
 ];
 

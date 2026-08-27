@@ -4,11 +4,35 @@ import { Hero, HERO_BLOCK_TYPE, heroDefaultProps, resolveThemeTokens, themeToken
 import { Heading, HEADING_BLOCK_TYPE, headingDefaultProps } from "@prefab/blocks";
 import { Button, BUTTON_BLOCK_TYPE, buttonDefaultProps } from "@prefab/blocks";
 import { Embed, EMBED_BLOCK_TYPE, embedDefaultProps } from "@prefab/blocks";
+import { Spacer, SPACER_BLOCK_TYPE, spacerDefaultProps } from "@prefab/blocks";
+import { RichText, RICHTEXT_BLOCK_TYPE, richTextDefaultProps } from "@prefab/blocks";
+import { Footer, FOOTER_BLOCK_TYPE, footerDefaultProps } from "@prefab/blocks";
+import { Nav, NAV_BLOCK_TYPE, navDefaultProps } from "@prefab/blocks";
+import { Testimonial, TESTIMONIAL_BLOCK_TYPE, testimonialDefaultProps } from "@prefab/blocks";
+import { Faq, FAQ_BLOCK_TYPE, faqDefaultProps } from "@prefab/blocks";
+import { ContactDetails, CONTACTDETAILS_BLOCK_TYPE, contactdetailsDefaultProps } from "@prefab/blocks";
+import { MapEmbed, MAPEMBED_BLOCK_TYPE, mapembedDefaultProps } from "@prefab/blocks";
+import { Image, IMAGE_BLOCK_TYPE, imageDefaultProps } from "@prefab/blocks";
+import { Gallery, GALLERY_BLOCK_TYPE, galleryDefaultProps } from "@prefab/blocks";
+import { Columns, COLUMNS_BLOCK_TYPE, columnsDefaultProps } from "@prefab/blocks";
+import { CardGrid, CARDGRID_BLOCK_TYPE, cardGridDefaultProps } from "@prefab/blocks";
 import type { ThemeTokens } from "@prefab/schema";
 import { heroFields } from "./hero-fields.js";
 import { headingFields } from "./heading-fields.js";
 import { buttonFields } from "./button-fields.js";
 import { embedFields } from "./embed-fields.js";
+import { spacerFields } from "./spacer-fields.js";
+import { richTextFields } from "./richtext-fields.js";
+import { footerFields } from "./footer-fields.js";
+import { navFields } from "./nav-fields.js";
+import { testimonialFields } from "./testimonial-fields.js";
+import { faqFields } from "./faq-fields.js";
+import { contactdetailsFields } from "./contactdetails-fields.js";
+import { mapembedFields } from "./mapembed-fields.js";
+import { imageFields } from "./image-fields.js";
+import { galleryFields } from "./gallery-fields.js";
+import { columnsFields } from "./columns-fields.js";
+import { cardGridFields } from "./cardgrid-fields.js";
 
 /**
  * The only file besides apps/editor allowed to import @puckeditor/core
@@ -68,6 +92,60 @@ const BLOCK_ENTRIES: BlockEntry<any>[] = [
     fields: embedFields,
     defaultProps: embedDefaultProps,
     Component: Embed,
+  },
+  { type: SPACER_BLOCK_TYPE, label: "Spacer", fields: spacerFields, defaultProps: spacerDefaultProps, Component: Spacer },
+  {
+    type: RICHTEXT_BLOCK_TYPE,
+    label: "Rich text",
+    fields: richTextFields,
+    defaultProps: richTextDefaultProps,
+    Component: RichText,
+  },
+  { type: FOOTER_BLOCK_TYPE, label: "Footer", fields: footerFields, defaultProps: footerDefaultProps, Component: Footer },
+  { type: NAV_BLOCK_TYPE, label: "Nav", fields: navFields, defaultProps: navDefaultProps, Component: Nav },
+  {
+    type: TESTIMONIAL_BLOCK_TYPE,
+    label: "Testimonial",
+    fields: testimonialFields,
+    defaultProps: testimonialDefaultProps,
+    Component: Testimonial,
+  },
+  { type: FAQ_BLOCK_TYPE, label: "FAQ", fields: faqFields, defaultProps: faqDefaultProps, Component: Faq },
+  {
+    type: CONTACTDETAILS_BLOCK_TYPE,
+    label: "Contact details",
+    fields: contactdetailsFields,
+    defaultProps: contactdetailsDefaultProps,
+    Component: ContactDetails,
+  },
+  {
+    type: MAPEMBED_BLOCK_TYPE,
+    label: "Map embed",
+    fields: mapembedFields,
+    defaultProps: mapembedDefaultProps,
+    Component: MapEmbed,
+  },
+  { type: IMAGE_BLOCK_TYPE, label: "Image", fields: imageFields, defaultProps: imageDefaultProps, Component: Image },
+  {
+    type: GALLERY_BLOCK_TYPE,
+    label: "Gallery",
+    fields: galleryFields,
+    defaultProps: galleryDefaultProps,
+    Component: Gallery,
+  },
+  {
+    type: COLUMNS_BLOCK_TYPE,
+    label: "Columns",
+    fields: columnsFields,
+    defaultProps: columnsDefaultProps,
+    Component: Columns,
+  },
+  {
+    type: CARDGRID_BLOCK_TYPE,
+    label: "Card grid",
+    fields: cardGridFields,
+    defaultProps: cardGridDefaultProps,
+    Component: CardGrid,
   },
 ];
 

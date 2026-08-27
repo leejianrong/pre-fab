@@ -4,11 +4,7 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts",
-    "./testimonial": "./src/testimonial/index.ts",
-    "./faq": "./src/faq/index.ts",
-    "./contactdetails": "./src/contactdetails/index.ts",
-    "./mapembed": "./src/mapembed/index.ts"
+    ".": "./src/index.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",

@@ -1,5 +1,5 @@
 import type { Fields } from "@puckeditor/core";
-import type { TestimonialProps } from "@prefab/blocks/testimonial";
+import type { TestimonialProps } from "@prefab/blocks";
 
 export const testimonialFields: Fields<TestimonialProps> = {
   quote: { type: "textarea", label: "Quote" },

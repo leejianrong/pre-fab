@@ -1,18 +1,7 @@
 import type { Fields } from "@puckeditor/core";
+import type { NavProps } from "@prefab/blocks";
 
-/**
- * Mirrors `NavProps` (packages/blocks/src/nav/schema.ts) structurally
- * rather than importing it: @prefab/blocks's index.ts barrel is wired
- * centrally (see packages/blocks/src/index.ts) and this block isn't listed
- * there yet, so the named export isn't reachable through the package's
- * public surface. Field-shape typing only needs structural equivalence.
- */
-type NavFieldsProps = {
-  brand: string;
-  links: { label: string; href: string }[];
-};
-
-export const navFields: Fields<NavFieldsProps> = {
+export const navFields: Fields<NavProps> = {
   brand: { type: "text", label: "Brand / business name" },
   links: {
     type: "array",

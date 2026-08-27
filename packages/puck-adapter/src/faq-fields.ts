@@ -1,5 +1,5 @@
 import type { Fields } from "@puckeditor/core";
-import type { FaqProps } from "@prefab/blocks/faq";
+import type { FaqProps } from "@prefab/blocks";
 
 export const faqFields: Fields<FaqProps> = {
   items: {

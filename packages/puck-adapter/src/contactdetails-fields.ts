@@ -1,5 +1,5 @@
 import type { Fields } from "@puckeditor/core";
-import type { ContactDetailsProps } from "@prefab/blocks/contactdetails";
+import type { ContactDetailsProps } from "@prefab/blocks";
 
 export const contactdetailsFields: Fields<ContactDetailsProps> = {
   heading: { type: "text", label: "Heading" },

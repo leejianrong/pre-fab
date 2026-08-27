@@ -1,17 +1,7 @@
 import type { Fields } from "@puckeditor/core";
+import type { SpacerProps } from "@prefab/blocks";
 
-/**
- * Mirrors `SpacerProps` (packages/blocks/src/spacer/schema.ts) structurally
- * rather than importing it: @prefab/blocks's index.ts barrel is wired
- * centrally (see packages/blocks/src/index.ts) and this block isn't listed
- * there yet, so the named export isn't reachable through the package's
- * public surface. Field-shape typing only needs structural equivalence.
- */
-type SpacerFieldsProps = {
-  height: "xs" | "sm" | "element" | "lg" | "section";
-};
-
-export const spacerFields: Fields<SpacerFieldsProps> = {
+export const spacerFields: Fields<SpacerProps> = {
   height: {
     type: "select",
     label: "Height",
