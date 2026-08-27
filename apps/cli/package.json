@@ -1,0 +1,24 @@
+{
+  "name": "@prefab/cli",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "prefab": "./src/main.ts"
+  },
+  "scripts": {
+    "start": "tsx src/main.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test:unit": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@prefab/commands": "workspace:*",
+    "@prefab/api-client": "workspace:*",
+    "commander": "13.1.0"
+  },
+  "devDependencies": {
+    "tsx": "4.19.2",
+    "typescript": "5.7.3",
+    "vitest": "3.0.4"
+  }
+}

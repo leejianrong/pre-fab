@@ -1,0 +1,20 @@
+{
+  "name": "@prefab/api-client",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test:unit": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@prefab/schema": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "5.7.3",
+    "vitest": "3.0.4"
+  }
+}

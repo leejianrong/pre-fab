@@ -1,0 +1,99 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  # scripts/db-init.sql creates these; CI just points every DATABASE_URL at
+  # the postgres: service container instead of a local cluster.
+  MIGRATE_DATABASE_URL: postgres://prefab:prefab@localhost:5432/prefab_test
+  MIGRATE_DATABASE_URL_TEST: postgres://prefab:prefab@localhost:5432/prefab_test
+  DATABASE_URL: postgres://prefab_app:prefab_app@localhost:5432/prefab_test
+  DATABASE_URL_TEST: postgres://prefab_app:prefab_app@localhost:5432/prefab_test
+
+jobs:
+  lint-typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - run: pnpm run lint
+      - run: pnpm run typecheck
+
+  # The two CI containment checks (ADR-0004, ADR-0007) and the R12 parity
+  # conformance test (ADR-0003) — SLICES.md names these as slice 1's CI
+  # deliverables, run as their own job so a containment break is never
+  # buried in a wall of unit-test output.
+  containment-and-parity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - run: pnpm run ci:containment
+      - run: pnpm run ci:parity
+
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - run: pnpm run test:unit
+
+  # Real Postgres with RLS active (ADR-0008) — the cross-tenant-read and
+  # RLS-insert-rejection tests are meaningless against a mock.
+  integration-tests:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - name: Create prefab/prefab_app roles and the test database
+        run: |
+          PGPASSWORD=postgres psql -h localhost -U postgres -v ON_ERROR_STOP=1 -f scripts/db-init.sql
+          PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE DATABASE prefab_test OWNER prefab;"
+          PGPASSWORD=postgres psql -h localhost -U postgres -d prefab_test -c "GRANT CONNECT ON DATABASE prefab_test TO prefab_app;"
+      - run: pnpm run test:integration
+
+  # SLICES.md's End-to-end list, driven against the real editor, a real
+  # API and a real publish (Playwright, Chromium) — these are slice 1's
+  # acceptance criteria: the slice is done when these pass, not when the
+  # code looks finished.
+  e2e:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      MIGRATE_DATABASE_URL: postgres://prefab:prefab@localhost:5432/prefab_e2e
+      DATABASE_URL: postgres://prefab_app:prefab_app@localhost:5432/prefab_e2e
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - name: Create prefab/prefab_app roles and the e2e database
+        run: |
+          PGPASSWORD=postgres psql -h localhost -U postgres -v ON_ERROR_STOP=1 -f scripts/db-init.sql
+          PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE DATABASE prefab_e2e OWNER prefab;"
+          PGPASSWORD=postgres psql -h localhost -U postgres -d prefab_e2e -c "GRANT CONNECT ON DATABASE prefab_e2e TO prefab_app;"
+      - name: Install Playwright's Chromium
+        run: pnpm --filter @prefab/e2e exec playwright install --with-deps chromium
+      - run: pnpm --filter @prefab/e2e run test

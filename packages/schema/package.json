@@ -1,0 +1,21 @@
+{
+  "name": "@prefab/schema",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test:unit": "vitest run"
+  },
+  "dependencies": {
+    "zod": "4.4.3",
+    "ulid": "3.0.1"
+  },
+  "devDependencies": {
+    "typescript": "5.7.3",
+    "vitest": "3.0.4"
+  }
+}
