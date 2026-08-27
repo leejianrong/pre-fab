@@ -176,9 +176,9 @@ All nine escalated. User accepted eight recommendations; FORK-4 was reopened.
 | Fork | Question | Outcome | ADR |
 |---|---|---|---|
 | FORK-1 | Beachhead user | **Non-technical business owner**, with agent parity from day one | ADR-0001 |
-| FORK-2 | Milestone-1 scope | **Pages + blog + forms, then scheduling.** Payments and events to milestone 2 | ADR-0001 |
+| FORK-2 | Milestone-1 scope | **Pages + blog + forms, then scheduling.** Payments and events to milestone 2 | PLAN.md, Scope boundary |
 | FORK-3 | Source of truth | **Database of record, file tree as a first-class bidirectional projection** (`pull`/`push`, Terraform-like, not git-like) | ADR-0002 |
-| FORK-4 | Editor engine | **Reopened — see round 2** | ADR-0004 |
+| FORK-4 | Editor engine | **Reopened, then resolved in round 2** | ADR-0004 |
 | FORK-5 | Payments | **BYO Stripe via OAuth, zero platform fee.** Money never touches us | ADR-0005 |
 | FORK-6 | Rendering model | **Static-first pre-render with islands**, dynamic bits via a small runtime API | ADR-0007 |
 | FORK-7 | Lock-in promise | **All three tiers**: static bundle, Apache-2.0 self-host runtime, eject to Astro. Runtime is separable from commit one | ADR-0010 |
@@ -187,10 +187,18 @@ All nine escalated. User accepted eight recommendations; FORK-4 was reopened.
 
 ---
 
-## Round 2 forks — open
+## Round 2 forks — resolved
 
-Smaller round, as required. Both stem from FORK-4 being reopened with a
-proposal of Svelte + Vite + FastAPI.
+Smaller round, as required. Both stemmed from FORK-4 being reopened with a
+proposal of Svelte + Vite + FastAPI. Both resolved as recommended.
+
+| Fork | Outcome | ADR |
+|---|---|---|
+| FORK-4 | **React blocks, Puck canvas, framework behind the schema** | ADR-0004 |
+| FORK-10 | **TypeScript for milestone 1, with two planned Go extraction seams** | ADR-0013 |
+
+All forks are now closed. `PLAN.md`, `SLICES.md` and `docs/adr/0001`–`0013` are
+the live artifacts; this file is the record of how they were reached.
 
 ### Research findings that decide most of it
 
@@ -226,9 +234,8 @@ Mitigation applied either way: the framework stays out of the data. The document
 format is framework-agnostic JSON, so the framework is a replaceable rendering
 layer and a switch costs a renderer rewrite, not a data migration.
 
-Recommendation: **React blocks + Puck, behind our own schema.**
-Legitimate override: solo-founder velocity in Svelte. Pre-PMF, a shipped Svelte
-product beats an unshipped React one.
+Recommendation: **React blocks + Puck, behind our own schema.** — **accepted.**
+Legitimate override considered and declined: solo-founder velocity in Svelte.
 
 ### FORK-10 (new) — backend language
 
@@ -258,7 +265,7 @@ JSON Schema evaluated in any language, with only rendering in JS. That works for
 validation and breaks on migrations (functions) and conditional field logic, so
 it shrinks the tax rather than removing it.
 
-Recommendation: **TypeScript end-to-end for milestone 1.** The schema churns
+Recommendation: **TypeScript end-to-end for milestone 1** — **accepted.** The schema churns
 hardest in the first three months, which is when a duplication tax costs most,
 and slice 1's risk (schema → editor → renderer) is entirely JS.
 
