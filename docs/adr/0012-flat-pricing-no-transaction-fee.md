@@ -26,6 +26,43 @@ leaving hard.
 Milestone 1 needs subscription state and plan gates only. Usage metering
 (bandwidth, submission volume) is deferred.
 
+## Unit economics under the custom-domain gate
+
+Verified 2026-08-27, because the custom domain is the first paid gate and its
+cost sets the floor under the entry tier.
+
+| Line | Cost |
+|---|---|
+| Cloudflare custom hostname (SSL for SaaS) | **First 100 free** on Free/Pro/Business, then **$0.10 per hostname per month** |
+| Pay-as-you-go ceiling | **50,000 custom hostnames**; beyond that requires Enterprise, pricing unpublished |
+| Workers for Platforms | **$25/month platform-wide base**, plus usage. Only one request is billed across the dispatch chain |
+
+**The finding is that SSL for SaaS is not the binding constraint, and an earlier
+note in planning implied it was.** At $0.10 per site per month — $1.20 a year —
+the hostname fee is negligible against any plausible entry tier, and the first
+100 paying customers cost nothing at all in hostname fees. Even a $5 entry tier
+would carry a 98% margin on that line.
+
+The floor is actually set by the $25/month platform base, which two or three
+paying customers cover, and then by per-site variable cost: requests, CPU, R2
+storage and operations, Postgres rows and email sends. All are small, and R2's
+zero egress is what keeps image-heavy marketing sites cheap (ADR-0007).
+
+**Therefore the entry tier is priced on willingness to pay and competitive
+position, not on cost.** Wix and Squarespace entry tiers sit around $16–25/month;
+there is no cost-side reason to price above or below that band.
+
+Recorded as a scale-stage risk rather than a launch problem: crossing 50,000
+custom domains moves us to an Enterprise contract with unpublished pricing, so
+that negotiation should start well before the cap.
+
+Caveat on sourcing: `developers.cloudflare.com` is blocked by this environment's
+egress proxy, so the hostname figures come from two independent secondary sources
+that agree, not from the primary docs. Confirm against Cloudflare's billing page
+before the pricing page goes live. One secondary source also quoted "$10/month",
+which appears to be Advanced Certificate Manager — a separate optional per-zone
+product, not a per-hostname charge — but that reading is inferred, not verified.
+
 ## Consequences
 
 - Revenue scales with sites, not with tenant success. Simpler to forecast and

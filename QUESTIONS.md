@@ -281,3 +281,28 @@ Node runtime later is a rewrite, not a refactor.
 
 Python: no unique advantage over the other two for this workload. Reserved for
 analytics/data jobs and AI/ML services later.
+
+---
+
+## Post-plan verification
+
+Two facts were recorded as unverified when the plan was written, and both were
+checked on 2026-08-27.
+
+| Question | Outcome |
+|---|---|
+| Does Puck's React version work with Astro's React island support? | **Yes.** `@puckeditor/core` 0.23.0 peers `react ^18 \|\| ^19`; `@astrojs/react` 6.0.4 peers `react`/`react-dom` `^17.0.2 \|\| ^18 \|\| ^19`. React 19 satisfies both. Recorded in ADR-0004 and ADR-0007 |
+| What is Cloudflare's per-custom-hostname cost, and what floor does it set? | **First 100 free, then $0.10/hostname/month**, PAYG to 50,000. Negligible against any plausible entry tier — SSL for SaaS is *not* the binding constraint, contrary to an earlier planning note. Recorded in ADR-0012 |
+
+Incidental findings from the same check, both recorded in ADR-0004:
+
+- The maintained Puck package is **`@puckeditor/core`**, not `@measured/puck`,
+  which was last published 2025-09-05. The project renamed.
+- Puck is **pre-1.0** (0.23.0). Breaking changes across minors are expected. The
+  decision stands, the version is pinned exactly, and the canvas-versus-published
+  parity test gates upgrades.
+
+Still unverified, and now the only known gap: the per-tenant component of Workers
+for Platforms billing beyond its $25/month base. `developers.cloudflare.com` is
+blocked by this environment's egress proxy, so the primary pricing docs could not
+be read directly.

@@ -13,6 +13,7 @@ dies on, not the easiest one to build.
 | # | Slice | Confronts |
 |---|---|---|
 | 1 | One block, four surfaces | The core trinity: one write path, WYSIWYG parity, portability |
+| — | *(identity is folded into slice 1, not a slice of its own — it has no demo)* | |
 | 2 | Block library and theme tokens | Whether token-only blocks can produce good-looking pages |
 | 3 | Templates and onboarding | R1's 10-minute claim |
 | 4 | Custom domains and TLS | The hard operational problem |
@@ -40,7 +41,14 @@ we find out — while the fallback is still cheap.
 ### Build
 - Document schema package: flat ULID-keyed blocks, `parent` + `order`,
   `schemaVersion`, one block type (`Hero`), Zod validation, migration harness.
-- Postgres with RLS (ADR-0008), sites/pages/blocks/publishes tables.
+- **Minimal identity**: account and session tables, one owner per site, and
+  per-site scoped, expiring, revocable API tokens for the CLI and MCP (ADR-0001,
+  ADR-0003). No signup UI, no email verification, no roles — accounts are seeded.
+  This exists in slice 1 because RLS needs an authenticated principal to set
+  tenant context, and the CLI and MCP need a credential to reach the API at all.
+  Slice 3 puts a signup flow on top; slice 8 adds roles and billing.
+- Postgres with RLS (ADR-0008), sites/pages/blocks/publishes tables, tenant
+  context set per transaction from the authenticated principal.
 - HTTP API with the full mutation set for one block type, optimistic version
   check returning a diff on conflict (ADR-0006).
 - Editor: Puck canvas adapted to our schema — Puck is a dependency of the editor
@@ -164,7 +172,8 @@ than whether it works.
   personal brand]**. Authoring them through the export format dogfoods ADR-0002.
 - Template gallery and fork-on-use instantiation (ADR-0011 — templates are seeds
   and do not receive upstream updates).
-- Signup, email verification, first-run flow.
+- Signup, email verification and first-run flow, built on slice 1's identity
+  primitive rather than replacing it.
 - Guided first edit and a publish celebration moment.
 - Lighthouse and axe-core budgets in CI, per template (R3, R6).
 
