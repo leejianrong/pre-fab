@@ -1,0 +1,29 @@
+{
+  "name": "@prefab/editor",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test:unit": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@prefab/api-client": "workspace:*",
+    "@prefab/blocks": "workspace:*",
+    "@prefab/puck-adapter": "workspace:*",
+    "@prefab/schema": "workspace:*",
+    "@puckeditor/core": "0.23.0",
+    "react": "19.0.0",
+    "react-dom": "19.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "19.0.7",
+    "@types/react-dom": "19.0.3",
+    "@vitejs/plugin-react": "6.1.0",
+    "typescript": "5.7.3",
+    "vite": "8.2.2",
+    "vitest": "3.0.4"
+  }
+}

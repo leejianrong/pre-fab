@@ -1,0 +1,36 @@
+{
+  "name": "pre-fab",
+  "private": true,
+  "version": "0.0.0",
+  "engines": {
+    "node": ">=22.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "packageManager": "pnpm@10.33.0",
+  "scripts": {
+    "build": "pnpm -r --if-present --workspace-concurrency=1 run build",
+    "dev:db": "bash scripts/db-up.sh",
+    "db:migrate": "pnpm --filter @prefab/db run migrate",
+    "test:unit": "pnpm -r --if-present run test:unit",
+    "test:integration": "pnpm -r --if-present run test:integration",
+    "test:e2e": "pnpm --filter @prefab/e2e run test",
+    "lint": "eslint .",
+    "typecheck": "pnpm -r --if-present run typecheck",
+    "ci:containment": "pnpm --filter @prefab/ci-checks run containment",
+    "ci:parity": "pnpm --filter @prefab/ci-checks run parity",
+    "ci": "pnpm run lint && pnpm run typecheck && pnpm run ci:containment && pnpm run test:unit && pnpm run ci:parity"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["esbuild"]
+  },
+  "devDependencies": {
+    "@types/node": "22.20.1",
+    "typescript": "5.7.3",
+    "eslint": "9.18.0",
+    "@eslint/js": "9.18.0",
+    "typescript-eslint": "8.20.0",
+    "eslint-plugin-react-hooks": "5.1.0",
+    "tsx": "4.19.2",
+    "vitest": "3.0.4"
+  }
+}

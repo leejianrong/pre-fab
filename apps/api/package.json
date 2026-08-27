@@ -1,0 +1,36 @@
+{
+  "name": "@prefab/api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./mutations": "./src/mutations.ts"
+  },
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "start": "tsx src/server.ts",
+    "seed": "tsx src/seed.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test:unit": "vitest run --passWithNoTests --exclude '**/*.integration.test.ts'",
+    "test:integration": "vitest run test/*.integration.test.ts --testTimeout=60000"
+  },
+  "dependencies": {
+    "@prefab/schema": "workspace:*",
+    "@prefab/blocks": "workspace:*",
+    "@prefab/db": "workspace:*",
+    "@prefab/publish": "workspace:*",
+    "fastify": "5.2.1",
+    "@fastify/cookie": "11.0.2",
+    "@fastify/cors": "10.0.2",
+    "zod": "4.4.3",
+    "pg": "8.13.1"
+  },
+  "devDependencies": {
+    "@types/pg": "8.11.10",
+    "dotenv": "16.4.7",
+    "tsx": "4.19.2",
+    "typescript": "5.7.3",
+    "vitest": "3.0.4"
+  }
+}

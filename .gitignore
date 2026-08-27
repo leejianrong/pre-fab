@@ -1,55 +1,15 @@
-# Dependencies
 node_modules/
-.pnp
-.pnp.*
-.yarn/*
-!.yarn/patches
-!.yarn/releases
-!.yarn/plugins
-!.yarn/versions
-
-# Build output
 dist/
 build/
 .astro/
-.output/
-.vercel/
-.wrangler/
+.astro-workspace/
+.data/
 *.tsbuildinfo
-
-# Test and coverage
-coverage/
-.nyc_output/
-test-results/
-playwright-report/
-blob-report/
-.playwright/
-
-# Env and secrets — never commit
 .env
-.env.*
-!.env.example
-*.pem
-*.key
-
-# Editor and OS
-.vscode/*
-!.vscode/extensions.json
-.idea/
-.DS_Store
-Thumbs.db
-
-# Logs
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-
-# Caches
-.cache/
+.env.local
+coverage/
+playwright-report/
+test-results/
 .turbo/
-.eslintcache
-
-# Subagent slot counter (runtime state, see .claude/hooks/agent-limit.sh)
-.claude/.agent-slots/
+*.log
+.DS_Store

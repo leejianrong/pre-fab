@@ -1,0 +1,220 @@
+import "dotenv/config";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { newUlid, DEFAULT_THEME_TOKENS } from "@prefab/schema";
+import { createPool, runMigrations, withTenantContext } from "../src/index.js";
+import { createAccount, createSite, getSite, listSitesForAccount } from "../src/repositories/index.js";
+import { createTheme, getTheme } from "../src/repositories/themes.js";
+import { createPage, getPageDocument, writePageDocument } from "../src/repositories/pages.js";
+import { createPublish, getLivePublish, setLivePublish } from "../src/repositories/publishes.js";
+
+const migrateUrl = process.env.MIGRATE_DATABASE_URL_TEST;
+const appUrl = process.env.DATABASE_URL_TEST;
+
+if (!migrateUrl || !appUrl) {
+  throw new Error(
+    "MIGRATE_DATABASE_URL_TEST and DATABASE_URL_TEST must be set — see .env.example and scripts/db-up.sh",
+  );
+}
+
+const migratePool = createPool(migrateUrl);
+const appPool = createPool(appUrl);
+
+beforeAll(async () => {
+  await runMigrations(migratePool);
+  // Integration tests own the whole test database; start from a clean slate.
+  await migratePool.query(
+    "TRUNCATE publishes, blocks, pages, themes, sites, api_tokens, sessions, accounts CASCADE",
+  );
+});
+
+afterAll(async () => {
+  await migratePool.end();
+  await appPool.end();
+});
+
+describe("row-level security (ADR-0008)", () => {
+  it("a cross-tenant read returns nothing, even though the row exists", async () => {
+    const ownerA = await withTenantContext(migratePool, {}, (client) =>
+      createAccount(client, { id: newUlid(), email: `a-${newUlid()}@example.com` }),
+    );
+    await withTenantContext(migratePool, {}, (client) =>
+      createAccount(client, { id: newUlid(), email: `b-${newUlid()}@example.com` }),
+    );
+
+    const siteA = await withTenantContext(appPool, { accountId: ownerA.id }, (client) =>
+      createSite(client, { id: newUlid(), slug: `site-a-${newUlid()}`, name: "Site A", ownerId: ownerA.id }),
+    );
+
+    // siteB's own connection asks for siteA's row by id — RLS scopes the
+    // query to siteB's own context, so the row that undeniably exists comes
+    // back as nothing rather than as a permission error.
+    const crossTenantRead = await withTenantContext(appPool, { siteId: newUlid() /* siteB, never created */ }, (client) =>
+      getSite(client, siteA.id),
+    );
+    expect(crossTenantRead).toBeNull();
+
+    const ownRead = await withTenantContext(appPool, { siteId: siteA.id }, (client) => getSite(client, siteA.id));
+    expect(ownRead?.id).toBe(siteA.id);
+  });
+
+  it("an insert whose owner_id does not match the account context is rejected by RLS, not just by application code", async () => {
+    const owner = await withTenantContext(migratePool, {}, (client) =>
+      createAccount(client, { id: newUlid(), email: `owner-${newUlid()}@example.com` }),
+    );
+    const attacker = await withTenantContext(migratePool, {}, (client) =>
+      createAccount(client, { id: newUlid(), email: `attacker-${newUlid()}@example.com` }),
+    );
+
+    await expect(
+      withTenantContext(appPool, { accountId: attacker.id }, (client) =>
+        createSite(client, { id: newUlid(), slug: `hijack-${newUlid()}`, name: "Hijack", ownerId: owner.id }),
+      ),
+    ).rejects.toThrow();
+  });
+
+  it("listSitesForAccount only ever returns the caller's own sites", async () => {
+    const ownerA = await withTenantContext(migratePool, {}, (client) =>
+      createAccount(client, { id: newUlid(), email: `list-a-${newUlid()}@example.com` }),
+    );
+    const ownerB = await withTenantContext(migratePool, {}, (client) =>
+      createAccount(client, { id: newUlid(), email: `list-b-${newUlid()}@example.com` }),
+    );
+    await withTenantContext(appPool, { accountId: ownerA.id }, (client) =>
+      createSite(client, { id: newUlid(), slug: `list-site-a-${newUlid()}`, name: "A", ownerId: ownerA.id }),
+    );
+    await withTenantContext(appPool, { accountId: ownerB.id }, (client) =>
+      createSite(client, { id: newUlid(), slug: `list-site-b-${newUlid()}`, name: "B", ownerId: ownerB.id }),
+    );
+
+    const asA = await withTenantContext(appPool, { accountId: ownerA.id }, (client) =>
+      listSitesForAccount(client, ownerA.id),
+    );
+    expect(asA.every((s) => s.ownerId === ownerA.id)).toBe(true);
+    expect(asA.some((s) => s.ownerId === ownerB.id)).toBe(false);
+  });
+
+  it("themes, pages and publishes are all scoped by site_id — a page created for one site is invisible under another's context", async () => {
+    const owner = await withTenantContext(migratePool, {}, (client) =>
+      createAccount(client, { id: newUlid(), email: `pages-${newUlid()}@example.com` }),
+    );
+    const siteA = await withTenantContext(appPool, { accountId: owner.id }, (client) =>
+      createSite(client, { id: newUlid(), slug: `pages-a-${newUlid()}`, name: "Pages A", ownerId: owner.id }),
+    );
+    const siteB = await withTenantContext(appPool, { accountId: owner.id }, (client) =>
+      createSite(client, { id: newUlid(), slug: `pages-b-${newUlid()}`, name: "Pages B", ownerId: owner.id }),
+    );
+
+    await withTenantContext(appPool, { siteId: siteA.id }, (client) =>
+      createTheme(client, { id: newUlid(), siteId: siteA.id, tokens: DEFAULT_THEME_TOKENS }),
+    );
+    const page = await withTenantContext(appPool, { siteId: siteA.id }, (client) =>
+      createPage(client, { id: newUlid(), siteId: siteA.id, slug: "home", title: "Home" }),
+    );
+
+    const themeFromB = await withTenantContext(appPool, { siteId: siteB.id }, (client) => getTheme(client, siteA.id));
+    expect(themeFromB).toBeNull();
+
+    const pageFromB = await withTenantContext(appPool, { siteId: siteB.id }, (client) =>
+      getPageDocument(client, page.id),
+    );
+    expect(pageFromB).toBeNull();
+
+    const pageFromA = await withTenantContext(appPool, { siteId: siteA.id }, (client) =>
+      getPageDocument(client, page.id),
+    );
+    expect(pageFromA?.id).toBe(page.id);
+  });
+});
+
+describe("optimistic concurrency (ADR-0006 / R17)", () => {
+  it("rejects a write against a stale version and leaves the prior write intact", async () => {
+    const owner = await withTenantContext(migratePool, {}, (client) =>
+      createAccount(client, { id: newUlid(), email: `oc-${newUlid()}@example.com` }),
+    );
+    const site = await withTenantContext(appPool, { accountId: owner.id }, (client) =>
+      createSite(client, { id: newUlid(), slug: `oc-${newUlid()}`, name: "OC", ownerId: owner.id }),
+    );
+    const page = await withTenantContext(appPool, { siteId: site.id }, (client) =>
+      createPage(client, { id: newUlid(), siteId: site.id, slug: "home", title: "Home" }),
+    );
+
+    const firstWrite = await withTenantContext(appPool, { siteId: site.id }, (client) =>
+      writePageDocument(client, {
+        pageId: page.id,
+        siteId: site.id,
+        title: "First edit",
+        slug: "home",
+        blocks: [],
+        expectedVersion: 0,
+      }),
+    );
+    expect(firstWrite.ok).toBe(true);
+
+    const staleWrite = await withTenantContext(appPool, { siteId: site.id }, (client) =>
+      writePageDocument(client, {
+        pageId: page.id,
+        siteId: site.id,
+        title: "Stale edit — should be rejected",
+        slug: "home",
+        blocks: [],
+        expectedVersion: 0, // stale: the page is now at version 1
+      }),
+    );
+
+    expect(staleWrite.ok).toBe(false);
+    if (!staleWrite.ok) {
+      expect(staleWrite.current.title).toBe("First edit");
+      expect(staleWrite.current.version).toBe(1);
+    }
+
+    const stillThere = await withTenantContext(appPool, { siteId: site.id }, (client) =>
+      getPageDocument(client, page.id),
+    );
+    expect(stillThere?.title).toBe("First edit");
+  });
+});
+
+describe("publish pointer swap (ADR-0007 / R5)", () => {
+  it("setLivePublish flips exactly one live publish per site, atomically", async () => {
+    const owner = await withTenantContext(migratePool, {}, (client) =>
+      createAccount(client, { id: newUlid(), email: `pub-${newUlid()}@example.com` }),
+    );
+    const site = await withTenantContext(appPool, { accountId: owner.id }, (client) =>
+      createSite(client, { id: newUlid(), slug: `pub-${newUlid()}`, name: "Pub", ownerId: owner.id }),
+    );
+
+    const first = await withTenantContext(appPool, { siteId: site.id }, async (client) => {
+      const publish = await createPublish(client, {
+        id: newUlid(),
+        siteId: site.id,
+        bundlePath: "bundles/first",
+        contentHash: "hash-1",
+        createdBy: owner.id,
+      });
+      await setLivePublish(client, site.id, publish.id);
+      return publish;
+    });
+
+    const second = await withTenantContext(appPool, { siteId: site.id }, async (client) => {
+      const publish = await createPublish(client, {
+        id: newUlid(),
+        siteId: site.id,
+        bundlePath: "bundles/second",
+        contentHash: "hash-2",
+        createdBy: owner.id,
+      });
+      await setLivePublish(client, site.id, publish.id);
+      return publish;
+    });
+
+    const live = await withTenantContext(appPool, { siteId: site.id }, (client) => getLivePublish(client, site.id));
+    expect(live?.id).toBe(second.id);
+
+    // Rollback: repoint at the first publish (R5 — restore any previous publish, not just undo the last one).
+    await withTenantContext(appPool, { siteId: site.id }, (client) => setLivePublish(client, site.id, first.id));
+    const rolledBack = await withTenantContext(appPool, { siteId: site.id }, (client) =>
+      getLivePublish(client, site.id),
+    );
+    expect(rolledBack?.id).toBe(first.id);
+  });
+});

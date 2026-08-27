@@ -1,0 +1,21 @@
+{
+  "name": "@prefab/ci-checks",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "containment": "tsx src/cli/containment.ts",
+    "parity": "tsx src/cli/parity.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test:unit": "vitest run"
+  },
+  "dependencies": {
+    "@prefab/commands": "workspace:*",
+    "@prefab/api": "workspace:*"
+  },
+  "devDependencies": {
+    "tsx": "4.19.2",
+    "typescript": "5.7.3",
+    "vitest": "3.0.4"
+  }
+}
