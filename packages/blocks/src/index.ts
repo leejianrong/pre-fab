@@ -4,3 +4,4 @@ export * from "./registry.js";
 export * from "./hero/index.js";
 export * from "./heading/index.js";
 export * from "./button/index.js";
+export * from "./embed/index.js";

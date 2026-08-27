@@ -6,6 +6,8 @@ import { Heading } from "./heading/Heading.js";
 import { headingBlockDefinition, type HeadingProps } from "./heading/schema.js";
 import { Button } from "./button/Button.js";
 import { buttonBlockDefinition, type ButtonProps } from "./button/schema.js";
+import { Embed } from "./embed/Embed.js";
+import { embedBlockDefinition, type EmbedProps } from "./embed/schema.js";
 
 /**
  * One entry per first-party block: its schema-half definition
@@ -27,6 +29,11 @@ const BLOCK_ENTRIES: BlockEntry[] = [
   { definition: heroBlockDefinition, Component: Hero, summary: (props: HeroProps) => props.heading },
   { definition: headingBlockDefinition, Component: Heading, summary: (props: HeadingProps) => props.text },
   { definition: buttonBlockDefinition, Component: Button, summary: (props: ButtonProps) => props.label },
+  {
+    definition: embedBlockDefinition,
+    Component: Embed,
+    summary: (props: EmbedProps) => (props.html.trim() ? "embedded content" : "empty embed"),
+  },
 ];
 
 /**

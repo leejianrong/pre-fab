@@ -3,10 +3,12 @@ import type { ComponentType } from "react";
 import { Hero, HERO_BLOCK_TYPE, heroDefaultProps, resolveThemeTokens, themeTokensToStyleVars } from "@prefab/blocks";
 import { Heading, HEADING_BLOCK_TYPE, headingDefaultProps } from "@prefab/blocks";
 import { Button, BUTTON_BLOCK_TYPE, buttonDefaultProps } from "@prefab/blocks";
+import { Embed, EMBED_BLOCK_TYPE, embedDefaultProps } from "@prefab/blocks";
 import type { ThemeTokens } from "@prefab/schema";
 import { heroFields } from "./hero-fields.js";
 import { headingFields } from "./heading-fields.js";
 import { buttonFields } from "./button-fields.js";
+import { embedFields } from "./embed-fields.js";
 
 /**
  * The only file besides apps/editor allowed to import @puckeditor/core
@@ -59,6 +61,13 @@ const BLOCK_ENTRIES: BlockEntry<any>[] = [
     fields: buttonFields,
     defaultProps: buttonDefaultProps,
     Component: Button,
+  },
+  {
+    type: EMBED_BLOCK_TYPE,
+    label: "Embed (raw HTML)",
+    fields: embedFields,
+    defaultProps: embedDefaultProps,
+    Component: Embed,
   },
 ];
 
