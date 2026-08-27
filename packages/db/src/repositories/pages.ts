@@ -1,5 +1,5 @@
 import type { PoolClient } from "pg";
-import type { BlockNode, PageDocument } from "@prefab/schema";
+import type { BlockNode, BlockResponsive, PageDocument } from "@prefab/schema";
 
 interface RawPageRow {
   id: string;
@@ -17,6 +17,7 @@ interface RawBlockRow {
   order: number;
   schema_version: number;
   props: Record<string, unknown>;
+  responsive: BlockResponsive;
 }
 
 function rowToBlockNode(row: RawBlockRow): BlockNode {
@@ -27,6 +28,7 @@ function rowToBlockNode(row: RawBlockRow): BlockNode {
     order: Number(row.order),
     schemaVersion: row.schema_version,
     props: row.props,
+    responsive: row.responsive,
   };
 }
 
@@ -152,8 +154,8 @@ export async function writePageDocument(
   await client.query(`DELETE FROM blocks WHERE page_id = $1`, [input.pageId]);
   for (const block of input.blocks) {
     await client.query(
-      `INSERT INTO blocks (id, page_id, site_id, type, parent, "order", schema_version, props)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      `INSERT INTO blocks (id, page_id, site_id, type, parent, "order", schema_version, props, responsive)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
       [
         block.id,
         input.pageId,
@@ -163,6 +165,7 @@ export async function writePageDocument(
         block.order,
         block.schemaVersion,
         JSON.stringify(block.props),
+        JSON.stringify(block.responsive),
       ],
     );
   }

@@ -154,6 +154,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
         order: 1000,
         schemaVersion: 1,
         props: { ...heroDefaultProps },
+        responsive: {},
       };
       const written = await writePageDocument(client, {
         pageId: page.id,

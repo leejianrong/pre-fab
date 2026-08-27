@@ -58,6 +58,7 @@ test.describe("integrity (ADR-0006, R17, R18)", () => {
             order: 2000,
             schemaVersion: 1,
             props: { heading: "valid-ish", notARealField: true },
+            responsive: {},
           },
         ],
         expectedVersion: site.page.version,

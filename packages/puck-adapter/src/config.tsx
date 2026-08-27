@@ -1,5 +1,5 @@
 import type { Config, DefaultRootRenderProps } from "@puckeditor/core";
-import { Hero, HERO_BLOCK_TYPE, heroDefaultProps, themeTokensToStyleVars, type HeroProps } from "@prefab/blocks";
+import { Hero, HERO_BLOCK_TYPE, heroDefaultProps, resolveThemeTokens, themeTokensToStyleVars, type HeroProps } from "@prefab/blocks";
 import type { ThemeTokens } from "@prefab/schema";
 import { heroFields } from "./hero-fields.js";
 
@@ -17,9 +17,12 @@ import { heroFields } from "./hero-fields.js";
  * WYSIWYG guarantee this slice tests.
  */
 export function createPuckConfig(tokens: ThemeTokens): Config {
+  const resolvedTokens = resolveThemeTokens(tokens);
   return {
     root: {
-      render: ({ children }: DefaultRootRenderProps) => <div style={themeTokensToStyleVars(tokens)}>{children}</div>,
+      render: ({ children }: DefaultRootRenderProps) => (
+        <div style={themeTokensToStyleVars(resolvedTokens)}>{children}</div>
+      ),
     },
     components: {
       [HERO_BLOCK_TYPE]: {

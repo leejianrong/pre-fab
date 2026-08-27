@@ -13,7 +13,7 @@
  */
 export const SITE_PAGE_ASTRO = `---
 import data from "../data.json";
-import { blockComponents, themeTokensToStyleVars } from "@prefab/blocks";
+import { blockComponents, resolveThemeTokens, themeTokensToStyleVars } from "@prefab/blocks";
 
 export function getStaticPaths() {
   return data.pages.map((page) => ({
@@ -23,7 +23,7 @@ export function getStaticPaths() {
 }
 
 const { page, theme, site } = Astro.props;
-const themeVars = themeTokensToStyleVars(theme.tokens);
+const themeVars = themeTokensToStyleVars(resolveThemeTokens(theme.tokens));
 ---
 <html lang="en">
   <head>
@@ -34,7 +34,10 @@ const themeVars = themeTokensToStyleVars(theme.tokens);
   <body style={themeVars} data-pf-site={site.id} data-pf-page={page.id}>
     {page.blocks.map((block) => {
       const Component = blockComponents[block.type];
-      return Component ? <Component {...block.props} /> : null;
+      // R19: a block type unknown to this build is preserved in the
+      // document and shown as a placeholder in the editor, but skipped
+      // here rather than crashing the whole page's publish.
+      return Component ? <Component {...block.props} blockId={block.id} responsive={block.responsive} /> : null;
     })}
   </body>
 </html>

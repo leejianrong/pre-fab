@@ -1,5 +1,6 @@
 export * from "./ids.js";
 export * from "./errors.js";
+export * from "./responsive.js";
 export * from "./block.js";
 export * from "./document.js";
 export * from "./theme.js";
