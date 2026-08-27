@@ -11,6 +11,7 @@ export const API_MUTATIONS = [
   { name: "theme.update", method: "PUT", path: "/v1/sites/:siteId/theme" },
   { name: "page.create", method: "POST", path: "/v1/sites/:siteId/pages" },
   { name: "page.write", method: "PUT", path: "/v1/sites/:siteId/pages/:pageId" },
+  { name: "asset.upload", method: "POST", path: "/v1/sites/:siteId/assets" },
   { name: "token.create", method: "POST", path: "/v1/sites/:siteId/tokens" },
   { name: "publish.create", method: "POST", path: "/v1/sites/:siteId/publish" },
   { name: "publish.rollback", method: "POST", path: "/v1/sites/:siteId/publishes/:publishId/rollback" },

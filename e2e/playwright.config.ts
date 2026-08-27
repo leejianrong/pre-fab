@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 
 const repoRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const bundleStoreDir = path.join(repoRoot, "e2e", ".data", "bundles");
+const assetStoreDir = path.join(repoRoot, "e2e", ".data", "assets");
 
 // This sandboxed dev environment pre-installs Chromium at a revision
 // Playwright's own resolver doesn't expect, and points this at it directly
@@ -20,6 +21,7 @@ const apiEnv = {
   API_PORT: "8788",
   EDITOR_ORIGIN: "http://localhost:5174",
   BUNDLE_STORE_DIR: bundleStoreDir,
+  ASSET_STORE_DIR: assetStoreDir,
 };
 
 export default defineConfig({

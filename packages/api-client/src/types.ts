@@ -72,4 +72,29 @@ export interface ConflictDetails {
   diff: DocumentDiff;
 }
 
+export interface AssetVariant {
+  width: number;
+  key: string;
+}
+
+export interface Asset {
+  id: string;
+  siteId: string;
+  sha256: string;
+  contentType: string;
+  byteSize: number;
+  filename: string;
+  width: number | null;
+  height: number | null;
+  variants: AssetVariant[];
+  createdAt: string;
+  createdBy: string;
+}
+
+export interface UploadAssetInput {
+  filename: string;
+  contentType: string;
+  dataBase64: string;
+}
+
 export type { PageDocument, ThemeDocument, ThemeTokens, BlockNode, DocumentDiff };

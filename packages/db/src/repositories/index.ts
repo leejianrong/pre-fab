@@ -5,3 +5,4 @@ export * from "./sites.js";
 export * from "./themes.js";
 export * from "./pages.js";
 export * from "./publishes.js";
+export * from "./assets.js";

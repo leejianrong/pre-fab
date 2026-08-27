@@ -31,12 +31,16 @@ const appPool = new Pool({ connectionString: appUrl });
 
 let app: FastifyInstance;
 let bundleStoreDir: string;
+let assetStoreDir: string;
 
 beforeAll(async () => {
   await runMigrations(migratePool);
-  await migratePool.query("TRUNCATE publishes, blocks, pages, themes, sites, api_tokens, sessions, accounts CASCADE");
+  await migratePool.query(
+    "TRUNCATE assets, publishes, blocks, pages, themes, sites, api_tokens, sessions, accounts CASCADE",
+  );
   bundleStoreDir = await mkdtemp(path.join(tmpdir(), "pf-api-bundles-"));
-  app = buildApp({ pool: appPool, bundleStoreDir });
+  assetStoreDir = await mkdtemp(path.join(tmpdir(), "pf-api-assets-"));
+  app = buildApp({ pool: appPool, bundleStoreDir, assetStoreDir });
   await app.ready();
 });
 
@@ -45,6 +49,7 @@ afterAll(async () => {
   await migratePool.end();
   await appPool.end();
   if (bundleStoreDir) await rm(bundleStoreDir, { recursive: true, force: true });
+  if (assetStoreDir) await rm(assetStoreDir, { recursive: true, force: true });
 });
 
 async function seedAccountAndLogin(email: string) {
