@@ -1,12 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Puck, type Data } from "@puckeditor/core";
-import { HERO_BLOCK_TYPE } from "@prefab/blocks";
-import { createPuckConfig, pageDocumentToPuckData, puckDataToPageDocument, PuckIdBridge } from "@prefab/puck-adapter";
+import {
+  createPuckConfig,
+  pageDocumentToPuckData,
+  puckDataToPageDocument,
+  PuckIdBridge,
+  PUCK_KNOWN_TYPES,
+} from "@prefab/puck-adapter";
 import { ApiClientError, type PageDocument, type SiteSummary, type ThemeDocument } from "@prefab/api-client";
 import type { BlockNode } from "@prefab/schema";
+import { UnknownBlockList } from "./UnknownBlockList.js";
 import { api } from "./api.js";
-
-const KNOWN_TYPES = new Set([HERO_BLOCK_TYPE]);
 
 type Status = "idle" | "saving" | "saved" | "publishing" | "published";
 
@@ -25,6 +29,10 @@ export function SiteEditor({ siteId, onBack }: { siteId: string; onBack: () => v
   const latestPuckData = useRef<Data | null>(null);
   const unknownBlocksRef = useRef<BlockNode[]>([]);
   const expectedVersionRef = useRef(0);
+  // Mirrors unknownBlocksRef into render-visible state (R19: "shows a
+  // placeholder in the editor") — the ref alone drives handleSave's
+  // reconstruction of the document but doesn't itself trigger a re-render.
+  const [unknownBlocks, setUnknownBlocks] = useState<BlockNode[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -51,10 +59,17 @@ export function SiteEditor({ siteId, onBack }: { siteId: string; onBack: () => v
   // object and reset whatever the user is mid-editing.
   const initialPuckData = useMemo(() => {
     if (!page) return null;
-    const { puckData, unknownBlocks } = pageDocumentToPuckData(page, KNOWN_TYPES);
-    unknownBlocksRef.current = unknownBlocks;
+    const { puckData, unknownBlocks: unknown } = pageDocumentToPuckData(page, PUCK_KNOWN_TYPES);
+    unknownBlocksRef.current = unknown;
     return puckData;
   }, [page?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Mirrors the ref into state once the memo above has run, so the
+  // placeholder list (R19) re-renders when a newly loaded page has
+  // unknown-typed blocks — a plain useMemo can't itself trigger a render.
+  useEffect(() => {
+    setUnknownBlocks(unknownBlocksRef.current);
+  }, [page?.id]);
 
   async function handleSave() {
     if (!page || !latestPuckData.current) return;
@@ -135,6 +150,7 @@ export function SiteEditor({ siteId, onBack }: { siteId: string; onBack: () => v
         {status === "saved" ? <span style={{ color: "#16a34a", fontSize: "0.875rem" }}>Saved</span> : null}
         {status === "published" ? <span style={{ color: "#16a34a", fontSize: "0.875rem" }}>Live</span> : null}
       </header>
+      <UnknownBlockList blocks={unknownBlocks} />
       <div style={{ flex: 1, minHeight: 0 }}>
         <Puck
           key={page.id}
