@@ -7,9 +7,10 @@ import {
   PuckIdBridge,
   PUCK_KNOWN_TYPES,
 } from "@prefab/puck-adapter";
-import { ApiClientError, type PageDocument, type SiteSummary, type ThemeDocument } from "@prefab/api-client";
+import { ApiClientError, type PageDocument, type SiteSummary, type ThemeDocument, type ThemeTokens } from "@prefab/api-client";
 import type { BlockNode } from "@prefab/schema";
 import { UnknownBlockList } from "./UnknownBlockList.js";
+import { ThemeEditor } from "./ThemeEditor.js";
 import { api } from "./api.js";
 
 type Status = "idle" | "saving" | "saved" | "publishing" | "published";
@@ -33,6 +34,7 @@ export function SiteEditor({ siteId, onBack }: { siteId: string; onBack: () => v
   // placeholder in the editor") — the ref alone drives handleSave's
   // reconstruction of the document but doesn't itself trigger a re-render.
   const [unknownBlocks, setUnknownBlocks] = useState<BlockNode[]>([]);
+  const [themeEditorOpen, setThemeEditorOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -95,6 +97,15 @@ export function SiteEditor({ siteId, onBack }: { siteId: string; onBack: () => v
     }
   }
 
+  // Restyles every block with no document mutation (SLICES.md): only
+  // `theme` changes state here, never `page` — `config` above is derived
+  // from `theme`, so the Puck canvas re-renders the *same* document
+  // through new CSS variables the moment this resolves.
+  async function handleSaveTheme(tokens: ThemeTokens) {
+    const saved = await api.updateTheme(siteId, tokens);
+    setTheme(saved);
+  }
+
   async function handlePublish() {
     setStatus("publishing");
     setError(null);
@@ -137,6 +148,9 @@ export function SiteEditor({ siteId, onBack }: { siteId: string; onBack: () => v
         </button>
         <strong>{site.name}</strong>
         <div style={{ flex: 1 }} />
+        <button onClick={() => setThemeEditorOpen(true)} style={{ padding: "0.4rem 0.8rem" }}>
+          Theme
+        </button>
         <button onClick={handleSave} disabled={status === "saving"} style={{ padding: "0.4rem 0.8rem" }}>
           {status === "saving" ? "Saving…" : "Save"}
         </button>
@@ -161,6 +175,9 @@ export function SiteEditor({ siteId, onBack }: { siteId: string; onBack: () => v
           }}
         />
       </div>
+      {themeEditorOpen ? (
+        <ThemeEditor tokens={theme.tokens} onSave={handleSaveTheme} onClose={() => setThemeEditorOpen(false)} />
+      ) : null}
     </div>
   );
 }
