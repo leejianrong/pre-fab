@@ -4,7 +4,7 @@ A no-code website builder where the site is a portable, diffable artifact the
 customer owns. See `PLAN.md` for the problem and requirements (`R1`–`R20`),
 `docs/adr/` for binding decisions, and `SLICES.md` for the build sequence.
 
-**Status: Slices 1–3 are built.** Slice 1 proved the one-write-path loop with
+**Status: Slices 1–4 are built.** Slice 1 proved the one-write-path loop with
 a single Hero block: create, edit in the Puck canvas, edit by CLI/MCP/pull-push
 round trip, publish to a live, rollback-able bundle. Slice 2 added the full
 first-party block library, theme tokens, block-level responsive overrides and
@@ -12,13 +12,28 @@ content-addressed asset uploads. Slice 3 adds real signup and email
 verification (`dev/login` still exists, for local dev and tests), eight
 templates authored as exported site trees with fork-on-use instantiation
 (ADR-0011), a guided first edit and a publish celebration moment, and
-Lighthouse/axe-core budgets per template in CI.
+Lighthouse/axe-core budgets per template in CI. Slice 4 adds custom domains:
+DNS validation and apex/subdomain classification, a Cloudflare SSL-for-SaaS
+integration behind a provider interface, a dashboard panel with DNS
+instructions and actionable errors, and the Host-header-based public routing
+that also makes every site's free `<slug>.PUBLIC_SITE_HOST` address work for
+the first time.
 
-Slice 3's R1 acceptance test — five unassisted first-time users reaching a
-published site in under ten minutes, on recorded sessions — is a human user
-study and isn't something this repo's automation can certify by itself; the
-Playwright specs (`signup-flow.spec.ts`, `template-gallery.spec.ts`) and the
-per-template Lighthouse/axe budgets are the automatable parts of that bar.
+Two things worth knowing about Slice 4 specifically:
+
+- **No Cloudflare account or domain exists in this environment**, so every
+  test here runs against an in-memory `FakeDomainProvider`
+  (`apps/api/src/lib/domain-provider.ts`) rather than real Cloudflare — the
+  same "sandbox or a recorded fixture" testing approach PLAN.md already
+  commits to for Stripe/calendar providers. `CloudflareDomainProvider` in the
+  same file is written from Cloudflare's public API docs but has never been
+  run against a live account; treat it as an informed draft, not a verified
+  integration, until it's exercised against a real zone.
+- Slice 3's R1 acceptance test — five unassisted first-time users reaching a
+  published site in under ten minutes, on recorded sessions — is a human user
+  study and isn't something this repo's automation can certify by itself; the
+  Playwright specs and the per-template Lighthouse/axe budgets are the
+  automatable parts of that bar.
 
 ## Monorepo layout
 
@@ -82,6 +97,8 @@ pnpm run db:migrate          # runs packages/db/migrations against prefab_dev
   browser requests stay same-origin (cross-origin cookies are unreliable on
   `localhost` across ports).
 - `PREFAB_API_URL`, `PREFAB_TOKEN` — used by the CLI and MCP server.
+- `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ZONE_ID` — optional (Slice 4). Unset
+  (the default everywhere, including CI) uses the fake domain provider.
 
 ### Running the pieces
 
@@ -99,7 +116,10 @@ dev-login with any seeded email, then pick a template or start blank. Or from
 the CLI: `prefab signup <email>` + `prefab verify <email> <code>` (or
 `prefab login <email>` for the seeded-account shortcut), `prefab template list`,
 `prefab template use <templateId> <slug> <name>`, `prefab pull`, edit
-`pages/*.json`, `prefab push`, `prefab publish`.
+`pages/*.json`, `prefab push`, `prefab publish`. Every site is already
+reachable at `<slug>.<PUBLIC_SITE_HOST>` once published; `prefab domain add
+<siteId> <hostname>` adds a custom one (`prefab domain list`/`verify`/`remove`
+manage it from there).
 
 ## Tests
 

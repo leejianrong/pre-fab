@@ -54,3 +54,13 @@ export const CreateSiteFromTemplateBodySchema = z.object({
   slug: z.string().min(1).max(64),
   name: z.string().min(1).max(120),
 });
+
+export const AddDomainBodySchema = z.object({
+  hostname: z.string().min(1).max(253),
+});
+
+/** Dev-only (see `/v1/dev/domains/:providerHostnameId/advance`) — drives the FakeDomainProvider the same way real DNS propagation completing (or failing) would. */
+export const AdvanceFakeDomainBodySchema = z.object({
+  status: z.enum(["pending", "active", "failed"]),
+  verificationErrors: z.array(z.string()).optional(),
+});

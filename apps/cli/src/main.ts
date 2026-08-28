@@ -9,6 +9,10 @@ import {
   createContext,
   diff,
   devLogin,
+  domainAdd,
+  domainList,
+  domainVerify,
+  domainRemove,
   exportSite,
   importSite,
   pageCreate,
@@ -102,6 +106,24 @@ template
   .action((templateId, slug, name) =>
     runCommand(globalOptions(), async () => siteCreateFromTemplate.run(await resolveContext(), { templateId, slug, name })),
   );
+
+const domain = program.command("domain").description("Manage custom domains (Slice 4, ADR-0007)");
+domain
+  .command("add <siteId> <hostname>")
+  .description("Add a custom domain — returns the DNS record to add")
+  .action((siteId, hostname) => runCommand(globalOptions(), async () => domainAdd.run(await resolveContext(), { siteId, hostname })));
+domain
+  .command("list <siteId>")
+  .description("List a site's custom domains and their status")
+  .action((siteId) => runCommand(globalOptions(), async () => domainList.run(await resolveContext(), { siteId })));
+domain
+  .command("verify <siteId> <domainId>")
+  .description("Re-check a domain's DNS/certificate status now")
+  .action((siteId, domainId) => runCommand(globalOptions(), async () => domainVerify.run(await resolveContext(), { siteId, domainId })));
+domain
+  .command("remove <siteId> <domainId>")
+  .description("Remove a custom domain — deprovisions the certificate and stops serving there")
+  .action((siteId, domainId) => runCommand(globalOptions(), async () => domainRemove.run(await resolveContext(), { siteId, domainId })));
 
 const site = program.command("site").description("Manage sites");
 site

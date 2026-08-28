@@ -53,3 +53,13 @@ export async function listSitesForAccount(client: PoolClient, accountId: string)
   const result = await client.query<RawSiteRow>(`SELECT * FROM sites WHERE owner_id = $1 ORDER BY created_at`, [accountId]);
   return result.rows.map(rowToSite);
 }
+
+/**
+ * The public `<slug>.PUBLIC_SITE_HOST` routing path: no site_id is known
+ * yet — this relies on `sites_public_slug_read`'s RLS policy, not on any
+ * tenant context. Call with `withTenantContext(pool, {})`.
+ */
+export async function getSiteBySlug(client: PoolClient, slug: string): Promise<SiteRow | null> {
+  const result = await client.query<RawSiteRow>(`SELECT * FROM sites WHERE slug = $1`, [slug]);
+  return result.rows[0] ? rowToSite(result.rows[0]) : null;
+}

@@ -21,6 +21,11 @@ export const schemas = {
   "template.list": {},
   "site.createFromTemplate": { templateId: z.string().min(1), slug: z.string().min(1), name: z.string().min(1) },
 
+  "domain.add": { siteId: z.string(), hostname: z.string().min(1) },
+  "domain.list": { siteId: z.string() },
+  "domain.verify": { siteId: z.string(), domainId: z.string() },
+  "domain.remove": { siteId: z.string(), domainId: z.string() },
+
   "theme.get": { siteId: z.string() },
   "theme.set": { siteId: z.string(), tokens: ThemeTokensSchema },
 

@@ -3,6 +3,7 @@ import type {
   ConflictDetails,
   CreateSiteFromTemplateResult,
   CreateSiteResult,
+  DomainWithInstruction,
   IssuedApiToken,
   PageDocument,
   PageSummary,
@@ -168,6 +169,23 @@ export class ApiClient {
 
   createSiteFromTemplate(templateId: string, input: { slug: string; name: string }): Promise<CreateSiteFromTemplateResult> {
     return this.request("POST", `/v1/templates/${templateId}/use`, input);
+  }
+
+  // ---- domain.add / domain.list / domain.verify / domain.remove (Slice 4) ----
+  addDomain(siteId: string, hostname: string): Promise<DomainWithInstruction> {
+    return this.request("POST", `/v1/sites/${siteId}/domains`, { hostname });
+  }
+
+  listDomains(siteId: string): Promise<DomainWithInstruction[]> {
+    return this.request("GET", `/v1/sites/${siteId}/domains`);
+  }
+
+  verifyDomain(siteId: string, domainId: string): Promise<DomainWithInstruction> {
+    return this.request("POST", `/v1/sites/${siteId}/domains/${domainId}/verify`);
+  }
+
+  removeDomain(siteId: string, domainId: string): Promise<{ removed: true }> {
+    return this.request("DELETE", `/v1/sites/${siteId}/domains/${domainId}`);
   }
 
   // ---- site.create / site.list / site.get ----

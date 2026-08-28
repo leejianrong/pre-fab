@@ -1,7 +1,7 @@
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import path from "node:path";
-import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
+import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import cookie from "@fastify/cookie";
 import cors from "@fastify/cors";
 import { z } from "zod";
@@ -31,6 +31,13 @@ import {
   createAsset,
   getAssetBySha256,
   listAssetsForSite,
+  createCustomDomain,
+  getCustomDomain,
+  listCustomDomainsForSite,
+  updateCustomDomainStatus,
+  deleteCustomDomain,
+  findActiveCustomDomainByHostname,
+  getSiteBySlug,
   type Pool,
   type PoolClient,
   type SiteRow,
@@ -54,12 +61,21 @@ import { generateRawToken, generateVerificationCode } from "./lib/tokens.js";
 import { buildSiteOutline } from "./lib/outline.js";
 import { createOutboxEmailSender } from "./lib/email.js";
 import { extensionFor, processImage, readAssetFile, sha256Hex, writeAssetFile } from "./lib/asset-storage.js";
+import { classifyDomain, dnsInstructionFor, normalizeHostname, DomainValidationError, type DnsInstruction } from "./lib/domains.js";
+import {
+  createDomainProvider,
+  FakeDomainProvider,
+  type DomainProvider,
+  type ProviderHostnameStatus,
+} from "./lib/domain-provider.js";
 import {
   CreatePageBodySchema,
   CreateSiteBodySchema,
   CreateSiteFromTemplateBodySchema,
   CreateTokenBodySchema,
   DevLoginBodySchema,
+  AddDomainBodySchema,
+  AdvanceFakeDomainBodySchema,
   SignupBodySchema,
   UpdateThemeBodySchema,
   UploadAssetBodySchema,
@@ -71,6 +87,10 @@ export interface AppDeps {
   pool: Pool;
   bundleStoreDir: string;
   assetStoreDir: string;
+  /** The platform's own site-hosting domain (`<slug>.<platformHost>`) — see .env.example's PUBLIC_SITE_HOST. Defaults to "prefab.local" for dev. */
+  platformHost?: string;
+  /** Injectable so tests (and the dev-only advance endpoint) can reach the exact same provider instance the routes use. Defaults to createDomainProvider()'s env-based choice. */
+  domainProvider?: DomainProvider;
 }
 
 function parseBody<T>(schema: z.ZodType<T>, body: unknown): T {
@@ -79,6 +99,33 @@ function parseBody<T>(schema: z.ZodType<T>, body: unknown): T {
     throw validationError("invalid request body", result.error.issues);
   }
   return result.data;
+}
+
+/**
+ * Shared by the explicit `/v1/bundles/:hash/*` route and the host-based
+ * public-routing fallback below — both ultimately serve "this file, out of
+ * this content-addressed bundle directory," so the path-traversal guard
+ * and content-type logic live in exactly one place.
+ */
+async function serveBundleFile(
+  bundleStoreDir: string,
+  contentHash: string,
+  wildcardPath: string,
+  reply: FastifyReply,
+): Promise<FastifyReply> {
+  const relativePath = wildcardPath === "" || wildcardPath.endsWith("/") ? `${wildcardPath}index.html` : wildcardPath;
+  const bundleDir = path.join(bundleStoreDir, contentHash);
+  const filePath = path.join(bundleDir, relativePath);
+  if (!filePath.startsWith(bundleDir)) {
+    throw notFound("not found");
+  }
+  try {
+    await stat(filePath);
+  } catch {
+    throw notFound("not found");
+  }
+  reply.type(filePath.endsWith(".html") ? "text/html; charset=utf-8" : "application/octet-stream");
+  return reply.send(createReadStream(filePath));
 }
 
 async function siteManifestFor(client: PoolClient, site: SiteRow): Promise<SiteManifest> {
@@ -93,8 +140,22 @@ async function siteManifestFor(client: PoolClient, site: SiteRow): Promise<SiteM
   };
 }
 
+/** Every custom domain CNAMEs (or ALIAS/ANAMEs, at the apex) to the same platform-wide target — Cloudflare identifies the tenant from the Host header, not from a per-domain target (real Cloudflare-for-SaaS behaviour). */
+function cnameTargetFor(platformHost: string): string {
+  return `customer-domains.${platformHost}`;
+}
+
+function mapProviderStatus(status: ProviderHostnameStatus): "pending_dns" | "active" | "failed" {
+  if (status === "active") return "active";
+  if (status === "failed") return "failed";
+  return "pending_dns";
+}
+
 export function buildApp(deps: AppDeps): FastifyInstance {
   const { pool, bundleStoreDir, assetStoreDir } = deps;
+  const platformHost = deps.platformHost ?? "prefab.local";
+  const domainProvider = deps.domainProvider ?? createDomainProvider();
+  const platformCnameTarget = cnameTargetFor(platformHost);
   // Default is 1 MiB — too small for asset.upload's JSON+base64 body (up
   // to ~10.9 MiB for an 8 MiB file at base64's ~4/3 expansion). Comfortably
   // above that so a legitimately-sized upload never hits Fastify's own
@@ -525,6 +586,114 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     return { id: token.id, name: token.name, token: raw, expiresAt: token.expiresAt };
   });
 
+  // ---- domain.add / domain.list (Slice 4, ADR-0007) ----
+  function dnsInstructionForDomain(hostname: string): DnsInstruction {
+    const classification = classifyDomain(hostname, platformHost);
+    return dnsInstructionFor(classification, platformCnameTarget);
+  }
+
+  app.post<{ Params: { siteId: string } }>("/v1/sites/:siteId/domains", async (request) => {
+    const principal = await requirePrincipal(request);
+    const { siteId, accountId } = await authorizeSite(pool, principal, request.params.siteId);
+    const body = parseBody(AddDomainBodySchema, request.body);
+
+    const hostname = normalizeHostname(body.hostname);
+    let classification;
+    try {
+      classification = classifyDomain(hostname, platformHost);
+    } catch (error) {
+      if (error instanceof DomainValidationError) throw validationError(error.message);
+      throw error;
+    }
+
+    const created = await domainProvider.createCustomHostname(hostname);
+
+    const domain = await withTenantContext(pool, { siteId, accountId }, (client) =>
+      createCustomDomain(client, {
+        id: newUlid(),
+        siteId,
+        hostname,
+        isApex: classification.isApex,
+        providerHostnameId: created.providerHostnameId,
+        cnameTarget: platformCnameTarget,
+        createdBy: accountId,
+      }),
+    );
+
+    return { domain, dnsInstruction: dnsInstructionForDomain(hostname) };
+  });
+
+  app.get<{ Params: { siteId: string } }>("/v1/sites/:siteId/domains", async (request) => {
+    const principal = await requirePrincipal(request);
+    const { siteId } = await authorizeSite(pool, principal, request.params.siteId);
+    const domains = await withTenantContext(pool, { siteId }, (client) => listCustomDomainsForSite(client, siteId));
+    return domains.map((domain) => ({ domain, dnsInstruction: dnsInstructionForDomain(domain.hostname) }));
+  });
+
+  // ---- domain.verify (Slice 4): re-checks the provider now, rather than waiting for the next lazy poll ----
+  app.post<{ Params: { siteId: string; domainId: string } }>(
+    "/v1/sites/:siteId/domains/:domainId/verify",
+    async (request) => {
+      const principal = await requirePrincipal(request);
+      const { siteId } = await authorizeSite(pool, principal, request.params.siteId);
+      const { domainId } = request.params;
+
+      const domain = await withTenantContext(pool, { siteId }, (client) => getCustomDomain(client, siteId, domainId));
+      if (!domain) throw notFound("domain not found");
+      if (!domain.providerHostnameId) {
+        return { domain, dnsInstruction: dnsInstructionForDomain(domain.hostname) };
+      }
+
+      const status = await domainProvider.getCustomHostnameStatus(domain.providerHostnameId);
+      const updated = await withTenantContext(pool, { siteId }, (client) =>
+        updateCustomDomainStatus(client, domainId, {
+          status: mapProviderStatus(status.status),
+          verificationError: status.verificationErrors.length > 0 ? status.verificationErrors.join("; ") : null,
+        }),
+      );
+
+      return { domain: updated, dnsInstruction: dnsInstructionForDomain(updated.hostname) };
+    },
+  );
+
+  // ---- domain.remove (Slice 4): deprovisioning the provider hostname is best-effort — the DB row is what actually controls whether this build's host-routing serves the domain, so it is removed regardless of whether the provider call succeeds. ----
+  app.delete<{ Params: { siteId: string; domainId: string } }>("/v1/sites/:siteId/domains/:domainId", async (request) => {
+    const principal = await requirePrincipal(request);
+    const { siteId } = await authorizeSite(pool, principal, request.params.siteId);
+    const { domainId } = request.params;
+
+    const domain = await withTenantContext(pool, { siteId }, (client) => getCustomDomain(client, siteId, domainId));
+    if (!domain) throw notFound("domain not found");
+
+    if (domain.providerHostnameId) {
+      try {
+        await domainProvider.deleteCustomHostname(domain.providerHostnameId);
+      } catch (error) {
+        app.log.error(error, "failed to deprovision custom hostname with the domain provider — removing our record anyway");
+      }
+    }
+
+    await withTenantContext(pool, { siteId }, (client) => deleteCustomDomain(client, siteId, domainId));
+    return { removed: true };
+  });
+
+  // ---- Dev-only: drive the fake domain provider's state, the same "dev-only
+  // bootstrap, not a product mutation" pattern as /v1/dev/login and
+  // /v1/dev/emails — how e2e and local dev simulate DNS propagation
+  // completing (or failing) with no real DNS involved. A no-op 404 when the
+  // real Cloudflare provider is configured, since there is nothing fake to advance. ----
+  app.post<{ Params: { providerHostnameId: string } }>(
+    "/v1/dev/domains/:providerHostnameId/advance",
+    async (request) => {
+      if (!(domainProvider instanceof FakeDomainProvider)) {
+        throw notFound("the fake domain provider is not in use — nothing to advance");
+      }
+      const body = parseBody(AdvanceFakeDomainBodySchema, request.body);
+      domainProvider.advance(request.params.providerHostnameId, body.status, body.verificationErrors ?? []);
+      return { ok: true };
+    },
+  );
+
   // ---- site.outline (R14) ----
   app.get<{ Params: { siteId: string } }>("/v1/sites/:siteId/outline", async (request) => {
     const principal = await requirePrincipal(request);
@@ -596,19 +765,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   // ADR-0007) in slice 1 — content-addressed, so this route works
   // identically for the live pointer and for any preview build. ----
   app.get<{ Params: { hash: string; "*": string } }>("/v1/bundles/:hash/*", async (request, reply) => {
-    const wildcard = request.params["*"] ?? "";
-    const relativePath = wildcard === "" || wildcard.endsWith("/") ? `${wildcard}index.html` : wildcard;
-    const filePath = path.join(bundleStoreDir, request.params.hash, relativePath);
-    if (!filePath.startsWith(path.join(bundleStoreDir, request.params.hash))) {
-      throw notFound("not found");
-    }
-    try {
-      await stat(filePath);
-    } catch {
-      throw notFound("not found");
-    }
-    reply.type(filePath.endsWith(".html") ? "text/html; charset=utf-8" : "application/octet-stream");
-    return reply.send(createReadStream(filePath));
+    return serveBundleFile(bundleStoreDir, request.params.hash, request.params["*"] ?? "", reply);
   });
 
   app.get<{ Params: { siteId: string; "*": string } }>("/v1/sites/:siteId/live/*", async (request, reply) => {
@@ -638,6 +795,44 @@ export function buildApp(deps: AppDeps): FastifyInstance {
 
     const built = await buildSiteBundle({ site: manifest, theme, pages, bundleStoreDir });
     return { contentHash: built.contentHash, previewUrl: `/v1/bundles/${built.contentHash}/index.html` };
+  });
+
+  // ---- Host-based public routing (Slice 4 / R1): every request that
+  // matches no route above falls through here. This is what actually
+  // makes "<slug>.<platformHost>" — the free hosting every site already
+  // gets — and an `active` custom domain resolve to anything; before this,
+  // the only public address for a site was its opaque content-hash bundle
+  // URL. Unauthenticated on purpose, same reasoning as /v1/bundles/:hash/*:
+  // a published site's address is meant to be public. ----
+  app.setNotFoundHandler(async (request, reply) => {
+    if (request.method !== "GET" && request.method !== "HEAD") {
+      return reply.status(404).send({ error: { code: "not_found", message: "not found" } });
+    }
+
+    const host = (request.headers.host ?? "").split(":")[0] ?? "";
+    let siteId: string | null = null;
+
+    if (host !== "" && host.endsWith(`.${platformHost}`)) {
+      const slug = host.slice(0, -(platformHost.length + 1));
+      const site = await withTenantContext(pool, {}, (client) => getSiteBySlug(client, slug));
+      siteId = site?.id ?? null;
+    } else if (host !== "") {
+      const domain = await withTenantContext(pool, {}, (client) => findActiveCustomDomainByHostname(client, host));
+      siteId = domain?.siteId ?? null;
+    }
+
+    if (!siteId) {
+      return reply.status(404).send({ error: { code: "not_found", message: "not found" } });
+    }
+
+    const live = await withTenantContext(pool, { siteId }, (client) => getLivePublish(client, siteId as string));
+    if (!live) {
+      reply.type("text/html; charset=utf-8");
+      return reply.status(404).send("<!doctype html><title>Not published</title><p>This site hasn't been published yet.</p>");
+    }
+
+    const wildcardPath = request.url.split("?")[0]?.replace(/^\//, "") ?? "";
+    return serveBundleFile(bundleStoreDir, live.contentHash, wildcardPath, reply);
   });
 
   return app;
