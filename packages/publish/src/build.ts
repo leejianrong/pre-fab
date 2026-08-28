@@ -16,6 +16,10 @@ export interface BuildSiteBundleInput {
   posts?: PostDocument[];
   /** Anchors RSS/sitemap's absolute links. Defaults to a placeholder for callers with no real public address yet (an offline local build, R16). */
   baseUrl?: string;
+  /** Where the Form block's submit island posts to (Slice 6, ADR-0007). Defaults to empty — the island simply declines to submit rather than failing, so an offline local build (R16) still builds and previews fine with no runtime configured. */
+  runtimeApiUrl?: string;
+  /** Cloudflare Turnstile's public site key, not a secret — omitted forms render with no widget even if a form has Turnstile enabled. */
+  turnstileSiteKey?: string;
   bundleStoreDir: string;
 }
 
@@ -41,6 +45,8 @@ export async function buildSiteBundle(input: BuildSiteBundleInput): Promise<Buil
     ...input,
     posts: input.posts ?? [],
     baseUrl: input.baseUrl ?? `https://${input.site.slug}.prefab.invalid`,
+    runtimeApiUrl: input.runtimeApiUrl ?? "",
+    turnstileSiteKey: input.turnstileSiteKey ?? "",
   };
   await writeFile(inputPath, JSON.stringify(resolvedInput), "utf8");
 

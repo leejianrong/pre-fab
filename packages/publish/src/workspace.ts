@@ -15,6 +15,9 @@ export interface SiteBuildData {
   theme: ThemeDocument;
   pages: PageDocument[];
   posts: PostDocument[];
+  /** Slice 6 — see build.ts's BuildSiteBundleInput for what these are. Optional here only so existing direct callers of createBuildWorkspace in tests keep compiling; build-worker.ts always supplies both. */
+  runtimeApiUrl?: string;
+  turnstileSiteKey?: string;
 }
 
 export interface BuildWorkspace {

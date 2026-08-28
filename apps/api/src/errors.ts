@@ -1,4 +1,4 @@
-export type ApiErrorCode = "validation_error" | "not_found" | "conflict" | "unauthorized" | "forbidden" | "internal";
+export type ApiErrorCode = "validation_error" | "not_found" | "conflict" | "unauthorized" | "forbidden" | "rate_limited" | "internal";
 
 const STATUS_BY_CODE: Record<ApiErrorCode, number> = {
   validation_error: 400,
@@ -6,6 +6,7 @@ const STATUS_BY_CODE: Record<ApiErrorCode, number> = {
   forbidden: 403,
   not_found: 404,
   conflict: 409,
+  rate_limited: 429,
   internal: 500,
 };
 
@@ -33,3 +34,4 @@ export const conflict = (message: string, details?: unknown) => new ApiError("co
 export const unauthorized = (message = "authentication required") => new ApiError("unauthorized", message);
 export const forbidden = (message = "not allowed") => new ApiError("forbidden", message);
 export const validationError = (message: string, details?: unknown) => new ApiError("validation_error", message, details);
+export const rateLimited = (message = "too many requests") => new ApiError("rate_limited", message);

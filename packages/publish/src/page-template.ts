@@ -6,14 +6,23 @@
  * content.
  *
  * Blocks render through the exact same @prefab/blocks components the Puck
- * canvas uses (via @prefab/puck-adapter) — no `client:*` directive, since
- * Hero needs no hydration (ADR-0007: static blocks ship 0 KB). This file,
- * plus @prefab/publish, is the only place in the repo allowed to import
- * Astro (enforced by tools/checks).
+ * canvas uses (via @prefab/puck-adapter) — no `client:*` directive for
+ * almost every block, since a static block ships 0 KB (ADR-0007). The Form
+ * block (Slice 6) is the one exception: it's the runtime API's first
+ * caller, so it alone renders with `client:load`. That hydration needs a
+ * *statically* importable component — Astro's compiler resolves a client
+ * directive's island by generating a client-side import for whatever
+ * identifier the JSX tag names, and `blockComponents[block.type]` (a
+ * runtime lookup into a plain object) has no such static import to point
+ * at, so it fails with "No matching import has been found" for any
+ * dynamically-resolved component. `Form` is imported directly below for
+ * exactly this reason, and rendered on its own branch rather than through
+ * `blockComponents`. This file, plus @prefab/publish, is the only place in
+ * the repo allowed to import Astro (enforced by tools/checks).
  */
 export const SITE_PAGE_ASTRO = `---
 import data from "../data.json";
-import { blockComponents, resolveThemeTokens, themeRootStyle } from "@prefab/blocks";
+import { blockComponents, resolveThemeTokens, themeRootStyle, Form } from "@prefab/blocks";
 
 // SLICES.md Slice 5: "list and detail block types with pagination." A page
 // carrying a postdetail block is a *template* for one route per post
@@ -116,6 +125,19 @@ const themeVars = themeRootStyle(resolveThemeTokens(theme.tokens));
           totalPages: listTotalPages,
           basePath: page.slug,
         };
+      }
+
+      if (block.type === "form") {
+        return (
+          <Form
+            client:load
+            {...block.props}
+            blockId={block.id}
+            responsive={block.responsive}
+            runtimeApiUrl={data.runtimeApiUrl}
+            turnstileSiteKey={data.turnstileSiteKey}
+          />
+        );
       }
 
       return <Component {...block.props} {...extraProps} blockId={block.id} responsive={block.responsive} />;

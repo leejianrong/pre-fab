@@ -7,6 +7,7 @@ import { domainAdd, domainList, domainVerify, domainRemove } from "./domain.js";
 import { themeGet, themeSet } from "./theme.js";
 import { pageCreate, pageGet, pageList, pageWrite } from "./page.js";
 import { postCreate, postGet, postList, postWrite } from "./post.js";
+import { formConfigure, formGet, submissionList, submissionExport, submissionDelete } from "./form.js";
 import { assetUpload, assetList } from "./asset.js";
 import { tokenCreate } from "./token.js";
 import { siteOutline } from "./outline.js";
@@ -45,6 +46,11 @@ export const commandRegistry = defineRegistry([
   postList,
   postGet,
   postWrite,
+  formConfigure,
+  formGet,
+  submissionList,
+  submissionExport,
+  submissionDelete,
   assetUpload,
   assetList,
   tokenCreate,
@@ -84,6 +90,11 @@ export {
   postList,
   postGet,
   postWrite,
+  formConfigure,
+  formGet,
+  submissionList,
+  submissionExport,
+  submissionDelete,
   assetUpload,
   assetList,
   tokenCreate,

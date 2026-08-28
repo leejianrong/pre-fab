@@ -13,6 +13,7 @@ import { UnknownBlockList } from "./UnknownBlockList.js";
 import { ThemeEditor } from "./ThemeEditor.js";
 import { DomainsPanel } from "./DomainsPanel.js";
 import { BlogPanel } from "./BlogPanel.js";
+import { SubmissionsPanel } from "./SubmissionsPanel.js";
 import { api } from "./api.js";
 
 type Status = "idle" | "saving" | "saved" | "publishing" | "published";
@@ -55,6 +56,7 @@ export function SiteEditor({
   const [themeEditorOpen, setThemeEditorOpen] = useState(false);
   const [domainsPanelOpen, setDomainsPanelOpen] = useState(false);
   const [blogPanelOpen, setBlogPanelOpen] = useState(false);
+  const [submissionsPanelOpen, setSubmissionsPanelOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -187,6 +189,9 @@ export function SiteEditor({
         <button onClick={() => setBlogPanelOpen(true)} style={{ padding: "0.4rem 0.8rem" }}>
           Blog
         </button>
+        <button onClick={() => setSubmissionsPanelOpen(true)} style={{ padding: "0.4rem 0.8rem" }}>
+          Submissions
+        </button>
         <button onClick={handleSave} disabled={status === "saving"} style={{ padding: "0.4rem 0.8rem" }}>
           {status === "saving" ? "Saving…" : "Save"}
         </button>
@@ -241,6 +246,7 @@ export function SiteEditor({
       ) : null}
       {domainsPanelOpen ? <DomainsPanel siteId={siteId} onClose={() => setDomainsPanelOpen(false)} /> : null}
       {blogPanelOpen ? <BlogPanel siteId={siteId} onClose={() => setBlogPanelOpen(false)} /> : null}
+      {submissionsPanelOpen ? <SubmissionsPanel siteId={siteId} page={page} onClose={() => setSubmissionsPanelOpen(false)} /> : null}
       {celebration ? (
         <div
           role="dialog"

@@ -1,13 +1,18 @@
 import type {
   Asset,
+  ConfigureFormInput,
   ConflictDetails,
   CreatePostInput,
   CreateSiteFromTemplateResult,
   CreateSiteResult,
   DomainWithInstruction,
+  FormSettings,
+  FormWithSettings,
   IssuedApiToken,
   ListPostsQuery,
   ListPostsResult,
+  ListSubmissionsQuery,
+  ListSubmissionsResult,
   PageDocument,
   PageSummary,
   PostDocument,
@@ -26,7 +31,14 @@ import type {
   WritePostInput,
 } from "./types.js";
 
-export type ApiErrorCode = "validation_error" | "not_found" | "conflict" | "unauthorized" | "forbidden" | "internal";
+export type ApiErrorCode =
+  | "validation_error"
+  | "not_found"
+  | "conflict"
+  | "unauthorized"
+  | "forbidden"
+  | "rate_limited"
+  | "internal";
 
 /**
  * Every ApiError the server throws (apps/api/src/errors.ts) lands here with
@@ -114,6 +126,33 @@ export class ApiClient {
       throw new ApiClientError(error.code, response.status, error.message, error.details);
     }
     return payload as T;
+  }
+
+  /** Only the export-as-CSV endpoint needs a non-JSON response body — everything else in this client is JSON. */
+  private async requestText(method: string, path: string): Promise<string> {
+    let response: Response;
+    try {
+      response = await fetch(`${this.options.baseUrl}${path}`, {
+        method,
+        headers: {
+          ...(this.options.token
+            ? { authorization: `Bearer ${this.options.token}` }
+            : this.sessionCookie
+              ? { cookie: this.sessionCookie }
+              : {}),
+        },
+        credentials: this.options.token || this.sessionCookie ? "omit" : "include",
+        signal: AbortSignal.timeout(this.options.timeoutMs ?? 10_000),
+      });
+    } catch (error) {
+      throw new ApiUnreachableError(error);
+    }
+    if (!response.ok) {
+      const payload = await response.json().catch(() => undefined);
+      const error = payload?.error ?? { code: "internal", message: `request failed with status ${response.status}` };
+      throw new ApiClientError(error.code, response.status, error.message, error.details);
+    }
+    return response.text();
   }
 
   // ---- identity bootstrap ----
@@ -289,6 +328,35 @@ export class ApiClient {
   // ---- preview (R15) ----
   preview(siteId: string): Promise<PreviewResult> {
     return this.request("POST", `/v1/sites/${siteId}/preview`);
+  }
+
+  // ---- form.configure / form.get / submission.list / submission.export / submission.delete (Slice 6) ----
+  configureForm(siteId: string, formId: string, input: ConfigureFormInput): Promise<FormSettings> {
+    return this.request("PUT", `/v1/sites/${siteId}/forms/${formId}`, input);
+  }
+
+  getForm(siteId: string, formId: string): Promise<FormWithSettings> {
+    return this.request("GET", `/v1/sites/${siteId}/forms/${formId}`);
+  }
+
+  listSubmissions(siteId: string, formId: string, query: ListSubmissionsQuery = {}): Promise<ListSubmissionsResult> {
+    const params = new URLSearchParams();
+    if (query.limit !== undefined) params.set("limit", String(query.limit));
+    if (query.offset !== undefined) params.set("offset", String(query.offset));
+    const qs = params.toString();
+    return this.request("GET", `/v1/sites/${siteId}/forms/${formId}/submissions${qs ? `?${qs}` : ""}`);
+  }
+
+  exportSubmissionsCsv(siteId: string, formId: string): Promise<string> {
+    return this.requestText("GET", `/v1/sites/${siteId}/forms/${formId}/submissions/export?format=csv`);
+  }
+
+  exportSubmissionsJson(siteId: string, formId: string): Promise<Array<{ id: string; createdAt: string; notifyStatus: string; values: Record<string, unknown> }>> {
+    return this.request("GET", `/v1/sites/${siteId}/forms/${formId}/submissions/export?format=json`);
+  }
+
+  deleteSubmission(siteId: string, formId: string, submissionId: string): Promise<{ removed: true }> {
+    return this.request("DELETE", `/v1/sites/${siteId}/forms/${formId}/submissions/${submissionId}`);
   }
 
   resolveUrl(path: string): string {
