@@ -10,3 +10,6 @@ export * from "./validate.js";
 export * from "./tree.js";
 export * from "./diff.js";
 export * from "./rekey.js";
+export * from "./post.js";
+export * from "./slug.js";
+export * from "./post-file.js";

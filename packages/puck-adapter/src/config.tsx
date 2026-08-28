@@ -16,6 +16,8 @@ import { Image, IMAGE_BLOCK_TYPE, imageDefaultProps } from "@prefab/blocks";
 import { Gallery, GALLERY_BLOCK_TYPE, galleryDefaultProps } from "@prefab/blocks";
 import { Columns, COLUMNS_BLOCK_TYPE, columnsDefaultProps } from "@prefab/blocks";
 import { CardGrid, CARDGRID_BLOCK_TYPE, cardGridDefaultProps } from "@prefab/blocks";
+import { PostList, POSTLIST_BLOCK_TYPE, postListDefaultProps } from "@prefab/blocks";
+import { PostDetail, POSTDETAIL_BLOCK_TYPE, postDetailDefaultProps } from "@prefab/blocks";
 import type { ThemeTokens } from "@prefab/schema";
 import { heroFields } from "./hero-fields.js";
 import { headingFields } from "./heading-fields.js";
@@ -33,6 +35,8 @@ import { imageFields } from "./image-fields.js";
 import { galleryFields } from "./gallery-fields.js";
 import { columnsFields } from "./columns-fields.js";
 import { cardGridFields } from "./cardgrid-fields.js";
+import { postListFields } from "./postlist-fields.js";
+import { postDetailFields } from "./postdetail-fields.js";
 
 /**
  * The only file besides apps/editor allowed to import @puckeditor/core
@@ -146,6 +150,20 @@ const BLOCK_ENTRIES: BlockEntry<any>[] = [
     fields: cardGridFields,
     defaultProps: cardGridDefaultProps,
     Component: CardGrid,
+  },
+  {
+    type: POSTLIST_BLOCK_TYPE,
+    label: "Post list",
+    fields: postListFields,
+    defaultProps: postListDefaultProps,
+    Component: PostList,
+  },
+  {
+    type: POSTDETAIL_BLOCK_TYPE,
+    label: "Post detail",
+    fields: postDetailFields,
+    defaultProps: postDetailDefaultProps,
+    Component: PostDetail,
   },
 ];
 

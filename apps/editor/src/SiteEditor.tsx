@@ -12,6 +12,7 @@ import type { BlockNode } from "@prefab/schema";
 import { UnknownBlockList } from "./UnknownBlockList.js";
 import { ThemeEditor } from "./ThemeEditor.js";
 import { DomainsPanel } from "./DomainsPanel.js";
+import { BlogPanel } from "./BlogPanel.js";
 import { api } from "./api.js";
 
 type Status = "idle" | "saving" | "saved" | "publishing" | "published";
@@ -53,6 +54,7 @@ export function SiteEditor({
   const [unknownBlocks, setUnknownBlocks] = useState<BlockNode[]>([]);
   const [themeEditorOpen, setThemeEditorOpen] = useState(false);
   const [domainsPanelOpen, setDomainsPanelOpen] = useState(false);
+  const [blogPanelOpen, setBlogPanelOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -182,6 +184,9 @@ export function SiteEditor({
         <button onClick={() => setDomainsPanelOpen(true)} style={{ padding: "0.4rem 0.8rem" }}>
           Domains
         </button>
+        <button onClick={() => setBlogPanelOpen(true)} style={{ padding: "0.4rem 0.8rem" }}>
+          Blog
+        </button>
         <button onClick={handleSave} disabled={status === "saving"} style={{ padding: "0.4rem 0.8rem" }}>
           {status === "saving" ? "Saving…" : "Save"}
         </button>
@@ -235,6 +240,7 @@ export function SiteEditor({
         <ThemeEditor tokens={theme.tokens} onSave={handleSaveTheme} onClose={() => setThemeEditorOpen(false)} />
       ) : null}
       {domainsPanelOpen ? <DomainsPanel siteId={siteId} onClose={() => setDomainsPanelOpen(false)} /> : null}
+      {blogPanelOpen ? <BlogPanel siteId={siteId} onClose={() => setBlogPanelOpen(false)} /> : null}
       {celebration ? (
         <div
           role="dialog"

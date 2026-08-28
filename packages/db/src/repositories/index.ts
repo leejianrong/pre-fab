@@ -7,3 +7,4 @@ export * from "./pages.js";
 export * from "./publishes.js";
 export * from "./assets.js";
 export * from "./custom-domains.js";
+export * from "./posts.js";

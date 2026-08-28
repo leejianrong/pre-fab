@@ -1,4 +1,5 @@
 #!/usr/bin/env -S node --import tsx
+import { readFile } from "node:fs/promises";
 import { Command as Program } from "commander";
 import {
   accountSignup,
@@ -19,6 +20,10 @@ import {
   pageGet,
   pageList,
   pageWrite,
+  postCreate,
+  postGet,
+  postList,
+  postWrite,
   preview,
   publishCreate,
   publishList,
@@ -178,6 +183,84 @@ page
         expectedVersion: Number(expectedVersion),
       }),
     ),
+  );
+
+const post = program.command("post").description("Manage blog posts (Slice 5)");
+post
+  .command("create <siteId> <title>")
+  .description("Create a new blog post — the slug is generated from the title unless --slug is given")
+  .option("--slug <slug>", "explicit slug instead of one generated from the title")
+  .option("--date <date>", "YYYY-MM-DD, defaults to today")
+  .option("--author <author>")
+  .option("--status <status>", "draft or published", "draft")
+  .action((siteId, title, options: { slug?: string; date?: string; author?: string; status?: "draft" | "published" }) =>
+    runCommand(globalOptions(), async () =>
+      postCreate.run(await resolveContext(), {
+        siteId,
+        title,
+        slug: options.slug,
+        date: options.date,
+        author: options.author,
+        status: options.status,
+      }),
+    ),
+  );
+post
+  .command("list <siteId>")
+  .description("List a site's blog posts")
+  .option("--limit <limit>", "page size")
+  .option("--offset <offset>")
+  .option("--status <status>", "filter by draft or published")
+  .action((siteId, options: { limit?: string; offset?: string; status?: "draft" | "published" }) =>
+    runCommand(globalOptions(), async () =>
+      postList.run(await resolveContext(), {
+        siteId,
+        limit: options.limit ? Number(options.limit) : undefined,
+        offset: options.offset ? Number(options.offset) : undefined,
+        status: options.status,
+      }),
+    ),
+  );
+post
+  .command("get <siteId> <postId>")
+  .action((siteId, postId) => runCommand(globalOptions(), async () => postGet.run(await resolveContext(), { siteId, postId })));
+post
+  .command("write <siteId> <postId> <title> <slug> <date> <status> <bodyFile> <expectedVersion>")
+  .description(
+    "Replace a post's fields directly, reading its Markdown body from a file (R17/R18). `push` is the file-checkout equivalent.",
+  )
+  .option("--author <author>", "", "")
+  .option("--tags <tags>", "comma-separated")
+  .option("--cover <cover>")
+  .action(
+    (
+      siteId,
+      postId,
+      title,
+      slug,
+      date,
+      status,
+      bodyFile,
+      expectedVersion,
+      options: { author?: string; tags?: string; cover?: string },
+    ) =>
+      runCommand(globalOptions(), async () => {
+        const body = await readFile(bodyFile, "utf8");
+        return postWrite.run(await resolveContext(), {
+          siteId,
+          postId,
+          title,
+          slug,
+          date,
+          status,
+          body,
+          author: options.author ?? "",
+          tags: options.tags ? options.tags.split(",").map((t) => t.trim()).filter(Boolean) : [],
+          cover: options.cover ?? null,
+          locale: "en",
+          expectedVersion: Number(expectedVersion),
+        });
+      }),
   );
 
 const asset = program.command("asset").description("Manage site assets (content-addressed uploads)");

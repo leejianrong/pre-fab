@@ -1,5 +1,6 @@
 import type { BlockNode } from "./block.js";
 import type { PageDocument } from "./document.js";
+import type { PostDocument } from "./post.js";
 
 export type BlockDiffOp =
   | { kind: "add"; block: BlockNode }
@@ -122,4 +123,18 @@ export function diffPageDocuments(before: PageDocument, after: PageDocument): Do
 
 export function isEmptyDiff(diff: DocumentDiff): boolean {
   return diff.fields.length === 0 && diff.blocks.length === 0;
+}
+
+const POST_DIFFED_FIELDS = ["title", "slug", "date", "author", "tags", "cover", "body", "status", "locale"] as const;
+
+/** Field-level diff for a post (R17's conflict payload, post.write's equivalent of `diffPageDocuments`) — no block tree to diff here. */
+export function diffPostDocuments(before: PostDocument, after: PostDocument): FieldDiff[] {
+  const fields: FieldDiff[] = [];
+  for (const field of POST_DIFFED_FIELDS) {
+    const b = before[field];
+    const a = after[field];
+    const changed = Array.isArray(b) && Array.isArray(a) ? JSON.stringify(b) !== JSON.stringify(a) : b !== a;
+    if (changed) fields.push({ field, before: b, after: a });
+  }
+  return fields;
 }

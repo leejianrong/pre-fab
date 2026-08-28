@@ -4,7 +4,16 @@ A no-code website builder where the site is a portable, diffable artifact the
 customer owns. See `PLAN.md` for the problem and requirements (`R1`–`R20`),
 `docs/adr/` for binding decisions, and `SLICES.md` for the build sequence.
 
-**Status: Slices 1–4 are built.** Slice 1 proved the one-write-path loop with
+|                                                    |                                                  |
+| -------------------------------------------------- | ------------------------------------------------ |
+| ![Editor canvas](docs/screenshots/editor-canvas.png) | ![Blog panel](docs/screenshots/blog-panel.png) |
+| ![Published blog index](docs/screenshots/blog-list.png) | ![Published post](docs/screenshots/blog-post.png) |
+
+*Top row: the Puck canvas editing a forked template, and Slice 5's blog admin
+panel. Bottom row: the published blog index and a published post page — all
+rendered by the actual static publish pipeline, not mockups.*
+
+**Status: Slices 1–5 are built.** Slice 1 proved the one-write-path loop with
 a single Hero block: create, edit in the Puck canvas, edit by CLI/MCP/pull-push
 round trip, publish to a live, rollback-able bundle. Slice 2 added the full
 first-party block library, theme tokens, block-level responsive overrides and
@@ -17,7 +26,18 @@ DNS validation and apex/subdomain classification, a Cloudflare SSL-for-SaaS
 integration behind a provider interface, a dashboard panel with DNS
 instructions and actionable errors, and the Host-header-based public routing
 that also makes every site's free `<slug>.PUBLIC_SITE_HOST` address work for
-the first time.
+the first time. Slice 5 adds blog and collections: posts as their own
+collection (title, slug, date, author, tags, body, cover, draft/published
+state), a frontmatter-plus-Markdown file format for `pull`/`push` (pleasant to
+hand-edit, unlike the raw `pages/*.json`), `postlist`/`postdetail` block types
+that turn a page into a paginated index or a per-post detail template, RSS
+and sitemap generation, and a blog admin panel in the editor.
+
+One thing worth knowing about Slice 5 specifically: a post's visibility is a
+pure function of `status` and `date` (`@prefab/schema`'s `isPostVisible`) —
+there is no separate "scheduled" state. `apps/api`'s `publish.create` filters
+to visible posts *before* handing them to `@prefab/publish`, so a draft or a
+future-dated post is never even built into a route, let alone served.
 
 Two things worth knowing about Slice 4 specifically:
 
@@ -44,12 +64,15 @@ apps/
   mcp/             MCP server — stdio, wraps packages/commands
   editor/         Puck canvas SPA (Vite + React 19)
 packages/
-  schema/          document model: ULIDs, Zod validation, flat block tree, diff
-  blocks/          first-party block components — SSR-safe, no Puck import
+  schema/          document model: ULIDs, Zod validation, flat block tree, diff,
+                   posts (Slice 5) and their frontmatter+Markdown file format
+  blocks/          first-party block components — SSR-safe, no Puck import;
+                   includes postlist/postdetail (Slice 5)
   puck-adapter/    translates the flat schema <-> Puck's content/zones shape
   db/              Postgres access + migrations, RLS keyed on site_id
   api-client/      typed HTTP client shared by the CLI, MCP server and editor
-  publish/         Astro build pipeline — content-addressed bundles, atomic pointer swap
+  publish/         Astro build pipeline — content-addressed bundles, atomic
+                   pointer swap, RSS/sitemap generation (Slice 5)
   commands/        one command registry the CLI and MCP server both wrap (R12 parity)
   templates/       eight templates authored as exported site trees (ADR-0011);
                    `pnpm --filter @prefab/templates run generate` regenerates them
@@ -119,7 +142,9 @@ the CLI: `prefab signup <email>` + `prefab verify <email> <code>` (or
 `pages/*.json`, `prefab push`, `prefab publish`. Every site is already
 reachable at `<slug>.<PUBLIC_SITE_HOST>` once published; `prefab domain add
 <siteId> <hostname>` adds a custom one (`prefab domain list`/`verify`/`remove`
-manage it from there).
+manage it from there). `prefab post create <siteId> <title>` adds a blog post
+(`post list`/`get`/`write` manage it from there, and it shows up in `pull`'s
+checkout as `posts/<slug>.md` — frontmatter + Markdown, not raw JSON).
 
 ## Tests
 

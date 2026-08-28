@@ -18,16 +18,19 @@
 process.env.ASTRO_TELEMETRY_DISABLED = "1";
 process.env.NODE_ENV = "production";
 
-import { access, cp, readFile } from "node:fs/promises";
+import { access, cp, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { PageDocument, SiteManifest, ThemeDocument } from "@prefab/schema";
+import type { PageDocument, PostDocument, SiteManifest, ThemeDocument } from "@prefab/schema";
 import { createBuildWorkspace, ensureBundleStore } from "./workspace.js";
 import { hashDirectory } from "./content-hash.js";
+import { generateRssFeed, generateSitemap } from "./feeds.js";
 
 interface WorkerInput {
   site: SiteManifest;
   theme: ThemeDocument;
   pages: PageDocument[];
+  posts: PostDocument[];
+  baseUrl: string;
   bundleStoreDir: string;
 }
 
@@ -40,15 +43,21 @@ async function pathExists(p: string): Promise<boolean> {
   }
 }
 
+/** Newest-first, id as a stable tiebreaker for equal dates — the same order `listPostsForSite` already returns from Postgres, applied here too so pagination/RSS/sitemap order is a single, pipeline-owned invariant rather than something every caller (and every test fixture) has to get right on its own. */
+function sortPostsNewestFirst(posts: PostDocument[]): PostDocument[] {
+  return [...posts].sort((a, b) => (a.date === b.date ? (a.id < b.id ? 1 : -1) : a.date < b.date ? 1 : -1));
+}
+
 async function main(): Promise<void> {
   const inputPath = process.argv[2];
   if (!inputPath) throw new Error("build-worker: missing input file path argument");
   const input: WorkerInput = JSON.parse(await readFile(inputPath, "utf8"));
+  input.posts = sortPostsNewestFirst(input.posts);
 
   const { build: astroBuild } = await import("astro");
   const { default: react } = await import("@astrojs/react");
 
-  const workspace = await createBuildWorkspace({ site: input.site, theme: input.theme, pages: input.pages });
+  const workspace = await createBuildWorkspace({ site: input.site, theme: input.theme, pages: input.pages, posts: input.posts });
   const previousCwd = process.cwd();
   // Some prerender-SSR artifacts are written relative to process.cwd()
   // regardless of the `root`/`outDir` passed below — see build.ts.
@@ -63,6 +72,21 @@ async function main(): Promise<void> {
       configFile: false,
       mode: "production",
     });
+
+    // RSS/sitemap generation (SLICES.md Slice 5) — plain files written
+    // straight into the static output, not Astro endpoints: no per-build
+    // template interpolation needed, so this stays outside the one file
+    // (page-template.ts) that owns Astro source generation.
+    await writeFile(
+      path.join(workspace.outDir, "rss.xml"),
+      generateRssFeed({ site: input.site, pages: input.pages, posts: input.posts, baseUrl: input.baseUrl }),
+      "utf8",
+    );
+    await writeFile(
+      path.join(workspace.outDir, "sitemap.xml"),
+      generateSitemap({ pages: input.pages, posts: input.posts, baseUrl: input.baseUrl }),
+      "utf8",
+    );
 
     const contentHash = await hashDirectory(workspace.outDir);
     await ensureBundleStore(input.bundleStoreDir);

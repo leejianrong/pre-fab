@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { BlockListSchema, ThemeTokensSchema } from "@prefab/schema";
+import { BlockListSchema, PostStatusSchema, ThemeTokensSchema } from "@prefab/schema";
 
 /**
  * MCP tool input shapes — one per command in @prefab/commands' registry.
@@ -38,6 +38,43 @@ export const schemas = {
     title: z.string(),
     slug: z.string(),
     blocks: BlockListSchema,
+    expectedVersion: z.number().int().nonnegative(),
+  },
+
+  "post.create": {
+    siteId: z.string(),
+    title: z.string().min(1),
+    slug: z.string().min(1).optional(),
+    date: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/)
+      .optional(),
+    author: z.string().optional(),
+    tags: z.array(z.string()).optional(),
+    cover: z.string().nullable().optional(),
+    body: z.string().optional(),
+    locale: z.string().optional(),
+    status: PostStatusSchema.optional(),
+  },
+  "post.list": {
+    siteId: z.string(),
+    limit: z.number().int().optional(),
+    offset: z.number().int().optional(),
+    status: PostStatusSchema.optional(),
+  },
+  "post.get": { siteId: z.string(), postId: z.string() },
+  "post.write": {
+    siteId: z.string(),
+    postId: z.string(),
+    title: z.string(),
+    slug: z.string(),
+    date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    author: z.string(),
+    tags: z.array(z.string()),
+    cover: z.string().nullable(),
+    body: z.string(),
+    locale: z.string(),
+    status: PostStatusSchema,
     expectedVersion: z.number().int().nonnegative(),
   },
 

@@ -32,6 +32,10 @@ import { Columns } from "./columns/Columns.js";
 import { columnsBlockDefinition, type ColumnsProps } from "./columns/schema.js";
 import { CardGrid } from "./cardgrid/CardGrid.js";
 import { cardGridBlockDefinition, type CardGridProps } from "./cardgrid/schema.js";
+import { PostList } from "./postlist/PostList.js";
+import { postListBlockDefinition, type PostListProps } from "./postlist/schema.js";
+import { PostDetail } from "./postdetail/PostDetail.js";
+import { postDetailBlockDefinition, type PostDetailProps } from "./postdetail/schema.js";
 
 /**
  * One entry per first-party block: its schema-half definition
@@ -97,6 +101,16 @@ const BLOCK_ENTRIES: BlockEntry[] = [
     definition: cardGridBlockDefinition,
     Component: CardGrid,
     summary: (props: CardGridProps) => `${props.cards.length} cards`,
+  },
+  {
+    definition: postListBlockDefinition,
+    Component: PostList,
+    summary: (props: PostListProps) => `post list (${props.postsPerPage}/page)`,
+  },
+  {
+    definition: postDetailBlockDefinition,
+    summary: (_props: PostDetailProps) => "post detail template",
+    Component: PostDetail,
   },
 ];
 

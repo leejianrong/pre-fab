@@ -1,7 +1,7 @@
 import type { Command } from "../registry.js";
 import type { CommandContext } from "../context.js";
 import { ApiClientError } from "@prefab/api-client";
-import { readCheckoutPages, readCheckoutSite, readCheckoutTheme } from "../checkout.js";
+import { readCheckoutPages, readCheckoutPosts, readCheckoutSite, readCheckoutTheme } from "../checkout.js";
 
 export interface PushArgs {
   dir: string;
@@ -53,6 +53,48 @@ async function runPush(ctx: CommandContext, args: PushArgs): Promise<PushResult>
       expectedVersion,
     });
     pushed.push(`pages/${page.slug}.json`);
+  }
+
+  const posts = await readCheckoutPosts(args.dir);
+  for (const post of posts) {
+    let postId = post.id;
+    let expectedVersion = post.version;
+
+    try {
+      await ctx.api.getPost(site.id, post.id);
+    } catch (error) {
+      if (!(await isNotFound(error))) throw error;
+      // Same reasoning as a page added to the checkout by hand: the post's
+      // own id is minted fresh server-side, but its slug and content
+      // survive the round trip (R8).
+      const created = await ctx.api.createPost(site.id, {
+        title: post.title,
+        slug: post.slug,
+        date: post.date,
+        author: post.author,
+        tags: post.tags,
+        cover: post.cover,
+        body: post.body,
+        locale: post.locale,
+        status: post.status,
+      });
+      postId = created.id;
+      expectedVersion = created.version;
+    }
+
+    await ctx.api.writePost(site.id, postId, {
+      title: post.title,
+      slug: post.slug,
+      date: post.date,
+      author: post.author,
+      tags: post.tags,
+      cover: post.cover,
+      body: post.body,
+      locale: post.locale,
+      status: post.status,
+      expectedVersion,
+    });
+    pushed.push(`posts/${post.slug}.md`);
   }
 
   return { pushed };

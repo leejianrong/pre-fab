@@ -6,6 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import pg from "pg";
 import sharp from "sharp";
 import { newUlid, type PageDocument } from "@prefab/schema";
+import { POSTDETAIL_BLOCK_TYPE, postDetailDefaultProps } from "@prefab/blocks";
 import { withTenantContext, runMigrations, createAccount } from "@prefab/db";
 import { buildApp } from "../src/app.js";
 import { FakeDomainProvider } from "../src/lib/domain-provider.js";
@@ -659,6 +660,237 @@ describe("host-based public routing (Slice 4, R1) — <slug>.<platformHost> and 
   it("404s for a host that matches nothing", async () => {
     const response = await app.inject({ method: "GET", url: "/", headers: { host: "nobody-has-this.example.test" } });
     expect(response.statusCode).toBe(404);
+  });
+});
+
+describe("posts (Slice 5): collection CRUD, pagination, and publish visibility", () => {
+  async function createdSite(cookie: string, slugPrefix: string): Promise<CreatedSite> {
+    const created = await app.inject({
+      method: "POST",
+      url: "/v1/sites",
+      headers: { cookie },
+      payload: { slug: `${slugPrefix}-${newUlid()}`, name: "Posts" },
+    });
+    expect(created.statusCode).toBe(200);
+    return created.json() as CreatedSite;
+  }
+
+  it("post.create auto-generates a slug from the title, deduping against a collision", async () => {
+    const { cookie } = await seedAccountAndLogin(`post-slug-${newUlid()}@example.com`);
+    const { site } = await createdSite(cookie, "post-slug");
+
+    const first = await app.inject({
+      method: "POST",
+      url: `/v1/sites/${site.id}/posts`,
+      headers: { cookie },
+      payload: { title: "Hello World" },
+    });
+    expect(first.statusCode).toBe(200);
+    expect((first.json() as { slug: string }).slug).toBe("hello-world");
+
+    const second = await app.inject({
+      method: "POST",
+      url: `/v1/sites/${site.id}/posts`,
+      headers: { cookie },
+      payload: { title: "Hello World" },
+    });
+    expect((second.json() as { slug: string }).slug).toBe("hello-world-2");
+
+    // A caller-supplied slug is respected (and still deduped).
+    const explicit = await app.inject({
+      method: "POST",
+      url: `/v1/sites/${site.id}/posts`,
+      headers: { cookie },
+      payload: { title: "Something else", slug: "hello-world" },
+    });
+    expect((explicit.json() as { slug: string }).slug).toBe("hello-world-3");
+  });
+
+  it("post.write applies the same optimistic-concurrency discipline as page.write (R17)", async () => {
+    const { cookie } = await seedAccountAndLogin(`post-oc-${newUlid()}@example.com`);
+    const { site } = await createdSite(cookie, "post-oc");
+    const created = await app.inject({
+      method: "POST",
+      url: `/v1/sites/${site.id}/posts`,
+      headers: { cookie },
+      payload: { title: "Draft post" },
+    });
+    const post = created.json() as { id: string; slug: string; date: string; version: number };
+
+    const validWrite = await app.inject({
+      method: "PUT",
+      url: `/v1/sites/${site.id}/posts/${post.id}`,
+      headers: { cookie },
+      payload: {
+        title: "Updated title",
+        slug: post.slug,
+        date: post.date,
+        author: "Jane",
+        tags: ["a", "b"],
+        cover: null,
+        body: "Updated body.",
+        locale: "en",
+        status: "published",
+        expectedVersion: post.version,
+      },
+    });
+    expect(validWrite.statusCode).toBe(200);
+    expect((validWrite.json() as { version: number }).version).toBe(post.version + 1);
+
+    const staleWrite = await app.inject({
+      method: "PUT",
+      url: `/v1/sites/${site.id}/posts/${post.id}`,
+      headers: { cookie },
+      payload: {
+        title: "Stale edit",
+        slug: post.slug,
+        date: post.date,
+        author: "",
+        tags: [],
+        cover: null,
+        body: "",
+        locale: "en",
+        status: "draft",
+        expectedVersion: post.version, // stale — already bumped by the write above
+      },
+    });
+    expect(staleWrite.statusCode).toBe(409);
+    const conflictBody = staleWrite.json() as { error: { details: { current: { title: string }; diff: unknown[] } } };
+    expect(conflictBody.error.details.current.title).toBe("Updated title");
+    expect(conflictBody.error.details.diff.length).toBeGreaterThan(0);
+  });
+
+  it("post.list paginates and reports a total independent of the page size", async () => {
+    const { cookie } = await seedAccountAndLogin(`post-list-${newUlid()}@example.com`);
+    const { site } = await createdSite(cookie, "post-list");
+    for (let i = 0; i < 3; i++) {
+      await app.inject({
+        method: "POST",
+        url: `/v1/sites/${site.id}/posts`,
+        headers: { cookie },
+        payload: { title: `Post ${i}`, date: `2024-01-0${i + 1}` },
+      });
+    }
+
+    const page = await app.inject({ method: "GET", url: `/v1/sites/${site.id}/posts?limit=2&offset=0`, headers: { cookie } });
+    expect(page.statusCode).toBe(200);
+    const body = page.json() as { posts: unknown[]; total: number };
+    expect(body.posts).toHaveLength(2);
+    expect(body.total).toBe(3);
+  });
+
+  it("post.get 404s for a post that belongs to a different site", async () => {
+    const { cookie } = await seedAccountAndLogin(`post-cross-${newUlid()}@example.com`);
+    const { site: siteA } = await createdSite(cookie, "post-cross-a");
+    const { site: siteB } = await createdSite(cookie, "post-cross-b");
+    const created = await app.inject({
+      method: "POST",
+      url: `/v1/sites/${siteA.id}/posts`,
+      headers: { cookie },
+      payload: { title: "Site A post" },
+    });
+    const post = created.json() as { id: string };
+
+    const crossSiteGet = await app.inject({ method: "GET", url: `/v1/sites/${siteB.id}/posts/${post.id}`, headers: { cookie } });
+    expect(crossSiteGet.statusCode).toBe(404);
+  });
+
+  it("publish includes only published posts, and a draft or scheduled (future-dated) post is never reachable on the live site", async () => {
+    const { cookie } = await seedAccountAndLogin(`post-visibility-${newUlid()}@example.com`);
+    const { site } = await createdSite(cookie, "post-visibility");
+
+    // A "blog" page carrying a postdetail block — the per-post route template (SLICES.md's list/detail blocks).
+    const blogPage = await app.inject({
+      method: "POST",
+      url: `/v1/sites/${site.id}/pages`,
+      headers: { cookie },
+      payload: { slug: "blog", title: "Blog" },
+    });
+    const blogPageBody = blogPage.json() as PageDocument;
+    await app.inject({
+      method: "PUT",
+      url: `/v1/sites/${site.id}/pages/${blogPageBody.id}`,
+      headers: { cookie },
+      payload: {
+        title: "Blog",
+        slug: "blog",
+        blocks: [
+          { id: newUlid(), type: POSTDETAIL_BLOCK_TYPE, parent: null, order: 1000, schemaVersion: 1, props: { ...postDetailDefaultProps }, responsive: {} },
+        ],
+        expectedVersion: blogPageBody.version,
+      },
+    });
+
+    async function makePost(input: { title: string; status: "draft" | "published"; date: string }) {
+      const created = await app.inject({
+        method: "POST",
+        url: `/v1/sites/${site.id}/posts`,
+        headers: { cookie },
+        payload: { title: input.title, date: input.date, status: "draft" },
+      });
+      const post = created.json() as { id: string; slug: string; date: string; version: number };
+      await app.inject({
+        method: "PUT",
+        url: `/v1/sites/${site.id}/posts/${post.id}`,
+        headers: { cookie },
+        payload: {
+          title: input.title,
+          slug: post.slug,
+          date: input.date,
+          author: "",
+          tags: [],
+          cover: null,
+          body: `Body of ${input.title}`,
+          locale: "en",
+          status: input.status,
+          expectedVersion: post.version,
+        },
+      });
+      return post.slug;
+    }
+
+    const farFuture = new Date();
+    farFuture.setFullYear(farFuture.getFullYear() + 1);
+    const futureDate = farFuture.toISOString().slice(0, 10);
+
+    const publishedSlug = await makePost({ title: "Published post", status: "published", date: "2024-01-01" });
+    await makePost({ title: "Draft post", status: "draft", date: "2024-01-01" });
+    await makePost({ title: "Scheduled post", status: "published", date: futureDate });
+
+    const publish = await app.inject({ method: "POST", url: `/v1/sites/${site.id}/publish`, headers: { cookie } });
+    expect(publish.statusCode).toBe(200);
+
+    // `/v1/sites/:id/live/*` redirects to the content-addressed bundle URL
+    // (see the "publishes, serves the live bundle" test above) — follow it
+    // by hand since `inject` doesn't auto-follow redirects.
+    async function fetchLive(subPath: string) {
+      const redirect = await app.inject({ method: "GET", url: `/v1/sites/${site.id}/live/${subPath}`, headers: { cookie } });
+      if (redirect.statusCode !== 302) return redirect;
+      return app.inject({ method: "GET", url: redirect.headers.location as string, headers: { cookie } });
+    }
+
+    const live = await fetchLive("");
+    expect(live.statusCode).toBe(200);
+
+    const rss = await fetchLive("rss.xml");
+    expect(rss.statusCode).toBe(200);
+    expect(rss.body).toContain("Published post");
+    expect(rss.body).not.toContain("Draft post");
+    expect(rss.body).not.toContain("Scheduled post");
+
+    const sitemap = await fetchLive("sitemap.xml");
+    expect(sitemap.statusCode).toBe(200);
+    expect(sitemap.body).toContain(`blog/${publishedSlug}`);
+
+    const publishedDetail = await fetchLive(`blog/${publishedSlug}/`);
+    expect(publishedDetail.statusCode).toBe(200);
+    expect(publishedDetail.body).toContain("Published post");
+
+    const draftDetail = await fetchLive("blog/draft-post/");
+    expect(draftDetail.statusCode).toBe(404);
+
+    const scheduledDetail = await fetchLive("blog/scheduled-post/");
+    expect(scheduledDetail.statusCode).toBe(404);
   });
 });
 
