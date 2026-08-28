@@ -1,4 +1,4 @@
-import type { BlockNode, DocumentDiff, PageDocument, ThemeDocument, ThemeTokens } from "@prefab/schema";
+import type { BlockNode, DocumentDiff, FieldDiff, PageDocument, PostDocument, PostStatus, ThemeDocument, ThemeTokens } from "@prefab/schema";
 
 export interface SiteSummary {
   id: string;
@@ -123,6 +123,50 @@ export interface ConflictDetails {
   diff: DocumentDiff;
 }
 
+// ---- posts (Slice 5) ----
+
+export interface CreatePostInput {
+  title: string;
+  slug?: string;
+  date?: string;
+  author?: string;
+  tags?: string[];
+  cover?: string | null;
+  body?: string;
+  locale?: string;
+  status?: PostStatus;
+}
+
+export interface WritePostInput {
+  title: string;
+  slug: string;
+  date: string;
+  author: string;
+  tags: string[];
+  cover: string | null;
+  body: string;
+  locale: string;
+  status: PostStatus;
+  expectedVersion: number;
+}
+
+export interface ListPostsQuery {
+  limit?: number;
+  offset?: number;
+  status?: PostStatus;
+}
+
+export interface ListPostsResult {
+  posts: PostDocument[];
+  total: number;
+}
+
+/** Mirrors apps/api's post.write 409 conflict payload — a plain field diff, since a post has no block tree to diff (unlike page.write's ConflictDetails). */
+export interface PostConflictDetails {
+  current: PostDocument;
+  diff: FieldDiff[];
+}
+
 export interface AssetVariant {
   width: number;
   key: string;
@@ -148,4 +192,4 @@ export interface UploadAssetInput {
   dataBase64: string;
 }
 
-export type { PageDocument, ThemeDocument, ThemeTokens, BlockNode, DocumentDiff };
+export type { PageDocument, PostDocument, PostStatus, ThemeDocument, ThemeTokens, BlockNode, DocumentDiff, FieldDiff };

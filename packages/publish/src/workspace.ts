@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { PageDocument, SiteManifest, ThemeDocument } from "@prefab/schema";
+import type { PageDocument, PostDocument, SiteManifest, ThemeDocument } from "@prefab/schema";
 import { SITE_PAGE_ASTRO } from "./page-template.js";
 
 // Nested under this package (not /tmp) so Node/Vite module resolution
@@ -14,6 +14,7 @@ export interface SiteBuildData {
   site: SiteManifest;
   theme: ThemeDocument;
   pages: PageDocument[];
+  posts: PostDocument[];
 }
 
 export interface BuildWorkspace {

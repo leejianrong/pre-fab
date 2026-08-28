@@ -1,7 +1,7 @@
 import { buildSiteBundle } from "@prefab/publish";
 import type { SiteManifest, ThemeDocument } from "@prefab/schema";
 import type { Command } from "../registry.js";
-import { readCheckoutPages, readCheckoutSite, readCheckoutTheme } from "../checkout.js";
+import { readCheckoutPages, readCheckoutPosts, readCheckoutSite, readCheckoutTheme } from "../checkout.js";
 
 export interface BuildArgs {
   dir: string;
@@ -22,6 +22,7 @@ export async function buildCheckout(args: BuildArgs): Promise<BuildResult> {
   const siteFile = await readCheckoutSite(args.dir);
   const themeFile = await readCheckoutTheme(args.dir);
   const pages = await readCheckoutPages(args.dir);
+  const posts = await readCheckoutPosts(args.dir);
 
   const site: SiteManifest = {
     id: siteFile.id,
@@ -38,7 +39,7 @@ export async function buildCheckout(args: BuildArgs): Promise<BuildResult> {
     tokens: themeFile.tokens,
   };
 
-  return buildSiteBundle({ site, theme, pages, bundleStoreDir: args.bundleStoreDir });
+  return buildSiteBundle({ site, theme, pages, posts, bundleStoreDir: args.bundleStoreDir });
 }
 
 export const build: Command<BuildArgs, BuildResult> = {

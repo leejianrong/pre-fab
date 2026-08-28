@@ -10,7 +10,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "migrate": "tsx src/cli/migrate.ts",
     "test:unit": "vitest run --passWithNoTests --exclude '**/*.integration.test.ts'",
-    "test:integration": "vitest run test/*.integration.test.ts"
+    "test:integration": "vitest run test/*.integration.test.ts --no-file-parallelism"
   },
   "dependencies": {
     "@prefab/schema": "workspace:*",

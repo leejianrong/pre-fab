@@ -183,6 +183,9 @@ importers:
       '@prefab/api-client':
         specifier: workspace:*
         version: link:../packages/api-client
+      '@prefab/blocks':
+        specifier: workspace:*
+        version: link:../packages/blocks
       '@prefab/commands':
         specifier: workspace:*
         version: link:../packages/commands

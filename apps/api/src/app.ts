@@ -24,6 +24,12 @@ import {
   getPageDocument,
   writePageDocument,
   listPagesForSite,
+  createPost,
+  getPost,
+  writePost,
+  listPostsForSite,
+  listAllPostsForSite,
+  listPostSlugsForSite,
   createPublish,
   setLivePublish,
   getLivePublish,
@@ -44,11 +50,17 @@ import {
 } from "@prefab/db";
 import {
   DEFAULT_THEME_TOKENS,
+  dedupeSlug,
   diffPageDocuments,
+  diffPostDocuments,
+  isPostVisible,
   newUlid,
   rekeyPageForFork,
+  slugify,
   validatePageDocument,
+  validatePostDocument,
   type PageDocument,
+  type PostDocument,
   type SiteManifest,
 } from "@prefab/schema";
 import { blockSchemaRegistry, HERO_BLOCK_TYPE, heroDefaultProps } from "@prefab/blocks";
@@ -70,17 +82,20 @@ import {
 } from "./lib/domain-provider.js";
 import {
   CreatePageBodySchema,
+  CreatePostBodySchema,
   CreateSiteBodySchema,
   CreateSiteFromTemplateBodySchema,
   CreateTokenBodySchema,
   DevLoginBodySchema,
   AddDomainBodySchema,
   AdvanceFakeDomainBodySchema,
+  ListPostsQuerySchema,
   SignupBodySchema,
   UpdateThemeBodySchema,
   UploadAssetBodySchema,
   VerifyEmailBodySchema,
   WritePageBodySchema,
+  WritePostBodySchema,
 } from "./schemas.js";
 
 export interface AppDeps {
@@ -97,6 +112,14 @@ function parseBody<T>(schema: z.ZodType<T>, body: unknown): T {
   const result = schema.safeParse(body);
   if (!result.success) {
     throw validationError("invalid request body", result.error.issues);
+  }
+  return result.data;
+}
+
+function parseQuery<T>(schema: z.ZodType<T>, query: unknown): T {
+  const result = schema.safeParse(query);
+  if (!result.success) {
+    throw validationError("invalid query parameters", result.error.issues);
   }
   return result.data;
 }
@@ -156,6 +179,13 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   const platformHost = deps.platformHost ?? "prefab.local";
   const domainProvider = deps.domainProvider ?? createDomainProvider();
   const platformCnameTarget = cnameTargetFor(platformHost);
+  // Every site already has a free address at <slug>.<platformHost> (R1) —
+  // this is the base URL RSS/sitemap generation (@prefab/publish) anchors
+  // their absolute links to, independent of whether a custom domain is
+  // ever added.
+  function publicSiteUrl(slug: string): string {
+    return `https://${slug}.${platformHost}`;
+  }
   // Default is 1 MiB — too small for asset.upload's JSON+base64 body (up
   // to ~10.9 MiB for an 8 MiB file at base64's ~4/3 expansion). Comfortably
   // above that so a legitimately-sized upload never hits Fastify's own
@@ -484,6 +514,107 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     });
   });
 
+  // ---- post.create (Slice 5) ----
+  // An omitted slug is auto-generated from the title and deduped against
+  // the site's existing posts — the same discipline @prefab/schema's
+  // `dedupeSlug` gets unit-tested against directly.
+  app.post<{ Params: { siteId: string } }>("/v1/sites/:siteId/posts", async (request) => {
+    const principal = await requirePrincipal(request);
+    const { siteId } = await authorizeSite(pool, principal, request.params.siteId);
+    const body = parseBody(CreatePostBodySchema, request.body);
+
+    return withTenantContext(pool, { siteId }, async (client) => {
+      const existingSlugs = await listPostSlugsForSite(client, siteId);
+      const slug = body.slug ? dedupeSlug(body.slug, existingSlugs) : dedupeSlug(slugify(body.title), existingSlugs);
+      const date = body.date ?? new Date().toISOString().slice(0, 10);
+
+      return createPost(client, {
+        id: newUlid(),
+        siteId,
+        slug,
+        title: body.title,
+        date,
+        author: body.author,
+        tags: body.tags,
+        cover: body.cover,
+        body: body.body,
+        locale: body.locale,
+        status: body.status,
+      });
+    });
+  });
+
+  // ---- post.list ----
+  app.get<{ Params: { siteId: string } }>("/v1/sites/:siteId/posts", async (request) => {
+    const principal = await requirePrincipal(request);
+    const { siteId } = await authorizeSite(pool, principal, request.params.siteId);
+    const query = parseQuery(ListPostsQuerySchema, request.query);
+    return withTenantContext(pool, { siteId }, (client) => listPostsForSite(client, siteId, query));
+  });
+
+  // ---- post.get ----
+  app.get<{ Params: { siteId: string; postId: string } }>("/v1/sites/:siteId/posts/:postId", async (request) => {
+    const principal = await requirePrincipal(request);
+    const { siteId } = await authorizeSite(pool, principal, request.params.siteId);
+    const post = await withTenantContext(pool, { siteId }, (client) => getPost(client, request.params.postId));
+    if (!post || post.siteId !== siteId) throw notFound("post not found");
+    return post;
+  });
+
+  // ---- post.write — the collection's core mutation, same discipline as page.write (ADR-0006/R17/R18) ----
+  app.put<{ Params: { siteId: string; postId: string } }>("/v1/sites/:siteId/posts/:postId", async (request) => {
+    const principal = await requirePrincipal(request);
+    const { siteId } = await authorizeSite(pool, principal, request.params.siteId);
+    const { postId } = request.params;
+    const body = parseBody(WritePostBodySchema, request.body);
+
+    const candidate: PostDocument = {
+      id: postId,
+      siteId,
+      slug: body.slug,
+      title: body.title,
+      schemaVersion: 1,
+      version: body.expectedVersion,
+      date: body.date,
+      author: body.author,
+      tags: body.tags,
+      cover: body.cover,
+      body: body.body,
+      locale: body.locale,
+      status: body.status,
+    };
+    const validated = validatePostDocument(candidate);
+    if (!validated.ok) throw validationError("post failed validation", validated.issues);
+
+    return withTenantContext(pool, { siteId }, async (client) => {
+      const existing = await getPost(client, postId);
+      if (!existing || existing.siteId !== siteId) throw notFound("post not found");
+
+      const result = await writePost(client, {
+        postId,
+        siteId,
+        slug: validated.document.slug,
+        title: validated.document.title,
+        date: validated.document.date,
+        author: validated.document.author,
+        tags: validated.document.tags,
+        cover: validated.document.cover,
+        body: validated.document.body,
+        locale: validated.document.locale,
+        status: validated.document.status,
+        expectedVersion: body.expectedVersion,
+      });
+
+      if (!result.ok) {
+        throw conflict("post has moved on since expectedVersion", {
+          current: result.current,
+          diff: diffPostDocuments(result.current, candidate),
+        });
+      }
+      return result.document;
+    });
+  });
+
   // ---- asset.upload ----
   // JSON + base64 rather than multipart: keeps this mutation identical in
   // shape across all three surfaces (ADR-0003) — the CLI reads a local
@@ -710,7 +841,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     const principal = await requirePrincipal(request);
     const { siteId, accountId } = await authorizeSite(pool, principal, request.params.siteId);
 
-    const { manifest, theme, pages } = await withTenantContext(pool, { siteId }, async (client) => {
+    const { manifest, theme, pages, posts } = await withTenantContext(pool, { siteId }, async (client) => {
       const site = await getSite(client, siteId);
       if (!site) throw notFound("site not found");
       const theme = await getTheme(client, siteId);
@@ -719,14 +850,20 @@ export function buildApp(deps: AppDeps): FastifyInstance {
       const pages = (await Promise.all(pageRefs.map((p) => getPageDocument(client, p.id)))).filter(
         (p): p is PageDocument => p !== null,
       );
-      return { manifest: await siteManifestFor(client, site), theme, pages };
+      // R "publish includes only published posts": a draft or scheduled
+      // (future-dated) post is filtered out *here*, before the build ever
+      // sees it — @prefab/publish never re-derives visibility itself, so
+      // there is exactly one place this rule can drift.
+      const allPosts = await listAllPostsForSite(client, siteId);
+      const posts = allPosts.filter((post) => isPostVisible(post));
+      return { manifest: await siteManifestFor(client, site), theme, pages, posts };
     });
 
     // Astro build runs outside the DB transaction — it's slow (real
     // process-level work) and, per R4, must never be able to leave the live
     // pointer half-swapped: the swap below is the only thing that mutates
     // "what's live", and it happens only after a build fully succeeds.
-    const built = await buildSiteBundle({ site: manifest, theme, pages, bundleStoreDir });
+    const built = await buildSiteBundle({ site: manifest, theme, pages, posts, baseUrl: publicSiteUrl(manifest.slug), bundleStoreDir });
 
     const publish = await withTenantContext(pool, { siteId }, async (client) => {
       const record = await createPublish(client, {
@@ -781,7 +918,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     const principal = await requirePrincipal(request);
     const { siteId } = await authorizeSite(pool, principal, request.params.siteId);
 
-    const { manifest, theme, pages } = await withTenantContext(pool, { siteId }, async (client) => {
+    const { manifest, theme, pages, posts } = await withTenantContext(pool, { siteId }, async (client) => {
       const site = await getSite(client, siteId);
       if (!site) throw notFound("site not found");
       const theme = await getTheme(client, siteId);
@@ -790,10 +927,14 @@ export function buildApp(deps: AppDeps): FastifyInstance {
       const pages = (await Promise.all(pageRefs.map((p) => getPageDocument(client, p.id)))).filter(
         (p): p is PageDocument => p !== null,
       );
-      return { manifest: await siteManifestFor(client, site), theme, pages };
+      // Preview shows every post, drafts and scheduled ones included — it's
+      // "what the author is working on," not "what's public" (that
+      // filtering only happens at publish time, above).
+      const posts = await listAllPostsForSite(client, siteId);
+      return { manifest: await siteManifestFor(client, site), theme, pages, posts };
     });
 
-    const built = await buildSiteBundle({ site: manifest, theme, pages, bundleStoreDir });
+    const built = await buildSiteBundle({ site: manifest, theme, pages, posts, baseUrl: publicSiteUrl(manifest.slug), bundleStoreDir });
     return { contentHash: built.contentHash, previewUrl: `/v1/bundles/${built.contentHash}/index.html` };
   });
 

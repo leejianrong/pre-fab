@@ -1,12 +1,16 @@
 import type {
   Asset,
   ConflictDetails,
+  CreatePostInput,
   CreateSiteFromTemplateResult,
   CreateSiteResult,
   DomainWithInstruction,
   IssuedApiToken,
+  ListPostsQuery,
+  ListPostsResult,
   PageDocument,
   PageSummary,
+  PostDocument,
   PreviewResult,
   PublishRecord,
   PublishResult,
@@ -19,6 +23,7 @@ import type {
   UploadAssetInput,
   VerifyEmailResult,
   WritePageInput,
+  WritePostInput,
 } from "./types.js";
 
 export type ApiErrorCode = "validation_error" | "not_found" | "conflict" | "unauthorized" | "forbidden" | "internal";
@@ -225,6 +230,28 @@ export class ApiClient {
 
   writePage(siteId: string, pageId: string, input: WritePageInput): Promise<PageDocument> {
     return this.request("PUT", `/v1/sites/${siteId}/pages/${pageId}`, input);
+  }
+
+  // ---- post.create / post.list / post.get / post.write (Slice 5) ----
+  createPost(siteId: string, input: CreatePostInput): Promise<PostDocument> {
+    return this.request("POST", `/v1/sites/${siteId}/posts`, input);
+  }
+
+  listPosts(siteId: string, query: ListPostsQuery = {}): Promise<ListPostsResult> {
+    const params = new URLSearchParams();
+    if (query.limit !== undefined) params.set("limit", String(query.limit));
+    if (query.offset !== undefined) params.set("offset", String(query.offset));
+    if (query.status) params.set("status", query.status);
+    const qs = params.toString();
+    return this.request("GET", `/v1/sites/${siteId}/posts${qs ? `?${qs}` : ""}`);
+  }
+
+  getPost(siteId: string, postId: string): Promise<PostDocument> {
+    return this.request("GET", `/v1/sites/${siteId}/posts/${postId}`);
+  }
+
+  writePost(siteId: string, postId: string, input: WritePostInput): Promise<PostDocument> {
+    return this.request("PUT", `/v1/sites/${siteId}/posts/${postId}`, input);
   }
 
   // ---- asset.upload / asset.list ----

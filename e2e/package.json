@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@prefab/api-client": "workspace:*",
+    "@prefab/blocks": "workspace:*",
     "@prefab/commands": "workspace:*",
     "@prefab/db": "workspace:*",
     "@prefab/schema": "workspace:*"

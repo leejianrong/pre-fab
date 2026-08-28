@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { spawn } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { PageDocument, SiteManifest, ThemeDocument } from "@prefab/schema";
+import type { PageDocument, PostDocument, SiteManifest, ThemeDocument } from "@prefab/schema";
 
 const PACKAGE_ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const BUILD_WORKER_PATH = path.join(PACKAGE_ROOT, "src", "build-worker.ts");
@@ -12,6 +12,10 @@ export interface BuildSiteBundleInput {
   site: SiteManifest;
   theme: ThemeDocument;
   pages: PageDocument[];
+  /** Defaults to `[]` — every existing caller (local `build`/`preview` from a checkout, the template-budgets check) builds fine with no posts at all. */
+  posts?: PostDocument[];
+  /** Anchors RSS/sitemap's absolute links. Defaults to a placeholder for callers with no real public address yet (an offline local build, R16). */
+  baseUrl?: string;
   bundleStoreDir: string;
 }
 
@@ -33,7 +37,12 @@ export interface BuildSiteBundleResult {
 export async function buildSiteBundle(input: BuildSiteBundleInput): Promise<BuildSiteBundleResult> {
   const inputFile = await mkdtemp(path.join(tmpdir(), "pf-build-input-"));
   const inputPath = path.join(inputFile, "input.json");
-  await writeFile(inputPath, JSON.stringify(input), "utf8");
+  const resolvedInput = {
+    ...input,
+    posts: input.posts ?? [],
+    baseUrl: input.baseUrl ?? `https://${input.site.slug}.prefab.invalid`,
+  };
+  await writeFile(inputPath, JSON.stringify(resolvedInput), "utf8");
 
   try {
     const { stdout, stderr, exitCode } = await runWorker(inputPath);
