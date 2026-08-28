@@ -40,6 +40,34 @@ export interface SignupResult {
   status: "pending_verification";
 }
 
+export type CustomDomainStatus = "pending_dns" | "active" | "failed";
+
+export interface CustomDomain {
+  id: string;
+  siteId: string;
+  hostname: string;
+  isApex: boolean;
+  status: CustomDomainStatus;
+  providerHostnameId: string | null;
+  cnameTarget: string;
+  verificationError: string | null;
+  createdAt: string;
+  updatedAt: string;
+  createdBy: string;
+}
+
+export interface DnsInstruction {
+  recordType: "CNAME" | "ALIAS/ANAME";
+  name: string;
+  value: string;
+  note: string;
+}
+
+export interface DomainWithInstruction {
+  domain: CustomDomain;
+  dnsInstruction: DnsInstruction;
+}
+
 export interface VerifyEmailResult {
   accountId: string;
 }

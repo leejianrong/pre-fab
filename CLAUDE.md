@@ -4,9 +4,11 @@ A no-code website builder where the site is a portable, diffable artifact the
 customer owns. Competes with Wix and Squarespace on the thing neither can do:
 hand over a working site.
 
-**Status: Slices 1–3 built.** One write path, the block library and theme tokens,
-and templates/onboarding are done — see `README.md` for what each shipped. Slice 4
-(custom domains and TLS) is the next work.
+**Status: Slices 1–4 built.** One write path, the block library and theme tokens,
+templates/onboarding, and custom domains/TLS are done — see `README.md` for what
+each shipped, and note Slice 4 runs against a fake Cloudflare adapter (no real
+account or domain exists in this environment). Slice 5 (blog and collections) is
+the next work.
 
 ## Read before changing anything
 

@@ -11,6 +11,7 @@ import { ApiClientError, type PageDocument, type SiteSummary, type ThemeDocument
 import type { BlockNode } from "@prefab/schema";
 import { UnknownBlockList } from "./UnknownBlockList.js";
 import { ThemeEditor } from "./ThemeEditor.js";
+import { DomainsPanel } from "./DomainsPanel.js";
 import { api } from "./api.js";
 
 type Status = "idle" | "saving" | "saved" | "publishing" | "published";
@@ -51,6 +52,7 @@ export function SiteEditor({
   // reconstruction of the document but doesn't itself trigger a re-render.
   const [unknownBlocks, setUnknownBlocks] = useState<BlockNode[]>([]);
   const [themeEditorOpen, setThemeEditorOpen] = useState(false);
+  const [domainsPanelOpen, setDomainsPanelOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -177,6 +179,9 @@ export function SiteEditor({
         <button onClick={() => setThemeEditorOpen(true)} style={{ padding: "0.4rem 0.8rem" }}>
           Theme
         </button>
+        <button onClick={() => setDomainsPanelOpen(true)} style={{ padding: "0.4rem 0.8rem" }}>
+          Domains
+        </button>
         <button onClick={handleSave} disabled={status === "saving"} style={{ padding: "0.4rem 0.8rem" }}>
           {status === "saving" ? "Saving…" : "Save"}
         </button>
@@ -229,6 +234,7 @@ export function SiteEditor({
       {themeEditorOpen ? (
         <ThemeEditor tokens={theme.tokens} onSave={handleSaveTheme} onClose={() => setThemeEditorOpen(false)} />
       ) : null}
+      {domainsPanelOpen ? <DomainsPanel siteId={siteId} onClose={() => setDomainsPanelOpen(false)} /> : null}
       {celebration ? (
         <div
           role="dialog"

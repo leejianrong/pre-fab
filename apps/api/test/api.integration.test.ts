@@ -8,6 +8,7 @@ import sharp from "sharp";
 import { newUlid, type PageDocument } from "@prefab/schema";
 import { withTenantContext, runMigrations, createAccount } from "@prefab/db";
 import { buildApp } from "../src/app.js";
+import { FakeDomainProvider } from "../src/lib/domain-provider.js";
 import type { FastifyInstance } from "fastify";
 
 interface CreatedSite {
@@ -33,15 +34,18 @@ const appPool = new Pool({ connectionString: appUrl });
 let app: FastifyInstance;
 let bundleStoreDir: string;
 let assetStoreDir: string;
+let fakeDomainProvider: FakeDomainProvider;
+const TEST_PLATFORM_HOST = "prefab.test";
 
 beforeAll(async () => {
   await runMigrations(migratePool);
   await migratePool.query(
-    "TRUNCATE assets, publishes, blocks, pages, themes, sites, api_tokens, sessions, accounts CASCADE",
+    "TRUNCATE custom_domains, assets, publishes, blocks, pages, themes, sites, api_tokens, sessions, accounts CASCADE",
   );
   bundleStoreDir = await mkdtemp(path.join(tmpdir(), "pf-api-bundles-"));
   assetStoreDir = await mkdtemp(path.join(tmpdir(), "pf-api-assets-"));
-  app = buildApp({ pool: appPool, bundleStoreDir, assetStoreDir });
+  fakeDomainProvider = new FakeDomainProvider();
+  app = buildApp({ pool: appPool, bundleStoreDir, assetStoreDir, platformHost: TEST_PLATFORM_HOST, domainProvider: fakeDomainProvider });
   await app.ready();
 });
 
@@ -436,6 +440,225 @@ describe("template fork-on-use (Slice 3, ADR-0011)", () => {
       payload: { title: "x", slug: "home", blocks: [], expectedVersion: 0 },
     });
     expect(edit.statusCode).toBe(404);
+  });
+});
+
+describe("custom domains (Slice 4, ADR-0007) — against the fake provider", () => {
+  it("runs the full lifecycle: add (pending) -> verify (still pending) -> DNS propagates -> verify (active) -> repeated polls stay stable -> remove", async () => {
+    const { cookie } = await seedAccountAndLogin(`domain-${newUlid()}@example.com`);
+    const created = await app.inject({
+      method: "POST",
+      url: "/v1/sites",
+      headers: { cookie },
+      payload: { slug: `domain-${newUlid()}`, name: "Domain Lifecycle" },
+    });
+    const { site } = created.json() as CreatedSite;
+
+    const added = await app.inject({
+      method: "POST",
+      url: `/v1/sites/${site.id}/domains`,
+      headers: { cookie },
+      payload: { hostname: "www.example-lifecycle.test" },
+    });
+    expect(added.statusCode).toBe(200);
+    const addedBody = added.json() as { domain: { id: string; status: string; providerHostnameId: string }; dnsInstruction: { recordType: string; name: string } };
+    expect(addedBody.domain.status).toBe("pending_dns");
+    expect(addedBody.dnsInstruction).toMatchObject({ recordType: "CNAME", name: "www" });
+    const domainId = addedBody.domain.id;
+    const providerHostnameId = addedBody.domain.providerHostnameId;
+
+    // Not verified yet at the provider (DNS propagation is "slow") — a
+    // verify call now must not false-positive to active.
+    const stillPending = await app.inject({
+      method: "POST",
+      url: `/v1/sites/${site.id}/domains/${domainId}/verify`,
+      headers: { cookie },
+    });
+    expect((stillPending.json() as { domain: { status: string } }).domain.status).toBe("pending_dns");
+
+    // DNS propagates; the provider now reports the hostname active.
+    fakeDomainProvider.advance(providerHostnameId, "active");
+    const verified = await app.inject({
+      method: "POST",
+      url: `/v1/sites/${site.id}/domains/${domainId}/verify`,
+      headers: { cookie },
+    });
+    expect((verified.json() as { domain: { status: string; verificationError: string | null } }).domain.status).toBe("active");
+
+    // "the renewal path" (SLICES.md): a later poll (what a certificate
+    // renewal check would also do) must find the same domain still active,
+    // never regressing to pending or failed just because it was checked
+    // again.
+    const polledAgain = await app.inject({
+      method: "POST",
+      url: `/v1/sites/${site.id}/domains/${domainId}/verify`,
+      headers: { cookie },
+    });
+    expect((polledAgain.json() as { domain: { status: string } }).domain.status).toBe("active");
+
+    // Removing deprovisions at the provider and deletes our record.
+    const removed = await app.inject({ method: "DELETE", url: `/v1/sites/${site.id}/domains/${domainId}`, headers: { cookie } });
+    expect(removed.statusCode).toBe(200);
+    await expect(fakeDomainProvider.getCustomHostnameStatus(providerHostnameId)).rejects.toThrow();
+
+    const list = await app.inject({ method: "GET", url: `/v1/sites/${site.id}/domains`, headers: { cookie } });
+    expect(list.json()).toEqual([]);
+  });
+
+  it("surfaces a specific, actionable error when DNS verification fails, rather than a generic failure", async () => {
+    const { cookie } = await seedAccountAndLogin(`domain-fail-${newUlid()}@example.com`);
+    const created = await app.inject({
+      method: "POST",
+      url: "/v1/sites",
+      headers: { cookie },
+      payload: { slug: `domain-fail-${newUlid()}`, name: "Domain Failure" },
+    });
+    const { site } = created.json() as CreatedSite;
+
+    const added = await app.inject({
+      method: "POST",
+      url: `/v1/sites/${site.id}/domains`,
+      headers: { cookie },
+      payload: { hostname: "www.example-fails.test" },
+    });
+    const { domain } = added.json() as { domain: { id: string; providerHostnameId: string } };
+
+    fakeDomainProvider.advance(domain.providerHostnameId, "failed", ["CNAME record not found at www.example-fails.test"]);
+    const verified = await app.inject({
+      method: "POST",
+      url: `/v1/sites/${site.id}/domains/${domain.id}/verify`,
+      headers: { cookie },
+    });
+    const body = verified.json() as { domain: { status: string; verificationError: string | null } };
+    expect(body.domain.status).toBe("failed");
+    expect(body.domain.verificationError).toContain("CNAME record not found");
+  });
+
+  it("rejects an invalid hostname with a specific validation error, naming the problem (R18-style)", async () => {
+    const { cookie } = await seedAccountAndLogin(`domain-invalid-${newUlid()}@example.com`);
+    const created = await app.inject({
+      method: "POST",
+      url: "/v1/sites",
+      headers: { cookie },
+      payload: { slug: `domain-invalid-${newUlid()}`, name: "Domain Invalid" },
+    });
+    const { site } = created.json() as CreatedSite;
+
+    const badHostname = await app.inject({
+      method: "POST",
+      url: `/v1/sites/${site.id}/domains`,
+      headers: { cookie },
+      payload: { hostname: "*.not-valid" },
+    });
+    expect(badHostname.statusCode).toBe(400);
+    expect((badHostname.json() as { error: { message: string } }).error.message).toMatch(/wildcard/i);
+
+    const platformHostname = await app.inject({
+      method: "POST",
+      url: `/v1/sites/${site.id}/domains`,
+      headers: { cookie },
+      payload: { hostname: `${site.slug ?? "anything"}.${TEST_PLATFORM_HOST}` },
+    });
+    expect(platformHostname.statusCode).toBe(400);
+  });
+
+  it("rejects a domain add/verify/remove from a token scoped to a different site (RLS, ADR-0008)", async () => {
+    const owner = await seedAccountAndLogin(`domain-rls-${newUlid()}@example.com`);
+    const createdA = await app.inject({
+      method: "POST",
+      url: "/v1/sites",
+      headers: { cookie: owner.cookie },
+      payload: { slug: `domain-rls-a-${newUlid()}`, name: "Site A" },
+    });
+    const siteA = (createdA.json() as CreatedSite).site;
+    const createdB = await app.inject({
+      method: "POST",
+      url: "/v1/sites",
+      headers: { cookie: owner.cookie },
+      payload: { slug: `domain-rls-b-${newUlid()}`, name: "Site B" },
+    });
+    const siteB = (createdB.json() as CreatedSite).site;
+
+    const added = await app.inject({
+      method: "POST",
+      url: `/v1/sites/${siteA.id}/domains`,
+      headers: { cookie: owner.cookie },
+      payload: { hostname: "www.example-rls.test" },
+    });
+    const domainId = (added.json() as { domain: { id: string } }).domain.id;
+
+    const crossSiteVerify = await app.inject({
+      method: "POST",
+      url: `/v1/sites/${siteB.id}/domains/${domainId}/verify`,
+      headers: { cookie: owner.cookie },
+    });
+    expect(crossSiteVerify.statusCode).toBe(404);
+
+    const crossSiteRemove = await app.inject({
+      method: "DELETE",
+      url: `/v1/sites/${siteB.id}/domains/${domainId}`,
+      headers: { cookie: owner.cookie },
+    });
+    expect(crossSiteRemove.statusCode).toBe(404);
+
+    // Untouched via the correct site.
+    const list = await app.inject({ method: "GET", url: `/v1/sites/${siteA.id}/domains`, headers: { cookie: owner.cookie } });
+    expect((list.json() as unknown[]).length).toBe(1);
+  });
+});
+
+describe("host-based public routing (Slice 4, R1) — <slug>.<platformHost> and active custom domains", () => {
+  async function publishedSite(cookie: string, slugPrefix: string) {
+    const created = await app.inject({
+      method: "POST",
+      url: "/v1/sites",
+      headers: { cookie },
+      payload: { slug: `${slugPrefix}-${newUlid()}`, name: "Host Routing" },
+    });
+    const { site } = created.json() as CreatedSite;
+    const publish = await app.inject({ method: "POST", url: `/v1/sites/${site.id}/publish`, headers: { cookie } });
+    expect(publish.statusCode).toBe(200);
+    return site;
+  }
+
+  it("serves a site's live bundle for <slug>.<platformHost>, unauthenticated", async () => {
+    const { cookie } = await seedAccountAndLogin(`host-slug-${newUlid()}@example.com`);
+    const site = await publishedSite(cookie, "host-slug");
+
+    const response = await app.inject({ method: "GET", url: "/", headers: { host: `${site.slug}.${TEST_PLATFORM_HOST}` } });
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toContain(site.name);
+  });
+
+  it("serves a site for an active custom domain, and 404s once it's removed", async () => {
+    const { cookie } = await seedAccountAndLogin(`host-domain-${newUlid()}@example.com`);
+    const site = await publishedSite(cookie, "host-domain");
+
+    const added = await app.inject({
+      method: "POST",
+      url: `/v1/sites/${site.id}/domains`,
+      headers: { cookie },
+      payload: { hostname: "www.example-hostrouting.test" },
+    });
+    const { domain } = added.json() as { domain: { id: string; providerHostnameId: string } };
+
+    const beforeActive = await app.inject({ method: "GET", url: "/", headers: { host: "www.example-hostrouting.test" } });
+    expect(beforeActive.statusCode).toBe(404);
+
+    fakeDomainProvider.advance(domain.providerHostnameId, "active");
+    await app.inject({ method: "POST", url: `/v1/sites/${site.id}/domains/${domain.id}/verify`, headers: { cookie } });
+
+    const afterActive = await app.inject({ method: "GET", url: "/", headers: { host: "www.example-hostrouting.test" } });
+    expect(afterActive.statusCode).toBe(200);
+
+    await app.inject({ method: "DELETE", url: `/v1/sites/${site.id}/domains/${domain.id}`, headers: { cookie } });
+    const afterRemoval = await app.inject({ method: "GET", url: "/", headers: { host: "www.example-hostrouting.test" } });
+    expect(afterRemoval.statusCode).toBe(404);
+  });
+
+  it("404s for a host that matches nothing", async () => {
+    const response = await app.inject({ method: "GET", url: "/", headers: { host: "nobody-has-this.example.test" } });
+    expect(response.statusCode).toBe(404);
   });
 });
 

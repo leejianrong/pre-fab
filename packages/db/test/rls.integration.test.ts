@@ -2,10 +2,11 @@ import "dotenv/config";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { newUlid, DEFAULT_THEME_TOKENS } from "@prefab/schema";
 import { createPool, runMigrations, withTenantContext } from "../src/index.js";
-import { createAccount, createSite, getSite, listSitesForAccount } from "../src/repositories/index.js";
+import { createAccount, createSite, getSite, getSiteBySlug, listSitesForAccount } from "../src/repositories/index.js";
 import { createTheme, getTheme } from "../src/repositories/themes.js";
 import { createPage, getPageDocument, writePageDocument } from "../src/repositories/pages.js";
 import { createPublish, getLivePublish, setLivePublish } from "../src/repositories/publishes.js";
+import { createCustomDomain, findActiveCustomDomainByHostname, updateCustomDomainStatus } from "../src/repositories/custom-domains.js";
 
 const migrateUrl = process.env.MIGRATE_DATABASE_URL_TEST;
 const appUrl = process.env.DATABASE_URL_TEST;
@@ -23,7 +24,7 @@ beforeAll(async () => {
   await runMigrations(migratePool);
   // Integration tests own the whole test database; start from a clean slate.
   await migratePool.query(
-    "TRUNCATE publishes, blocks, pages, themes, sites, api_tokens, sessions, accounts CASCADE",
+    "TRUNCATE custom_domains, publishes, blocks, pages, themes, sites, api_tokens, sessions, accounts CASCADE",
   );
 });
 
@@ -123,6 +124,75 @@ describe("row-level security (ADR-0008)", () => {
       getPageDocument(client, page.id),
     );
     expect(pageFromA?.id).toBe(page.id);
+  });
+});
+
+describe("public read policies (Slice 4, R1/ADR-0007) — no tenant context, scoped narrowly", () => {
+  it("getSiteBySlug with no context finds a published site but not an unpublished one", async () => {
+    const owner = await withTenantContext(migratePool, {}, (client) =>
+      createAccount(client, { id: newUlid(), email: `pub-slug-${newUlid()}@example.com` }),
+    );
+    const published = await withTenantContext(appPool, { accountId: owner.id }, (client) =>
+      createSite(client, { id: newUlid(), slug: `published-${newUlid()}`, name: "Published", ownerId: owner.id }),
+    );
+    const unpublished = await withTenantContext(appPool, { accountId: owner.id }, (client) =>
+      createSite(client, { id: newUlid(), slug: `unpublished-${newUlid()}`, name: "Unpublished", ownerId: owner.id }),
+    );
+    await withTenantContext(appPool, { siteId: published.id }, (client) =>
+      createPublish(client, { id: newUlid(), siteId: published.id, bundlePath: "b", contentHash: "h", createdBy: owner.id }).then(
+        (publish) => setLivePublish(client, published.id, publish.id),
+      ),
+    );
+
+    // No site_id, no account_id — exactly the context host-based routing has.
+    const foundPublished = await withTenantContext(appPool, {}, (client) => getSiteBySlug(client, published.slug));
+    expect(foundPublished?.id).toBe(published.id);
+
+    const foundUnpublished = await withTenantContext(appPool, {}, (client) => getSiteBySlug(client, unpublished.slug));
+    expect(foundUnpublished).toBeNull();
+  });
+
+  it("findActiveCustomDomainByHostname with no context finds only an active domain, never a pending or failed one", async () => {
+    const owner = await withTenantContext(migratePool, {}, (client) =>
+      createAccount(client, { id: newUlid(), email: `pub-domain-${newUlid()}@example.com` }),
+    );
+    const site = await withTenantContext(appPool, { accountId: owner.id }, (client) =>
+      createSite(client, { id: newUlid(), slug: `domain-rls-${newUlid()}`, name: "Domain RLS", ownerId: owner.id }),
+    );
+
+    const activeHostname = `active-${newUlid()}.example.test`;
+    const pendingHostname = `pending-${newUlid()}.example.test`;
+    const active = await withTenantContext(appPool, { siteId: site.id, accountId: owner.id }, (client) =>
+      createCustomDomain(client, {
+        id: newUlid(),
+        siteId: site.id,
+        hostname: activeHostname,
+        isApex: false,
+        providerHostnameId: "fake_1",
+        cnameTarget: "customer-domains.prefab.test",
+        createdBy: owner.id,
+      }),
+    );
+    await withTenantContext(appPool, { siteId: site.id }, (client) =>
+      updateCustomDomainStatus(client, active.id, { status: "active", verificationError: null }),
+    );
+    await withTenantContext(appPool, { siteId: site.id, accountId: owner.id }, (client) =>
+      createCustomDomain(client, {
+        id: newUlid(),
+        siteId: site.id,
+        hostname: pendingHostname,
+        isApex: false,
+        providerHostnameId: "fake_2",
+        cnameTarget: "customer-domains.prefab.test",
+        createdBy: owner.id,
+      }),
+    );
+
+    const foundActive = await withTenantContext(appPool, {}, (client) => findActiveCustomDomainByHostname(client, activeHostname));
+    expect(foundActive?.siteId).toBe(site.id);
+
+    const foundPending = await withTenantContext(appPool, {}, (client) => findActiveCustomDomainByHostname(client, pendingHostname));
+    expect(foundPending).toBeNull();
   });
 });
 

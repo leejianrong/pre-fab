@@ -15,8 +15,9 @@ const pool = new Pool({ connectionString });
 const bundleStoreDir = path.resolve(process.env.BUNDLE_STORE_DIR ?? ".data/bundles");
 const assetStoreDir = path.resolve(process.env.ASSET_STORE_DIR ?? ".data/assets");
 const port = Number(process.env.API_PORT ?? 8787);
+const platformHost = process.env.PUBLIC_SITE_HOST ?? "prefab.local";
 
-const app = buildApp({ pool, bundleStoreDir, assetStoreDir });
+const app = buildApp({ pool, bundleStoreDir, assetStoreDir, platformHost });
 
 app
   .listen({ port, host: "0.0.0.0" })
