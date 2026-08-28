@@ -1,6 +1,8 @@
 import { defineRegistry } from "../registry.js";
 import { devLogin } from "./login.js";
+import { accountSignup, accountVerifyEmail } from "./account.js";
 import { siteCreate, siteGet, siteList } from "./site.js";
+import { templateList, siteCreateFromTemplate } from "./template.js";
 import { themeGet, themeSet } from "./theme.js";
 import { pageCreate, pageGet, pageList, pageWrite } from "./page.js";
 import { assetUpload, assetList } from "./asset.js";
@@ -20,9 +22,13 @@ import { preview } from "./preview.js";
  */
 export const commandRegistry = defineRegistry([
   devLogin,
+  accountSignup,
+  accountVerifyEmail,
   siteCreate,
   siteList,
   siteGet,
+  templateList,
+  siteCreateFromTemplate,
   themeGet,
   themeSet,
   pageCreate,
@@ -47,9 +53,13 @@ export const commandRegistry = defineRegistry([
 
 export {
   devLogin,
+  accountSignup,
+  accountVerifyEmail,
   siteCreate,
   siteList,
   siteGet,
+  templateList,
+  siteCreateFromTemplate,
   themeGet,
   themeSet,
   pageCreate,

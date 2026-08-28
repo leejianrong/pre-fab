@@ -1,0 +1,153 @@
+{
+  "id": "01M136AM1P2FGN2CY5NE99J39A",
+  "siteId": "01M136AM1P0RQ2F25EEDAM6K6J",
+  "slug": "home",
+  "title": "Home",
+  "schemaVersion": 1,
+  "version": 0,
+  "blocks": [
+    {
+      "id": "01M136AM1P8RS71EXF851EQ36J",
+      "type": "nav",
+      "parent": null,
+      "order": 1000,
+      "schemaVersion": 1,
+      "props": {
+        "brand": "Riverside Summer Fest",
+        "links": [
+          {
+            "label": "Schedule",
+            "href": "#schedule"
+          },
+          {
+            "label": "Venue",
+            "href": "#venue"
+          }
+        ]
+      },
+      "responsive": {}
+    },
+    {
+      "id": "01M136AM1PBMC67HV3DN9B53T5",
+      "type": "hero",
+      "parent": null,
+      "order": 2000,
+      "schemaVersion": 1,
+      "props": {
+        "heading": "Riverside Summer Fest — August 22, 2026",
+        "subheading": "One day, three stages, food trucks and a river view. All ages welcome.",
+        "ctaLabel": "Get tickets",
+        "ctaHref": "#contact",
+        "background": "background"
+      },
+      "responsive": {}
+    },
+    {
+      "id": "01M136AM1P6VN8PEVVC06PG6FS",
+      "type": "heading",
+      "parent": null,
+      "order": 3000,
+      "schemaVersion": 1,
+      "props": {
+        "text": "Schedule",
+        "level": "h2",
+        "size": "heading",
+        "align": "left"
+      },
+      "responsive": {}
+    },
+    {
+      "id": "01M136AM1PVDQGCGQATTP2YMMQ",
+      "type": "richtext",
+      "parent": null,
+      "order": 4000,
+      "schemaVersion": 1,
+      "props": {
+        "html": "12:00 — Gates open, food trucks and market stalls\n\n14:00 — Main stage opening set\n\n17:00 — Community stage: local bands and spoken word\n\n20:00 — Headline performance, riverside stage",
+        "size": "body",
+        "align": "left"
+      },
+      "responsive": {}
+    },
+    {
+      "id": "01M136AM1PE5SA7M08HHVHW7M0",
+      "type": "heading",
+      "parent": null,
+      "order": 5000,
+      "schemaVersion": 1,
+      "props": {
+        "text": "Highlights",
+        "level": "h2",
+        "size": "heading",
+        "align": "left"
+      },
+      "responsive": {}
+    },
+    {
+      "id": "01M136AM1P1PG1HQANR551T693",
+      "type": "cardgrid",
+      "parent": null,
+      "order": 6000,
+      "schemaVersion": 1,
+      "props": {
+        "columns": 3,
+        "cards": [
+          {
+            "title": "Three stages",
+            "body": "Main, community and riverside stages running all day.",
+            "href": ""
+          },
+          {
+            "title": "Food trucks",
+            "body": "A dozen local vendors, plus a dedicated kids' food area.",
+            "href": ""
+          },
+          {
+            "title": "Free parking",
+            "body": "Shuttle buses run every 20 minutes from the north car park.",
+            "href": ""
+          }
+        ]
+      },
+      "responsive": {}
+    },
+    {
+      "id": "01M136AM1PDQEEQHY0JA10P033",
+      "type": "mapembed",
+      "parent": null,
+      "order": 7000,
+      "schemaVersion": 1,
+      "props": {
+        "query": "Riverside Park amphitheatre",
+        "height": "md"
+      },
+      "responsive": {}
+    },
+    {
+      "id": "01M136AM1P2SEF9X04QX30HDSS",
+      "type": "contactdetails",
+      "parent": null,
+      "order": 8000,
+      "schemaVersion": 1,
+      "props": {
+        "heading": "Questions for organisers",
+        "email": "hello@riversidesummerfest.example",
+        "phone": "",
+        "address": "Riverside Park"
+      },
+      "responsive": {}
+    },
+    {
+      "id": "01M136AM1PE94BDB554MZ90Z8D",
+      "type": "footer",
+      "parent": null,
+      "order": 9000,
+      "schemaVersion": 1,
+      "props": {
+        "text": "© Riverside Summer Fest",
+        "links": []
+      },
+      "responsive": {}
+    }
+  ]
+}

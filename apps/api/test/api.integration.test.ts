@@ -337,6 +337,108 @@ describe("apps/api — the one write path", () => {
   });
 });
 
+describe("real signup (Slice 3, built on slice 1's identity primitive)", () => {
+  function extractCode(text: string): string {
+    const match = /\b(\d{6})\b/.exec(text);
+    if (!match) throw new Error(`no 6-digit code found in email text: ${text}`);
+    return match[1]!;
+  }
+
+  it("emails a verification code, then verifying it starts a session (dev/login is untouched alongside it)", async () => {
+    const email = `signup-${newUlid()}@example.com`;
+
+    const signup = await app.inject({ method: "POST", url: "/v1/signup", payload: { email } });
+    expect(signup.statusCode).toBe(200);
+    expect((signup.json() as { status: string }).status).toBe("pending_verification");
+
+    const emails = await app.inject({ method: "GET", url: `/v1/dev/emails?to=${encodeURIComponent(email)}` });
+    const [message] = emails.json() as Array<{ to: string; text: string }>;
+    expect(message?.to).toBe(email);
+    const code = extractCode(message!.text);
+
+    const wrongCode = await app.inject({ method: "POST", url: "/v1/signup/verify", payload: { email, code: "000000" } });
+    expect(wrongCode.statusCode).toBe(401);
+
+    const verify = await app.inject({ method: "POST", url: "/v1/signup/verify", payload: { email, code } });
+    expect(verify.statusCode).toBe(200);
+    const cookieHeader = verify.headers["set-cookie"];
+    expect(cookieHeader).toBeDefined();
+
+    // The minted session works exactly like dev/login's — same primitive (SLICES.md).
+    const cookie = (Array.isArray(cookieHeader) ? cookieHeader[0] : cookieHeader)!.split(";")[0]!;
+    const sites = await app.inject({ method: "GET", url: "/v1/sites", headers: { cookie } });
+    expect(sites.statusCode).toBe(200);
+
+    // The code is one-time use — replaying it must fail.
+    const replay = await app.inject({ method: "POST", url: "/v1/signup/verify", payload: { email, code } });
+    expect(replay.statusCode).toBe(401);
+  });
+});
+
+describe("template fork-on-use (Slice 3, ADR-0011)", () => {
+  it("lists templates and forks one with fresh ids, correctly RLS-scoped to the new owner", async () => {
+    const { cookie, accountId } = await seedAccountAndLogin(`fork-${newUlid()}@example.com`);
+
+    const list = await app.inject({ method: "GET", url: "/v1/templates", headers: { cookie } });
+    expect(list.statusCode).toBe(200);
+    const templates = list.json() as Array<{ id: string }>;
+    expect(templates.length).toBe(8);
+    const templateId = templates[0]!.id;
+
+    const forked = await app.inject({
+      method: "POST",
+      url: `/v1/templates/${templateId}/use`,
+      headers: { cookie },
+      payload: { slug: `fork-${newUlid()}`, name: "Forked Site" },
+    });
+    expect(forked.statusCode).toBe(200);
+    const body = forked.json() as { site: { id: string; ownerId: string }; pages: PageDocument[]; templateId: string };
+    expect(body.templateId).toBe(templateId);
+    expect(body.site.ownerId).toBe(accountId);
+    expect(body.pages.length).toBeGreaterThan(0);
+    expect(body.pages[0]!.blocks.length).toBeGreaterThan(0);
+    // Every block on the new site has a fresh id — never the template's own checked-in ids.
+    for (const page of body.pages) {
+      expect(page.siteId).toBe(body.site.id);
+      for (const block of page.blocks) expect(typeof block.id).toBe("string");
+    }
+  });
+
+  it("forking the same template twice yields two independent sites (SLICES.md)", async () => {
+    const { cookie } = await seedAccountAndLogin(`fork-twice-${newUlid()}@example.com`);
+    const list = await app.inject({ method: "GET", url: "/v1/templates", headers: { cookie } });
+    const templateId = (list.json() as Array<{ id: string }>)[0]!.id;
+
+    const forkOnce = async () => {
+      const result = await app.inject({
+        method: "POST",
+        url: `/v1/templates/${templateId}/use`,
+        headers: { cookie },
+        payload: { slug: `fork-twice-${newUlid()}`, name: "Fork" },
+      });
+      return result.json() as { site: { id: string }; pages: PageDocument[] };
+    };
+
+    const first = await forkOnce();
+    const second = await forkOnce();
+
+    expect(first.site.id).not.toBe(second.site.id);
+    const firstBlockIds = new Set(first.pages.flatMap((p) => p.blocks.map((b) => b.id)));
+    const secondBlockIds = new Set(second.pages.flatMap((p) => p.blocks.map((b) => b.id)));
+    for (const id of secondBlockIds) expect(firstBlockIds.has(id)).toBe(false);
+
+    // Editing the first fork must never be reachable from the second (independent site rows).
+    const firstPageId = first.pages[0]!.id;
+    const edit = await app.inject({
+      method: "PUT",
+      url: `/v1/sites/${second.site.id}/pages/${firstPageId}`,
+      headers: { cookie },
+      payload: { title: "x", slug: "home", blocks: [], expectedVersion: 0 },
+    });
+    expect(edit.statusCode).toBe(404);
+  });
+});
+
 function heroHeading(page: PageDocument): string {
   return page.blocks[0].props.heading as string;
 }

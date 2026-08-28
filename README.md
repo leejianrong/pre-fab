@@ -4,10 +4,21 @@ A no-code website builder where the site is a portable, diffable artifact the
 customer owns. See `PLAN.md` for the problem and requirements (`R1`–`R20`),
 `docs/adr/` for binding decisions, and `SLICES.md` for the build sequence.
 
-**Status: Slice 1 ("one block, four surfaces") is built.** A site with a
-single Hero block can be created, edited in a Puck canvas, edited by
-CLI/MCP/pull-push round trip, and published to a live, rollback-able bundle
-— through the same one write path (the HTTP API) every time.
+**Status: Slices 1–3 are built.** Slice 1 proved the one-write-path loop with
+a single Hero block: create, edit in the Puck canvas, edit by CLI/MCP/pull-push
+round trip, publish to a live, rollback-able bundle. Slice 2 added the full
+first-party block library, theme tokens, block-level responsive overrides and
+content-addressed asset uploads. Slice 3 adds real signup and email
+verification (`dev/login` still exists, for local dev and tests), eight
+templates authored as exported site trees with fork-on-use instantiation
+(ADR-0011), a guided first edit and a publish celebration moment, and
+Lighthouse/axe-core budgets per template in CI.
+
+Slice 3's R1 acceptance test — five unassisted first-time users reaching a
+published site in under ten minutes, on recorded sessions — is a human user
+study and isn't something this repo's automation can certify by itself; the
+Playwright specs (`signup-flow.spec.ts`, `template-gallery.spec.ts`) and the
+per-template Lighthouse/axe budgets are the automatable parts of that bar.
 
 ## Monorepo layout
 
@@ -19,14 +30,16 @@ apps/
   editor/         Puck canvas SPA (Vite + React 19)
 packages/
   schema/          document model: ULIDs, Zod validation, flat block tree, diff
-  blocks/          block components (Hero only in slice 1) — SSR-safe, no Puck import
+  blocks/          first-party block components — SSR-safe, no Puck import
   puck-adapter/    translates the flat schema <-> Puck's content/zones shape
   db/              Postgres access + migrations, RLS keyed on site_id
   api-client/      typed HTTP client shared by the CLI, MCP server and editor
   publish/         Astro build pipeline — content-addressed bundles, atomic pointer swap
   commands/        one command registry the CLI and MCP server both wrap (R12 parity)
+  templates/       eight templates authored as exported site trees (ADR-0011);
+                   `pnpm --filter @prefab/templates run generate` regenerates them
 tools/
-  checks/          CI containment + parity checks (AST-based, not just lint rules)
+  checks/          CI containment, parity and per-template Lighthouse/axe budget checks
 e2e/               Playwright acceptance tests, one per SLICES.md scenario
 scripts/           local Postgres setup
 ```
@@ -79,10 +92,14 @@ pnpm --filter @prefab/cli run start -- --help
 pnpm --filter @prefab/mcp run start      # stdio MCP server; needs PREFAB_TOKEN
 ```
 
-For a first site: open the editor at `http://localhost:5173`, dev-login with
-any email, and create a site — it comes with one page and one Hero block.
-Or from the CLI: `prefab login`, `prefab site create <slug> <name>`,
-`prefab pull`, edit `pages/*.json`, `prefab push`, `prefab publish`.
+For a first site: open the editor at `http://localhost:5173` and either sign
+up for real (email + a 6-digit code — read the code back from
+`GET /v1/dev/emails?to=<email>`, the dev-only stand-in for an inbox) or
+dev-login with any seeded email, then pick a template or start blank. Or from
+the CLI: `prefab signup <email>` + `prefab verify <email> <code>` (or
+`prefab login <email>` for the seeded-account shortcut), `prefab template list`,
+`prefab template use <templateId> <slug> <name>`, `prefab pull`, edit
+`pages/*.json`, `prefab push`, `prefab publish`.
 
 ## Tests
 
@@ -91,6 +108,7 @@ pnpm run test:unit          # per-package, no external services
 pnpm run test:integration   # per-package, against real Postgres (dev:db first)
 pnpm run test:e2e           # Playwright, spins up its own api+editor+DB
 pnpm run ci                 # lint + typecheck + containment + unit + parity
+pnpm run ci:budgets         # per-template Lighthouse (R3) + axe-core (R6) budgets
 ```
 
 Integration and e2e tests run against real Postgres and a real Astro build —
@@ -98,7 +116,8 @@ nothing here is mocked at the boundary CI actually cares about.
 
 ## CI
 
-`.github/workflows/ci.yml` runs five jobs on every push/PR: `lint-typecheck`,
+`.github/workflows/ci.yml` runs six jobs on every push/PR: `lint-typecheck`,
 `containment-and-parity` (the enforced invariants above), `unit-tests`,
-`integration-tests` (Postgres 16 service container), and `e2e` (Postgres 16 +
-`playwright install --with-deps chromium`).
+`integration-tests` (Postgres 16 service container), `template-budgets`
+(Lighthouse + axe-core per template, no database needed), and `e2e`
+(Postgres 16 + `playwright install --with-deps chromium`).

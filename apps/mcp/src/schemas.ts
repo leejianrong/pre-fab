@@ -11,9 +11,15 @@ import { BlockListSchema, ThemeTokensSchema } from "@prefab/schema";
 export const schemas = {
   "dev.login": { email: z.string().email() },
 
+  "account.signup": { email: z.string().email() },
+  "account.verifyEmail": { email: z.string().email(), code: z.string().length(6) },
+
   "site.create": { slug: z.string().min(1), name: z.string().min(1) },
   "site.list": {},
   "site.get": { siteId: z.string() },
+
+  "template.list": {},
+  "site.createFromTemplate": { templateId: z.string().min(1), slug: z.string().min(1), name: z.string().min(1) },
 
   "theme.get": { siteId: z.string() },
   "theme.set": { siteId: z.string(), tokens: ThemeTokensSchema },

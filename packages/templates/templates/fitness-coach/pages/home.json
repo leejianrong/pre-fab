@@ -1,0 +1,151 @@
+{
+  "id": "01M136AM1HX6NWFRM1RY0Y4R4H",
+  "siteId": "01M136AM1GVWFKTY2QQJHCS8MG",
+  "slug": "home",
+  "title": "Home",
+  "schemaVersion": 1,
+  "version": 0,
+  "blocks": [
+    {
+      "id": "01M136AM1H24HSMRKV7KY3K30V",
+      "type": "nav",
+      "parent": null,
+      "order": 1000,
+      "schemaVersion": 1,
+      "props": {
+        "brand": "Forge Fitness",
+        "links": [
+          {
+            "label": "Programs",
+            "href": "#programs"
+          },
+          {
+            "label": "FAQ",
+            "href": "#faq"
+          },
+          {
+            "label": "Sign up",
+            "href": "#contact"
+          }
+        ]
+      },
+      "responsive": {}
+    },
+    {
+      "id": "01M136AM1H50SZGPK0199DA808",
+      "type": "hero",
+      "parent": null,
+      "order": 2000,
+      "schemaVersion": 1,
+      "props": {
+        "heading": "Coaching that fits around your actual life",
+        "subheading": "Strength and conditioning programs for people who've never had time for the gym before.",
+        "ctaLabel": "Start your first week free",
+        "ctaHref": "#contact",
+        "background": "background"
+      },
+      "responsive": {}
+    },
+    {
+      "id": "01M136AM1HZDVTMPRYZXC7TVTA",
+      "type": "heading",
+      "parent": null,
+      "order": 3000,
+      "schemaVersion": 1,
+      "props": {
+        "text": "Programs",
+        "level": "h2",
+        "size": "heading",
+        "align": "left"
+      },
+      "responsive": {}
+    },
+    {
+      "id": "01M136AM1H6WGRFBPC3AQP91QB",
+      "type": "cardgrid",
+      "parent": null,
+      "order": 4000,
+      "schemaVersion": 1,
+      "props": {
+        "columns": 3,
+        "cards": [
+          {
+            "title": "Strength foundations",
+            "body": "Twelve weeks of guided strength training, three sessions a week.",
+            "href": ""
+          },
+          {
+            "title": "1:1 coaching",
+            "body": "A fully personalised program with weekly check-ins.",
+            "href": ""
+          },
+          {
+            "title": "Small group",
+            "body": "Train alongside four other people at your level, twice a week.",
+            "href": ""
+          }
+        ]
+      },
+      "responsive": {}
+    },
+    {
+      "id": "01M136AM1HGFCW63TW1HZC123D",
+      "type": "testimonial",
+      "parent": null,
+      "order": 5000,
+      "schemaVersion": 1,
+      "props": {
+        "quote": "I'd tried and quit three gym memberships before this. Twelve weeks in and I haven't missed a session.",
+        "author": "Dev Patel",
+        "role": "Client since 2025"
+      },
+      "responsive": {}
+    },
+    {
+      "id": "01M136AM1HV49HBMTW7KM1Z8TM",
+      "type": "faq",
+      "parent": null,
+      "order": 6000,
+      "schemaVersion": 1,
+      "props": {
+        "items": [
+          {
+            "question": "Do I need any equipment?",
+            "answer": "No — programs are designed around what's available at a standard gym."
+          },
+          {
+            "question": "I've never trained before, is that OK?",
+            "answer": "Yes, most clients start here. Every program begins with an assessment."
+          }
+        ]
+      },
+      "responsive": {}
+    },
+    {
+      "id": "01M136AM1HQPGW5SXSM29P0A5N",
+      "type": "contactdetails",
+      "parent": null,
+      "order": 7000,
+      "schemaVersion": 1,
+      "props": {
+        "heading": "Start your first week free",
+        "email": "hello@forgefitness.example",
+        "phone": "+1 (555) 010-5500",
+        "address": ""
+      },
+      "responsive": {}
+    },
+    {
+      "id": "01M136AM1HJ4ZR6QXZM97FJZ63",
+      "type": "footer",
+      "parent": null,
+      "order": 8000,
+      "schemaVersion": 1,
+      "props": {
+        "text": "© Forge Fitness Coaching",
+        "links": []
+      },
+      "responsive": {}
+    }
+  ]
+}

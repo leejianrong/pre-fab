@@ -2,11 +2,12 @@ import { useState } from "react";
 import { api } from "./api.js";
 
 /**
- * Slice 1 has no signup UI (SLICES.md) — accounts are seeded, and this is
- * the browser's version of the same `dev.login` bootstrap the CLI and the
- * e2e suite use. Slice 3 replaces this with real signup.
+ * The browser's version of the `dev.login` bootstrap the CLI and the e2e
+ * suite use — a seeded-account stand-in for real auth, kept for local dev
+ * and tests. `SignupScreen` (linked below) is the real, production path
+ * added in Slice 3: a real account, a real emailed verification code.
  */
-export function LoginScreen({ onLoggedIn }: { onLoggedIn: () => void }) {
+export function LoginScreen({ onLoggedIn, onSignUp }: { onLoggedIn: () => void; onSignUp: () => void }) {
   const [email, setEmail] = useState("owner@example.com");
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -45,6 +46,13 @@ export function LoginScreen({ onLoggedIn }: { onLoggedIn: () => void }) {
           {pending ? "Signing in…" : "Sign in"}
         </button>
         {error ? <p style={{ color: "#dc2626", fontSize: "0.875rem" }}>{error}</p> : null}
+        <button
+          type="button"
+          onClick={onSignUp}
+          style={{ background: "none", border: "none", color: "#4f46e5", cursor: "pointer", fontSize: "0.875rem", padding: 0, justifySelf: "start" }}
+        >
+          First time? Create an account
+        </button>
       </form>
     </div>
   );

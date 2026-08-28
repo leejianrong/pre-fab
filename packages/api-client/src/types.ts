@@ -21,6 +21,29 @@ export interface CreateSiteResult {
   page: PageDocument;
 }
 
+export interface TemplateSummary {
+  id: string;
+  name: string;
+  category: string;
+  tagline: string;
+  description: string;
+}
+
+export interface CreateSiteFromTemplateResult {
+  site: SiteSummary;
+  pages: PageDocument[];
+  templateId: string;
+}
+
+export interface SignupResult {
+  accountId: string;
+  status: "pending_verification";
+}
+
+export interface VerifyEmailResult {
+  accountId: string;
+}
+
 export interface IssuedApiToken {
   id: string;
   name: string;

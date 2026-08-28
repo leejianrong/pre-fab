@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ThemeTokens } from "@prefab/schema";
-import { cssVar, resolveThemeTokens, themeTokensToStyleVars } from "../src/theme-css.js";
+import { cssVar, resolveThemeTokens, themeRootStyle, themeTokensToStyleVars } from "../src/theme-css.js";
 
 const EMPTY_TOKENS: ThemeTokens = { color: {}, fontSize: {}, spacing: {}, radius: {} };
 
@@ -30,5 +30,18 @@ describe("resolveThemeTokens", () => {
     expect(vars["--pf-color-accent"]).toBeDefined();
     expect(vars["--pf-color-background"]).toBeDefined();
     expect(vars["--pf-fontSize-heading"]).toBeDefined();
+  });
+});
+
+describe("themeRootStyle", () => {
+  it("sets an actual background/color on the root, not just the --pf-* custom properties", () => {
+    const style = themeRootStyle(resolveThemeTokens(EMPTY_TOKENS));
+    // A block that never sets its own background (Heading, RichText,
+    // ContactDetails, Faq, Spacer) must still land on the theme's colors,
+    // not the browser's black-on-white default — this is the root the
+    // Puck canvas and the published <body> both apply (ADR-0004 WYSIWYG).
+    expect(style.background).toBe("var(--pf-color-background)");
+    expect(style.color).toBe("var(--pf-color-foreground)");
+    expect(style["--pf-color-background"]).toBeDefined();
   });
 });

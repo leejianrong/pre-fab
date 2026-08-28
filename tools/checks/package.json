@@ -6,12 +6,20 @@
   "scripts": {
     "containment": "tsx src/cli/containment.ts",
     "parity": "tsx src/cli/parity.ts",
+    "budgets": "tsx src/cli/budgets.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test:unit": "vitest run"
   },
   "dependencies": {
+    "@prefab/api": "workspace:*",
     "@prefab/commands": "workspace:*",
-    "@prefab/api": "workspace:*"
+    "@prefab/publish": "workspace:*",
+    "@prefab/schema": "workspace:*",
+    "@prefab/templates": "workspace:*",
+    "axe-core": "4.13.0",
+    "chrome-launcher": "1.2.1",
+    "lighthouse": "13.4.1",
+    "playwright": "1.62.1"
   },
   "devDependencies": {
     "tsx": "4.19.2",

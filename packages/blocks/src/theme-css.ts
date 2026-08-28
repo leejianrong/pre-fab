@@ -25,6 +25,27 @@ export function themeTokensToStyleVars(tokens: ThemeTokens): Record<string, stri
   return vars;
 }
 
+/**
+ * The CSS custom properties alone (`themeTokensToStyleVars`) declare every
+ * `--pf-*` variable a block might read, but declare nothing about the root
+ * element itself — a block that doesn't set its own `background`/`color`
+ * (Heading, RichText, ContactDetails, Faq, Spacer) falls through to the
+ * browser default (white on black) rather than the theme's own
+ * background/foreground pair. This is what both the Puck canvas root
+ * (@prefab/puck-adapter's `createPuckConfig`) and the published page's
+ * `<body>` (@prefab/publish's page-template.ts) apply, so a themed gap
+ * between blocks — and any block that inherits rather than sets its own
+ * colors — renders correctly in both places identically (ADR-0004's WYSIWYG
+ * guarantee), not just wherever a block happens to declare its own.
+ */
+export function themeRootStyle(tokens: ThemeTokens): Record<string, string> {
+  return {
+    ...themeTokensToStyleVars(tokens),
+    background: cssVar("color", "background"),
+    color: cssVar("color", "foreground"),
+  };
+}
+
 export type ThemeTokenGroup = keyof ThemeTokens;
 
 /** The call every block makes instead of writing `var(--pf-<group>-<name>)` by hand. No fallback argument — CLAUDE.md invariant 2 forbids a raw value anywhere in a block, including as a CSS var() fallback, so resolution happens once, centrally, in `resolveThemeTokens` below, not per call site. */

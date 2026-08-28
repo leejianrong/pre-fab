@@ -13,7 +13,7 @@
  */
 export const SITE_PAGE_ASTRO = `---
 import data from "../data.json";
-import { blockComponents, resolveThemeTokens, themeTokensToStyleVars } from "@prefab/blocks";
+import { blockComponents, resolveThemeTokens, themeRootStyle } from "@prefab/blocks";
 
 export function getStaticPaths() {
   return data.pages.map((page) => ({
@@ -23,7 +23,7 @@ export function getStaticPaths() {
 }
 
 const { page, theme, site } = Astro.props;
-const themeVars = themeTokensToStyleVars(resolveThemeTokens(theme.tokens));
+const themeVars = themeRootStyle(resolveThemeTokens(theme.tokens));
 ---
 <html lang="en">
   <head>

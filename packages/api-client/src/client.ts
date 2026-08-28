@@ -1,6 +1,7 @@
 import type {
   Asset,
   ConflictDetails,
+  CreateSiteFromTemplateResult,
   CreateSiteResult,
   IssuedApiToken,
   PageDocument,
@@ -8,11 +9,14 @@ import type {
   PreviewResult,
   PublishRecord,
   PublishResult,
+  SignupResult,
   SiteOutline,
   SiteSummary,
+  TemplateSummary,
   ThemeDocument,
   ThemeTokens,
   UploadAssetInput,
+  VerifyEmailResult,
   WritePageInput,
 } from "./types.js";
 
@@ -106,20 +110,20 @@ export class ApiClient {
     return payload as T;
   }
 
-  // ---- identity bootstrap (dev-only in slice 1) ----
+  // ---- identity bootstrap ----
   /**
-   * Logs in and remembers the session cookie for every subsequent call on
-   * this instance — bypasses `request()` because it needs the response
-   * *headers*, not just the body. `getSessionCookie()` lets a caller (the
-   * CLI) persist it across process runs.
+   * Shared by every endpoint that can mint a session cookie (dev/login,
+   * signup verification) — bypasses `request()` because it needs the
+   * response *headers*, not just the body. `getSessionCookie()` lets a
+   * caller (the CLI) persist it across process runs.
    */
-  async devLogin(email: string): Promise<{ accountId: string }> {
+  private async authRequest<T>(path: string, body: unknown): Promise<T> {
     let response: Response;
     try {
-      response = await fetch(`${this.options.baseUrl}/v1/dev/login`, {
+      response = await fetch(`${this.options.baseUrl}${path}`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ email }),
+        body: JSON.stringify(body),
         signal: AbortSignal.timeout(this.options.timeoutMs ?? 10_000),
       });
     } catch (error) {
@@ -135,11 +139,35 @@ export class ApiClient {
     const setCookie = response.headers.get("set-cookie");
     if (setCookie) this.sessionCookie = setCookie.split(";")[0];
 
-    return payload as { accountId: string };
+    return payload as T;
+  }
+
+  /** Dev-only bootstrap (see apps/api's `/v1/dev/login`) — real signup below replaces this for production users. */
+  devLogin(email: string): Promise<{ accountId: string }> {
+    return this.authRequest("/v1/dev/login", { email });
   }
 
   getSessionCookie(): string | undefined {
     return this.sessionCookie;
+  }
+
+  // ---- account.signup / account.verifyEmail (Slice 3) ----
+  signup(email: string): Promise<SignupResult> {
+    return this.request("POST", "/v1/signup", { email });
+  }
+
+  /** Verifying mints a session exactly like `devLogin` — see `authRequest`. */
+  verifyEmail(email: string, code: string): Promise<VerifyEmailResult> {
+    return this.authRequest("/v1/signup/verify", { email, code });
+  }
+
+  // ---- template.list / site.createFromTemplate (Slice 3, ADR-0011) ----
+  listTemplates(): Promise<TemplateSummary[]> {
+    return this.request("GET", "/v1/templates");
+  }
+
+  createSiteFromTemplate(templateId: string, input: { slug: string; name: string }): Promise<CreateSiteFromTemplateResult> {
+    return this.request("POST", `/v1/templates/${templateId}/use`, input);
   }
 
   // ---- site.create / site.list / site.get ----

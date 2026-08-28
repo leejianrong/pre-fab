@@ -1,0 +1,158 @@
+{
+  "id": "01M136AM1STVMX19QHQAV1KB1J",
+  "siteId": "01M136AM1SEQMZHZBJQ9TRWA4E",
+  "slug": "home",
+  "title": "Home",
+  "schemaVersion": 1,
+  "version": 0,
+  "blocks": [
+    {
+      "id": "01M136AM1S0XMSHAPN9HGPS97V",
+      "type": "nav",
+      "parent": null,
+      "order": 1000,
+      "schemaVersion": 1,
+      "props": {
+        "brand": "Jordan Blake",
+        "links": [
+          {
+            "label": "About",
+            "href": "#about"
+          },
+          {
+            "label": "Writing",
+            "href": "#writing"
+          },
+          {
+            "label": "Contact",
+            "href": "#contact"
+          }
+        ]
+      },
+      "responsive": {}
+    },
+    {
+      "id": "01M136AM1SEQ4PT5E6AA5BKGJQ",
+      "type": "hero",
+      "parent": null,
+      "order": 2000,
+      "schemaVersion": 1,
+      "props": {
+        "heading": "Jordan Blake",
+        "subheading": "Writer and speaker on the future of remote work.",
+        "ctaLabel": "Get in touch",
+        "ctaHref": "#contact",
+        "background": "background"
+      },
+      "responsive": {}
+    },
+    {
+      "id": "01M136AM1S5YQ63MYWHH13NJKG",
+      "type": "heading",
+      "parent": null,
+      "order": 3000,
+      "schemaVersion": 1,
+      "props": {
+        "text": "About",
+        "level": "h2",
+        "size": "heading",
+        "align": "left"
+      },
+      "responsive": {}
+    },
+    {
+      "id": "01M136AM1S4VQGSRCP8T4N2605",
+      "type": "richtext",
+      "parent": null,
+      "order": 4000,
+      "schemaVersion": 1,
+      "props": {
+        "html": "I write and speak about how distributed teams actually work — not the theory, the practice. My newsletter reaches 40,000 readers a week, and I've spoken at conferences on four continents.\n\nPreviously: head of remote at two Series B startups, one very long stint as an actual remote employee.",
+        "size": "body",
+        "align": "left"
+      },
+      "responsive": {}
+    },
+    {
+      "id": "01M136AM1SS7PNPV3MBESQBYQ1",
+      "type": "heading",
+      "parent": null,
+      "order": 5000,
+      "schemaVersion": 1,
+      "props": {
+        "text": "Recent writing",
+        "level": "h2",
+        "size": "heading",
+        "align": "left"
+      },
+      "responsive": {}
+    },
+    {
+      "id": "01M136AM1S2VJ63ZKTZF74N4TG",
+      "type": "cardgrid",
+      "parent": null,
+      "order": 6000,
+      "schemaVersion": 1,
+      "props": {
+        "columns": 3,
+        "cards": [
+          {
+            "title": "The Async Trap",
+            "body": "Why 'async by default' quietly makes decisions slower, not faster.",
+            "href": ""
+          },
+          {
+            "title": "Hiring Without a Room",
+            "body": "A field guide to interviewing well over video.",
+            "href": ""
+          },
+          {
+            "title": "Time Zones Are a Feature",
+            "body": "Reframing the thing everyone complains about.",
+            "href": ""
+          }
+        ]
+      },
+      "responsive": {}
+    },
+    {
+      "id": "01M136AM1SQRZTP7DD1756DQQ1",
+      "type": "testimonial",
+      "parent": null,
+      "order": 7000,
+      "schemaVersion": 1,
+      "props": {
+        "quote": "Jordan is one of the few people writing about remote work who has actually managed a remote team.",
+        "author": "Renee Ostrowski",
+        "role": "VP Engineering, Fieldnote"
+      },
+      "responsive": {}
+    },
+    {
+      "id": "01M136AM1SP8CRNNX2CQB6CJ45",
+      "type": "contactdetails",
+      "parent": null,
+      "order": 8000,
+      "schemaVersion": 1,
+      "props": {
+        "heading": "Get in touch",
+        "email": "hello@jordanblake.example",
+        "phone": "",
+        "address": ""
+      },
+      "responsive": {}
+    },
+    {
+      "id": "01M136AM1S1G78MM7HCD21PNX3",
+      "type": "footer",
+      "parent": null,
+      "order": 9000,
+      "schemaVersion": 1,
+      "props": {
+        "text": "© Jordan Blake",
+        "links": []
+      },
+      "responsive": {}
+    }
+  ]
+}

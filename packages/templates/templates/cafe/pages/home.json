@@ -1,0 +1,151 @@
+{
+  "id": "01M136AM1EQSCJT3AYCDV7AAN1",
+  "siteId": "01M136AM1EG9ER06A8MMNBCH7Z",
+  "slug": "home",
+  "title": "Home",
+  "schemaVersion": 1,
+  "version": 0,
+  "blocks": [
+    {
+      "id": "01M136AM1EPA2C2W74E4PD1GPW",
+      "type": "nav",
+      "parent": null,
+      "order": 1000,
+      "schemaVersion": 1,
+      "props": {
+        "brand": "The Daily Grind",
+        "links": [
+          {
+            "label": "Menu",
+            "href": "#menu"
+          },
+          {
+            "label": "Visit",
+            "href": "#visit"
+          }
+        ]
+      },
+      "responsive": {}
+    },
+    {
+      "id": "01M136AM1EH4QSFWECFD4JJX1N",
+      "type": "hero",
+      "parent": null,
+      "order": 2000,
+      "schemaVersion": 1,
+      "props": {
+        "heading": "Coffee, pastries and a place to sit for a while",
+        "subheading": "Open every day from 7am, on the corner of Elm and 5th.",
+        "ctaLabel": "See the menu",
+        "ctaHref": "#menu",
+        "background": "background"
+      },
+      "responsive": {}
+    },
+    {
+      "id": "01M136AM1E82KHCPZYQGNVQTVD",
+      "type": "heading",
+      "parent": null,
+      "order": 3000,
+      "schemaVersion": 1,
+      "props": {
+        "text": "Menu highlights",
+        "level": "h2",
+        "size": "heading",
+        "align": "left"
+      },
+      "responsive": {}
+    },
+    {
+      "id": "01M136AM1EVFPEP6PNR0H1NHXP",
+      "type": "cardgrid",
+      "parent": null,
+      "order": 4000,
+      "schemaVersion": 1,
+      "props": {
+        "columns": 3,
+        "cards": [
+          {
+            "title": "Flat white",
+            "body": "Double shot, steamed milk, our house blend.",
+            "href": ""
+          },
+          {
+            "title": "Almond croissant",
+            "body": "Baked fresh every morning, gone most days by 10am.",
+            "href": ""
+          },
+          {
+            "title": "Avocado toast",
+            "body": "Sourdough, chilli flakes, a soft-boiled egg on request.",
+            "href": ""
+          }
+        ]
+      },
+      "responsive": {}
+    },
+    {
+      "id": "01M136AM1EK21DN927NB8D23YC",
+      "type": "gallery",
+      "parent": null,
+      "order": 5000,
+      "schemaVersion": 1,
+      "props": {
+        "columns": 3,
+        "images": [
+          {
+            "src": "https://images.unsplash.com/photo-1445116572660-236099ec97a0?w=900&q=80",
+            "alt": "Latte art on a wooden table"
+          },
+          {
+            "src": "https://images.unsplash.com/photo-1554118811-1e0d58224f24?w=900&q=80",
+            "alt": "Café interior seating area"
+          },
+          {
+            "src": "https://images.unsplash.com/photo-1509042239860-f550ce710b93?w=900&q=80",
+            "alt": "Pastries in a display case"
+          }
+        ]
+      },
+      "responsive": {}
+    },
+    {
+      "id": "01M136AM1E63BNDTDGMVFFBR4S",
+      "type": "mapembed",
+      "parent": null,
+      "order": 6000,
+      "schemaVersion": 1,
+      "props": {
+        "query": "5th Ave & Elm St",
+        "height": "md"
+      },
+      "responsive": {}
+    },
+    {
+      "id": "01M136AM1EGCJAA84B8GA9M3HR",
+      "type": "contactdetails",
+      "parent": null,
+      "order": 7000,
+      "schemaVersion": 1,
+      "props": {
+        "heading": "Visit us",
+        "email": "hello@dailygrindcafe.example",
+        "phone": "+1 (555) 010-4400",
+        "address": "5th Ave & Elm St"
+      },
+      "responsive": {}
+    },
+    {
+      "id": "01M136AM1E5MA5S8PNAE0QCX4W",
+      "type": "footer",
+      "parent": null,
+      "order": 8000,
+      "schemaVersion": 1,
+      "props": {
+        "text": "© The Daily Grind Café",
+        "links": []
+      },
+      "responsive": {}
+    }
+  ]
+}
