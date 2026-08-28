@@ -78,13 +78,19 @@ export function diffBlocks(before: BlockNode[], after: BlockNode[]): BlockDiffOp
         to: { parent: block.parent, order: block.order },
       });
     }
-    if (!shallowPropsEqual(prev.props, block.props)) {
+    // responsive overrides are folded in alongside props (not diffed
+    // separately) — from the outside, "what changed about this block's
+    // rendering" is one concept, whether the field lives in `props` or in
+    // the per-breakpoint override.
+    const prevWithResponsive = { ...prev.props, responsive: prev.responsive };
+    const nextWithResponsive = { ...block.props, responsive: block.responsive };
+    if (!shallowPropsEqual(prevWithResponsive, nextWithResponsive)) {
       ops.push({
         kind: "update",
         id: block.id,
-        changedKeys: changedKeysOf(prev.props, block.props),
-        before: prev.props,
-        after: block.props,
+        changedKeys: changedKeysOf(prevWithResponsive, nextWithResponsive),
+        before: prevWithResponsive,
+        after: nextWithResponsive,
       });
     }
   }

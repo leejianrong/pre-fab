@@ -25,6 +25,9 @@ import {
   setLivePublish,
   getLivePublish,
   listPublishes,
+  createAsset,
+  getAssetBySha256,
+  listAssetsForSite,
   type Pool,
   type PoolClient,
   type SiteRow,
@@ -44,18 +47,21 @@ import { API_MUTATIONS } from "./mutations.js";
 import { resolvePrincipal, authorizeSite, SESSION_COOKIE, type Principal } from "./lib/auth.js";
 import { generateRawToken } from "./lib/tokens.js";
 import { buildSiteOutline } from "./lib/outline.js";
+import { extensionFor, processImage, readAssetFile, sha256Hex, writeAssetFile } from "./lib/asset-storage.js";
 import {
   CreatePageBodySchema,
   CreateSiteBodySchema,
   CreateTokenBodySchema,
   DevLoginBodySchema,
   UpdateThemeBodySchema,
+  UploadAssetBodySchema,
   WritePageBodySchema,
 } from "./schemas.js";
 
 export interface AppDeps {
   pool: Pool;
   bundleStoreDir: string;
+  assetStoreDir: string;
 }
 
 function parseBody<T>(schema: z.ZodType<T>, body: unknown): T {
@@ -79,8 +85,13 @@ async function siteManifestFor(client: PoolClient, site: SiteRow): Promise<SiteM
 }
 
 export function buildApp(deps: AppDeps): FastifyInstance {
-  const { pool, bundleStoreDir } = deps;
-  const app = Fastify({ logger: false });
+  const { pool, bundleStoreDir, assetStoreDir } = deps;
+  // Default is 1 MiB — too small for asset.upload's JSON+base64 body (up
+  // to ~10.9 MiB for an 8 MiB file at base64's ~4/3 expansion). Comfortably
+  // above that so a legitimately-sized upload never hits Fastify's own
+  // body-size rejection before reaching UploadAssetBodySchema's own,
+  // precise byte-size validation.
+  const app = Fastify({ logger: false, bodyLimit: 12 * 1024 * 1024 });
 
   app.register(cookie);
   // The editor SPA runs on its own Vite dev-server origin (ADR-0004 —
@@ -99,6 +110,14 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   app.setErrorHandler((error, _request, reply) => {
     if (error instanceof ApiError) {
       reply.status(error.statusCode).send({ error: { code: error.code, message: error.message, details: error.details } });
+      return;
+    }
+    // A framework-level rejection (oversized body, malformed JSON) already
+    // carries its own 4xx statusCode — surface that as a validation error
+    // rather than the internal 500 catch-all below, which is for genuine
+    // unexpected failures only.
+    if (typeof error.statusCode === "number" && error.statusCode >= 400 && error.statusCode < 500) {
+      reply.status(error.statusCode).send({ error: { code: "validation_error", message: error.message } });
       return;
     }
     app.log.error(error);
@@ -154,6 +173,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
         order: 1000,
         schemaVersion: 1,
         props: { ...heroDefaultProps },
+        responsive: {},
       };
       const written = await writePageDocument(client, {
         pageId: page.id,
@@ -269,6 +289,92 @@ export function buildApp(deps: AppDeps): FastifyInstance {
 
       return result.document;
     });
+  });
+
+  // ---- asset.upload ----
+  // JSON + base64 rather than multipart: keeps this mutation identical in
+  // shape across all three surfaces (ADR-0003) — the CLI reads a local
+  // file and base64-encodes it exactly the way MCP's tool input schema
+  // and a fetch() body both already expect, with no separate multipart
+  // client needed on any surface.
+  app.post<{ Params: { siteId: string } }>("/v1/sites/:siteId/assets", async (request) => {
+    const principal = await requirePrincipal(request);
+    const { siteId, accountId } = await authorizeSite(pool, principal, request.params.siteId);
+    const body = parseBody(UploadAssetBodySchema, request.body);
+
+    let bytes: Buffer;
+    try {
+      bytes = Buffer.from(body.dataBase64, "base64");
+    } catch {
+      throw validationError("dataBase64 is not valid base64");
+    }
+    const MAX_BYTES = 8 * 1024 * 1024;
+    if (bytes.length === 0 || bytes.length > MAX_BYTES) {
+      throw validationError(`asset must be between 1 byte and ${MAX_BYTES} bytes`);
+    }
+
+    const sha256 = sha256Hex(bytes);
+
+    // Dedup by hash (integration test: "Asset upload deduplicates
+    // identical files by hash") — an identical re-upload returns the
+    // existing row untouched rather than writing a second copy or a
+    // second DB row.
+    const existing = await withTenantContext(pool, { siteId }, (client) => getAssetBySha256(client, siteId, sha256));
+    if (existing) return existing;
+
+    const ext = extensionFor(body.contentType, body.filename);
+    const key = `${sha256}${ext}`;
+    await writeAssetFile(assetStoreDir, key, bytes);
+
+    const { width, height, variants } = await processImage(assetStoreDir, sha256, body.contentType, bytes);
+
+    const asset = await withTenantContext(pool, { siteId }, (client) =>
+      createAsset(client, {
+        id: newUlid(),
+        siteId,
+        sha256,
+        contentType: body.contentType,
+        byteSize: bytes.length,
+        filename: body.filename,
+        width: width || null,
+        height: height || null,
+        variants,
+        createdBy: accountId,
+      }),
+    );
+
+    return asset;
+  });
+
+  app.get<{ Params: { siteId: string } }>("/v1/sites/:siteId/assets", async (request) => {
+    const principal = await requirePrincipal(request);
+    const { siteId } = await authorizeSite(pool, principal, request.params.siteId);
+    return withTenantContext(pool, { siteId }, (client) => listAssetsForSite(client, siteId));
+  });
+
+  // ---- serving a stored asset's bytes: unauthenticated, like bundle
+  // serving below — a published page's <img> tag has no API token to
+  // send, and the filename is itself the content address (sha256[-wN]),
+  // so there is nothing to authorize a GET against. ----
+  const ASSET_CONTENT_TYPE_BY_EXTENSION: Record<string, string> = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".webp": "image/webp",
+    ".gif": "image/gif",
+    ".svg": "image/svg+xml",
+  };
+
+  app.get<{ Params: { filename: string } }>("/v1/assets/:filename", async (request, reply) => {
+    const { filename } = request.params;
+    if (!/^[a-f0-9]{64}(-w\d+)?\.\w+$/.test(filename)) throw notFound("not found");
+    try {
+      const bytes = await readAssetFile(assetStoreDir, filename);
+      const ext = path.extname(filename);
+      reply.type(ASSET_CONTENT_TYPE_BY_EXTENSION[ext] ?? "application/octet-stream");
+      return reply.send(bytes);
+    } catch {
+      throw notFound("not found");
+    }
   });
 
   // ---- token.create ----

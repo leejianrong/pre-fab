@@ -1,4 +1,5 @@
 import type {
+  Asset,
   ConflictDetails,
   CreateSiteResult,
   IssuedApiToken,
@@ -11,6 +12,7 @@ import type {
   SiteSummary,
   ThemeDocument,
   ThemeTokens,
+  UploadAssetInput,
   WritePageInput,
 } from "./types.js";
 
@@ -177,6 +179,15 @@ export class ApiClient {
 
   writePage(siteId: string, pageId: string, input: WritePageInput): Promise<PageDocument> {
     return this.request("PUT", `/v1/sites/${siteId}/pages/${pageId}`, input);
+  }
+
+  // ---- asset.upload / asset.list ----
+  uploadAsset(siteId: string, input: UploadAssetInput): Promise<Asset> {
+    return this.request("POST", `/v1/sites/${siteId}/assets`, input);
+  }
+
+  listAssets(siteId: string): Promise<Asset[]> {
+    return this.request("GET", `/v1/sites/${siteId}/assets`);
   }
 
   // ---- token.create ----

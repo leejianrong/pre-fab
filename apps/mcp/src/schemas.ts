@@ -30,6 +30,9 @@ export const schemas = {
     expectedVersion: z.number().int().nonnegative(),
   },
 
+  "asset.upload": { siteId: z.string(), filePath: z.string().min(1) },
+  "asset.list": { siteId: z.string() },
+
   "token.create": { siteId: z.string(), name: z.string().min(1) },
 
   "site.outline": { siteId: z.string() },

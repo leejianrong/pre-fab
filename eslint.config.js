@@ -12,6 +12,7 @@ export default tseslint.config(
       "**/.astro-workspace/**",
       "**/.data/**",
       "**/node_modules/**",
+      ".claude/worktrees/**",
       "**/coverage/**",
       "**/playwright-report/**",
       "**/test-results/**",

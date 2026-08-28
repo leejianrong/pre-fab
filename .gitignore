@@ -1,4 +1,6 @@
 node_modules/
+.claude/worktrees/
+.claude/.agent-slots/
 dist/
 build/
 .astro/

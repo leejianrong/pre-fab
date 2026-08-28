@@ -16,15 +16,16 @@
     "test:integration": "vitest run test/*.integration.test.ts --testTimeout=60000"
   },
   "dependencies": {
-    "@prefab/schema": "workspace:*",
+    "@fastify/cookie": "11.0.2",
+    "@fastify/cors": "10.0.2",
     "@prefab/blocks": "workspace:*",
     "@prefab/db": "workspace:*",
     "@prefab/publish": "workspace:*",
+    "@prefab/schema": "workspace:*",
     "fastify": "5.2.1",
-    "@fastify/cookie": "11.0.2",
-    "@fastify/cors": "10.0.2",
-    "zod": "4.4.3",
-    "pg": "8.13.1"
+    "pg": "8.13.1",
+    "sharp": "0.35.4",
+    "zod": "4.4.3"
   },
   "devDependencies": {
     "@types/pg": "8.11.10",

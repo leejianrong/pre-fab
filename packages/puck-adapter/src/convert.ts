@@ -93,5 +93,10 @@ function componentDataToBlock(
     order: (index + 1) * 1000,
     schemaVersion: previous?.schemaVersion ?? 1,
     props,
+    // Puck's canvas has no responsive-override UI of its own (Slice 2's
+    // breakpoint overrides are edited outside the Puck drop zone) — so a
+    // block that already had overrides keeps them across a canvas edit,
+    // and a genuinely new block starts with none.
+    responsive: previous?.responsive ?? {},
   };
 }

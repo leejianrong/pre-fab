@@ -1,6 +1,8 @@
 #!/usr/bin/env -S node --import tsx
 import { Command as Program } from "commander";
 import {
+  assetList,
+  assetUpload,
   build,
   createContext,
   diff,
@@ -120,6 +122,18 @@ page
       }),
     ),
   );
+
+const asset = program.command("asset").description("Manage site assets (content-addressed uploads)");
+asset
+  .command("upload <siteId> <filePath>")
+  .description("Upload a local file as a site asset — deduplicated by sha256")
+  .action((siteId, filePath) =>
+    runCommand(globalOptions(), async () => assetUpload.run(await resolveContext(), { siteId, filePath })),
+  );
+asset
+  .command("list <siteId>")
+  .description("List a site's uploaded assets")
+  .action((siteId) => runCommand(globalOptions(), async () => assetList.run(await resolveContext(), { siteId })));
 
 program
   .command("token-create <siteId> <name>")

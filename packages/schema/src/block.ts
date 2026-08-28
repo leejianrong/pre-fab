@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { UlidSchema } from "./ids.js";
+import { BlockResponsiveSchema } from "./responsive.js";
 
 /**
  * A block is a node in a flat list, never a nested tree (ADR-0002). Position
@@ -9,6 +10,11 @@ import { UlidSchema } from "./ids.js";
  * `props` is intentionally untyped at this layer: a block whose `type` this
  * build does not recognise must still round-trip losslessly (R19), so the
  * envelope never refuses to hold props it cannot validate.
+ *
+ * `responsive` carries this same block's per-breakpoint overrides
+ * (Slice 2). It defaults to `{}` rather than being optional so a
+ * round-tripped document always has the key present — export → import →
+ * export stays byte-identical (R8) whether or not a block has any override.
  */
 export const BlockNodeSchema = z.object({
   id: UlidSchema,
@@ -17,6 +23,7 @@ export const BlockNodeSchema = z.object({
   order: z.number().finite(),
   schemaVersion: z.number().int().nonnegative(),
   props: z.record(z.string(), z.unknown()),
+  responsive: BlockResponsiveSchema.default({}),
 });
 
 export type BlockNode = z.infer<typeof BlockNodeSchema>;
