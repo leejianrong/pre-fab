@@ -36,6 +36,8 @@ import { PostList } from "./postlist/PostList.js";
 import { postListBlockDefinition, type PostListProps } from "./postlist/schema.js";
 import { PostDetail } from "./postdetail/PostDetail.js";
 import { postDetailBlockDefinition, type PostDetailProps } from "./postdetail/schema.js";
+import { Form } from "./form/Form.js";
+import { formBlockDefinition, type FormProps } from "./form/schema.js";
 
 /**
  * One entry per first-party block: its schema-half definition
@@ -111,6 +113,11 @@ const BLOCK_ENTRIES: BlockEntry[] = [
     definition: postDetailBlockDefinition,
     summary: (_props: PostDetailProps) => "post detail template",
     Component: PostDetail,
+  },
+  {
+    definition: formBlockDefinition,
+    Component: Form,
+    summary: (props: FormProps) => `form (${props.fields.length} field${props.fields.length === 1 ? "" : "s"})`,
   },
 ];
 

@@ -31,6 +31,8 @@ interface WorkerInput {
   pages: PageDocument[];
   posts: PostDocument[];
   baseUrl: string;
+  runtimeApiUrl: string;
+  turnstileSiteKey: string;
   bundleStoreDir: string;
 }
 
@@ -57,7 +59,14 @@ async function main(): Promise<void> {
   const { build: astroBuild } = await import("astro");
   const { default: react } = await import("@astrojs/react");
 
-  const workspace = await createBuildWorkspace({ site: input.site, theme: input.theme, pages: input.pages, posts: input.posts });
+  const workspace = await createBuildWorkspace({
+    site: input.site,
+    theme: input.theme,
+    pages: input.pages,
+    posts: input.posts,
+    runtimeApiUrl: input.runtimeApiUrl,
+    turnstileSiteKey: input.turnstileSiteKey,
+  });
   const previousCwd = process.cwd();
   // Some prerender-SSR artifacts are written relative to process.cwd()
   // regardless of the `root`/`outDir` passed below — see build.ts.

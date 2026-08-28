@@ -44,6 +44,14 @@ import {
   deleteCustomDomain,
   findActiveCustomDomainByHostname,
   getSiteBySlug,
+  upsertPublishedForm,
+  getForm,
+  upsertFormSettings,
+  getFormSettings,
+  listSubmissions,
+  listAllSubmissionsForExport,
+  getSubmission,
+  deleteSubmission,
   type Pool,
   type PoolClient,
   type SiteRow,
@@ -63,15 +71,16 @@ import {
   type PostDocument,
   type SiteManifest,
 } from "@prefab/schema";
-import { blockSchemaRegistry, HERO_BLOCK_TYPE, heroDefaultProps } from "@prefab/blocks";
+import { blockSchemaRegistry, HERO_BLOCK_TYPE, heroDefaultProps, FORM_BLOCK_TYPE, type FormProps } from "@prefab/blocks";
 import { buildSiteBundle } from "@prefab/publish";
 import { TEMPLATE_MANIFESTS, loadTemplateCheckout } from "@prefab/templates/server";
-import { ApiError, conflict, forbidden, notFound, unauthorized, validationError } from "./errors.js";
+import { submitForm, toCsv, createInMemoryRateLimiter, type TurnstileVerifier } from "@prefab/runtime";
+import { ApiError, conflict, forbidden, notFound, rateLimited, unauthorized, validationError } from "./errors.js";
 import { API_MUTATIONS } from "./mutations.js";
 import { resolvePrincipal, authorizeSite, SESSION_COOKIE, type Principal } from "./lib/auth.js";
 import { generateRawToken, generateVerificationCode } from "./lib/tokens.js";
 import { buildSiteOutline } from "./lib/outline.js";
-import { createOutboxEmailSender } from "./lib/email.js";
+import { createEmailSender, createOutboxEmailSender, type EmailSender } from "./lib/email.js";
 import { extensionFor, processImage, readAssetFile, sha256Hex, writeAssetFile } from "./lib/asset-storage.js";
 import { classifyDomain, dnsInstructionFor, normalizeHostname, DomainValidationError, type DnsInstruction } from "./lib/domains.js";
 import {
@@ -80,6 +89,10 @@ import {
   type DomainProvider,
   type ProviderHostnameStatus,
 } from "./lib/domain-provider.js";
+import { createTurnstileVerifier } from "./lib/turnstile.js";
+import { EmailFormNotifier } from "./lib/form-notifier.js";
+import { createPostgresFormManifestStore, createPostgresFormSettingsStore, createPostgresSubmissionStore } from "./lib/runtime-adapters.js";
+import { createPostgresWebhookQueue, retryDueWebhookDeliveries } from "./lib/webhooks.js";
 import {
   CreatePageBodySchema,
   CreatePostBodySchema,
@@ -89,8 +102,12 @@ import {
   DevLoginBodySchema,
   AddDomainBodySchema,
   AdvanceFakeDomainBodySchema,
+  ConfigureFormBodySchema,
+  ExportSubmissionsQuerySchema,
   ListPostsQuerySchema,
+  ListSubmissionsQuerySchema,
   SignupBodySchema,
+  SubmitFormBodySchema,
   UpdateThemeBodySchema,
   UploadAssetBodySchema,
   VerifyEmailBodySchema,
@@ -106,6 +123,15 @@ export interface AppDeps {
   platformHost?: string;
   /** Injectable so tests (and the dev-only advance endpoint) can reach the exact same provider instance the routes use. Defaults to createDomainProvider()'s env-based choice. */
   domainProvider?: DomainProvider;
+  /** Slice 6. Defaults to createTurnstileVerifier()'s env-based choice (the fake unless TURNSTILE_SECRET_KEY is set). */
+  turnstile?: TurnstileVerifier;
+  /** Slice 6, R7.4 — the sender used for form-submission notification emails specifically. Injectable so a test can simulate "the email provider is unavailable" without touching signup's own verification-code sender. Defaults to createEmailSender()'s env-based choice (Resend if configured, otherwise the same in-memory outbox signup uses). */
+  formEmailSender?: EmailSender;
+  /** Cloudflare Turnstile's public site key — not a secret, injected into published bundles for the widget. Defaults to TURNSTILE_SITE_KEY. */
+  turnstileSiteKey?: string;
+  /** Where a published site's Form island posts submissions to. Defaults to RUNTIME_API_URL, then falls back to this server's own public origin. */
+  runtimeApiUrl?: string;
+  fetchImpl?: typeof fetch;
 }
 
 function parseBody<T>(schema: z.ZodType<T>, body: unknown): T {
@@ -123,6 +149,27 @@ function parseQuery<T>(schema: z.ZodType<T>, query: unknown): T {
   }
   return result.data;
 }
+
+/**
+ * Slice 6 is the first time a bundle ever contains a `.js` file that must
+ * execute (the Form island's hydration chunk) — every prior block shipped
+ * zero JS (ADR-0007), so `application/octet-stream` for "anything not
+ * .html" was silently correct until now. A browser's strict MIME-type
+ * checking for `<script type="module">` refuses to execute a script
+ * served as `application/octet-stream`, which is why this needs to be a
+ * real, if small, static-file content-type map rather than one exception.
+ */
+const BUNDLE_CONTENT_TYPE_BY_EXTENSION: Record<string, string> = {
+  ".html": "text/html; charset=utf-8",
+  ".js": "text/javascript; charset=utf-8",
+  ".mjs": "text/javascript; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
+  ".svg": "image/svg+xml",
+  ".xml": "application/xml; charset=utf-8",
+  ".txt": "text/plain; charset=utf-8",
+  ".map": "application/json; charset=utf-8",
+};
 
 /**
  * Shared by the explicit `/v1/bundles/:hash/*` route and the host-based
@@ -147,7 +194,7 @@ async function serveBundleFile(
   } catch {
     throw notFound("not found");
   }
-  reply.type(filePath.endsWith(".html") ? "text/html; charset=utf-8" : "application/octet-stream");
+  reply.type(BUNDLE_CONTENT_TYPE_BY_EXTENSION[path.extname(filePath)] ?? "application/octet-stream");
   return reply.send(createReadStream(filePath));
 }
 
@@ -186,6 +233,27 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   function publicSiteUrl(slug: string): string {
     return `https://${slug}.${platformHost}`;
   }
+  const fetchImpl = deps.fetchImpl ?? fetch;
+  const turnstile = deps.turnstile ?? createTurnstileVerifier();
+  const turnstileSiteKey = deps.turnstileSiteKey ?? process.env.TURNSTILE_SITE_KEY ?? "";
+  const runtimeApiUrl = deps.runtimeApiUrl ?? process.env.RUNTIME_API_URL ?? "";
+  // Slice 6's runtime API (ADR-0007/ADR-0010): apps/api is the control
+  // plane, so it's the one place allowed to wire @prefab/runtime's storage
+  // interfaces to Postgres — submitForm itself never knows that.
+  const formsStore = createPostgresFormManifestStore(pool);
+  const formSettingsStore = createPostgresFormSettingsStore(pool);
+  const submissionStore = createPostgresSubmissionStore(pool);
+  const webhookQueue = createPostgresWebhookQueue(pool, fetchImpl);
+  // 20 submissions/minute per site, 5/minute per visitor IP — generous
+  // enough for a real contact form, tight enough to blunt a naive flood
+  // (SLICES.md: "Turnstile and per-IP, per-site rate limiting").
+  const siteRateLimiter = createInMemoryRateLimiter({ limit: 20, windowMs: 60_000 });
+  const ipRateLimiter = createInMemoryRateLimiter({ limit: 5, windowMs: 60_000 });
+  const submitRateLimiter = {
+    consume(key: string) {
+      return key.startsWith("site:") ? siteRateLimiter.consume(key) : ipRateLimiter.consume(key);
+    },
+  };
   // Default is 1 MiB — too small for asset.upload's JSON+base64 body (up
   // to ~10.9 MiB for an 8 MiB file at base64's ~4/3 expansion). Comfortably
   // above that so a legitimately-sized upload never hits Fastify's own
@@ -193,6 +261,8 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   // precise byte-size validation.
   const app = Fastify({ logger: false, bodyLimit: 12 * 1024 * 1024 });
   const { sender: email, outbox: emailOutbox } = createOutboxEmailSender();
+  const formEmailSender = deps.formEmailSender ?? createEmailSender(email);
+  const formNotifier = new EmailFormNotifier(formEmailSender);
 
   app.register(cookie);
   // The editor SPA runs on its own Vite dev-server origin (ADR-0004 —
@@ -615,6 +685,92 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     });
   });
 
+  // ---- form.configure (Slice 6) — notification email and webhook
+  // settings for a Form block, kept out of the site tree entirely (R20):
+  // `forms.fields`/`heading`/`submitLabel` are snapshotted from block
+  // props at publish time (see publish.create below), never written here. ----
+  app.put<{ Params: { siteId: string; formId: string } }>("/v1/sites/:siteId/forms/:formId", async (request) => {
+    const principal = await requirePrincipal(request);
+    const { siteId } = await authorizeSite(pool, principal, request.params.siteId);
+    const body = parseBody(ConfigureFormBodySchema, request.body);
+    return withTenantContext(pool, { siteId }, (client) =>
+      upsertFormSettings(client, {
+        formId: request.params.formId,
+        siteId,
+        notifyEmail: body.notifyEmail ?? null,
+        webhookUrl: body.webhookUrl ?? null,
+        webhookSecret: body.webhookSecret ?? null,
+      }),
+    );
+  });
+
+  // ---- form.get: the manifest + current settings together, for the dashboard ----
+  app.get<{ Params: { siteId: string; formId: string } }>("/v1/sites/:siteId/forms/:formId", async (request) => {
+    const principal = await requirePrincipal(request);
+    const { siteId } = await authorizeSite(pool, principal, request.params.siteId);
+    return withTenantContext(pool, { siteId }, async (client) => {
+      const form = await getForm(client, siteId, request.params.formId);
+      const settings = await getFormSettings(client, siteId, request.params.formId);
+      return { form, settings };
+    });
+  });
+
+  // ---- submission.list ----
+  app.get<{ Params: { siteId: string; formId: string } }>("/v1/sites/:siteId/forms/:formId/submissions", async (request) => {
+    const principal = await requirePrincipal(request);
+    const { siteId } = await authorizeSite(pool, principal, request.params.siteId);
+    const query = parseQuery(ListSubmissionsQuerySchema, request.query);
+    return withTenantContext(pool, { siteId }, (client) => listSubmissions(client, siteId, request.params.formId, query));
+  });
+
+  // ---- submission.export: CSV/JSON, one column per declared field plus
+  // submitted-at and notify-status (SLICES.md: "CSV/JSON export") ----
+  app.get<{ Params: { siteId: string; formId: string } }>(
+    "/v1/sites/:siteId/forms/:formId/submissions/export",
+    async (request, reply) => {
+      const principal = await requirePrincipal(request);
+      const { siteId } = await authorizeSite(pool, principal, request.params.siteId);
+      const { formId } = request.params;
+      const query = parseQuery(ExportSubmissionsQuerySchema, request.query);
+
+      const { form, submissions } = await withTenantContext(pool, { siteId }, async (client) => {
+        const form = await getForm(client, siteId, formId);
+        const submissions = await listAllSubmissionsForExport(client, siteId, formId);
+        return { form, submissions };
+      });
+      if (!form) throw notFound("form not found");
+
+      if (query.format === "json") {
+        return submissions.map((s) => ({ id: s.id, createdAt: s.createdAt, notifyStatus: s.notifyStatus, values: s.values }));
+      }
+
+      const columns = ["id", "createdAt", "notifyStatus", ...form.fields.map((f) => f.name)];
+      const rows = submissions.map((s) => ({
+        id: s.id,
+        createdAt: s.createdAt.toISOString(),
+        notifyStatus: s.notifyStatus,
+        ...Object.fromEntries(Object.entries(s.values).map(([k, v]) => [k, String(v)])),
+      }));
+      reply.type("text/csv; charset=utf-8");
+      reply.header("content-disposition", `attachment; filename="${formId}-submissions.csv"`);
+      return reply.send(toCsv(columns, rows));
+    },
+  );
+
+  // ---- submission.delete: per-record deletion for PDPA/GDPR (SLICES.md) ----
+  app.delete<{ Params: { siteId: string; formId: string; submissionId: string } }>(
+    "/v1/sites/:siteId/forms/:formId/submissions/:submissionId",
+    async (request) => {
+      const principal = await requirePrincipal(request);
+      const { siteId } = await authorizeSite(pool, principal, request.params.siteId);
+      const { submissionId } = request.params;
+      const existing = await withTenantContext(pool, { siteId }, (client) => getSubmission(client, siteId, submissionId));
+      if (!existing || existing.formId !== request.params.formId) throw notFound("submission not found");
+      await withTenantContext(pool, { siteId }, (client) => deleteSubmission(client, siteId, submissionId));
+      return { removed: true };
+    },
+  );
+
   // ---- asset.upload ----
   // JSON + base64 rather than multipart: keeps this mutation identical in
   // shape across all three surfaces (ADR-0003) — the CLI reads a local
@@ -856,6 +1012,27 @@ export function buildApp(deps: AppDeps): FastifyInstance {
       // there is exactly one place this rule can drift.
       const allPosts = await listAllPostsForSite(client, siteId);
       const posts = allPosts.filter((post) => isPostVisible(post));
+
+      // Slice 6: snapshot every Form block's field manifest into `forms`
+      // so the runtime submit endpoint can validate against it with no
+      // tenant context and no dependency on page documents at all (R20 /
+      // ADR-0010) — see upsertPublishedForm's own comment for why this
+      // never touches form_settings.
+      for (const page of pages) {
+        for (const block of page.blocks) {
+          if (block.type !== FORM_BLOCK_TYPE) continue;
+          const props = block.props as FormProps;
+          await upsertPublishedForm(client, {
+            id: block.id,
+            siteId,
+            heading: props.heading,
+            fields: props.fields,
+            submitLabel: props.submitLabel,
+            turnstileEnabled: props.turnstileEnabled,
+          });
+        }
+      }
+
       return { manifest: await siteManifestFor(client, site), theme, pages, posts };
     });
 
@@ -863,7 +1040,16 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     // process-level work) and, per R4, must never be able to leave the live
     // pointer half-swapped: the swap below is the only thing that mutates
     // "what's live", and it happens only after a build fully succeeds.
-    const built = await buildSiteBundle({ site: manifest, theme, pages, posts, baseUrl: publicSiteUrl(manifest.slug), bundleStoreDir });
+    const built = await buildSiteBundle({
+      site: manifest,
+      theme,
+      pages,
+      posts,
+      baseUrl: publicSiteUrl(manifest.slug),
+      runtimeApiUrl,
+      turnstileSiteKey,
+      bundleStoreDir,
+    });
 
     const publish = await withTenantContext(pool, { siteId }, async (client) => {
       const record = await createPublish(client, {
@@ -934,8 +1120,81 @@ export function buildApp(deps: AppDeps): FastifyInstance {
       return { manifest: await siteManifestFor(client, site), theme, pages, posts };
     });
 
-    const built = await buildSiteBundle({ site: manifest, theme, pages, posts, baseUrl: publicSiteUrl(manifest.slug), bundleStoreDir });
+    const built = await buildSiteBundle({
+      site: manifest,
+      theme,
+      pages,
+      posts,
+      baseUrl: publicSiteUrl(manifest.slug),
+      runtimeApiUrl,
+      turnstileSiteKey,
+      bundleStoreDir,
+    });
     return { contentHash: built.contentHash, previewUrl: `/v1/bundles/${built.contentHash}/index.html` };
+  });
+
+  // ---- The runtime API (Slice 6, ADR-0007/ADR-0010): the one mutation a
+  // visitor, not a signed-in owner, can reach — no principal, gated by
+  // per-site/per-IP rate limiting and optional Turnstile instead. Every
+  // storage decision lives in @prefab/runtime's submitForm; this route is
+  // just the HTTP-and-CORS shell around it, which is exactly what Slice
+  // 7's self-host runtime reimplements in its own shell. Explicit CORS
+  // (not the cookie-credentialed EDITOR_ORIGIN policy above) because a
+  // published site's own origin — <slug>.<platformHost> or a customer's
+  // custom domain — is never known in advance. ----
+  app.options("/v1/runtime/forms/:formId/submissions", async (_request, reply) => {
+    reply
+      .header("access-control-allow-origin", "*")
+      .header("access-control-allow-methods", "POST, OPTIONS")
+      .header("access-control-allow-headers", "content-type")
+      .status(204)
+      .send();
+  });
+
+  app.post<{ Params: { formId: string } }>("/v1/runtime/forms/:formId/submissions", async (request, reply) => {
+    reply.header("access-control-allow-origin", "*");
+    const body = parseBody(SubmitFormBodySchema, request.body);
+
+    const result = await submitForm(
+      { id: newUlid(), formId: request.params.formId, values: body.values, ip: request.ip, turnstileToken: body.turnstileToken },
+      {
+        forms: formsStore,
+        formSettings: formSettingsStore,
+        submissions: submissionStore,
+        rateLimiter: submitRateLimiter,
+        turnstile,
+        notifier: formNotifier,
+        webhooks: webhookQueue,
+      },
+    );
+
+    switch (result.status) {
+      case "created":
+        // Opportunistic retry sweep (see webhooks.ts's own comment on why
+        // there's no background queue yet) — piggybacks on the one moment
+        // this site is guaranteed to already have fresh tenant context.
+        await retryDueWebhookDeliveries(pool, (await formsStore.getForm(request.params.formId))?.siteId ?? "", fetchImpl).catch(() => {});
+        reply.status(201);
+        return { id: result.submissionId };
+      case "not_found":
+        throw notFound("form not found");
+      case "invalid":
+        throw validationError("submission failed validation", result.issues);
+      case "rate_limited":
+        reply.header("retry-after", String(Math.ceil(result.retryAfterMs / 1000)));
+        throw rateLimited("too many submissions — try again shortly");
+      case "turnstile_failed":
+        throw forbidden("spam verification failed");
+    }
+  });
+
+  // ---- Dev-only: force webhook retries to run now, the same "dev-only
+  // bootstrap, not a product mutation" pattern as /v1/dev/domains/:id/advance
+  // — lets e2e and local dev exercise backoff/retry without waiting for
+  // real wall-clock time to pass. ----
+  app.post<{ Params: { siteId: string } }>("/v1/dev/webhooks/:siteId/retry", async (request) => {
+    const retried = await retryDueWebhookDeliveries(pool, request.params.siteId, fetchImpl);
+    return { retried };
   });
 
   // ---- Host-based public routing (Slice 4 / R1): every request that

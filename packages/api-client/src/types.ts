@@ -192,4 +192,66 @@ export interface UploadAssetInput {
   dataBase64: string;
 }
 
+// ---- forms and submissions (Slice 6) ----
+
+export type FormFieldType = "text" | "email" | "textarea" | "select" | "checkbox" | "file";
+
+export interface FormField {
+  type: FormFieldType;
+  label: string;
+  name: string;
+  required: boolean;
+  /** One option per line — only meaningful for `type: "select"`. */
+  options?: string;
+}
+
+export interface FormManifest {
+  id: string;
+  siteId: string;
+  heading: string;
+  fields: FormField[];
+  submitLabel: string;
+  turnstileEnabled: boolean;
+}
+
+export interface FormSettings {
+  formId: string;
+  siteId: string;
+  notifyEmail: string | null;
+  webhookUrl: string | null;
+  webhookSecret: string | null;
+}
+
+export interface ConfigureFormInput {
+  notifyEmail?: string | null;
+  webhookUrl?: string | null;
+  webhookSecret?: string | null;
+}
+
+export interface FormWithSettings {
+  form: FormManifest | null;
+  settings: FormSettings | null;
+}
+
+export interface Submission {
+  id: string;
+  siteId: string;
+  formId: string;
+  values: Record<string, unknown>;
+  ip: string | null;
+  notifyStatus: "skipped" | "sent" | "failed";
+  notifyError: string | null;
+  createdAt: string;
+}
+
+export interface ListSubmissionsQuery {
+  limit?: number;
+  offset?: number;
+}
+
+export interface ListSubmissionsResult {
+  submissions: Submission[];
+  total: number;
+}
+
 export type { PageDocument, PostDocument, PostStatus, ThemeDocument, ThemeTokens, BlockNode, DocumentDiff, FieldDiff };

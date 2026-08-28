@@ -1,5 +1,6 @@
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import http from "node:http";
 import path from "node:path";
 import type { Page } from "@playwright/test";
 import { ApiClient, type BlockNode, type CreateSiteResult } from "@prefab/api-client";
@@ -53,6 +54,64 @@ export function canvasFrame(page: Page) {
   return page.frameLocator("iframe").first();
 }
 
+/**
+ * Navigates to a site's real public address (`<slug>.prefab.local`, R1's
+ * free hosting — apps/api's host-based routing fallback) rather than the
+ * internal `/v1/bundles/:hash/*` preview URL. The two are not
+ * interchangeable for anything that fetches its own assets by an
+ * absolute, root-relative path (a hydrated island's JS chunk, Slice 6's
+ * Form block) — the bundle-hash URL nests content under a path prefix, so
+ * a root-relative `/_astro/*.js` reference 404s there but resolves
+ * correctly once the page is actually served from its domain's root, the
+ * same way a real production hostname always is.
+ *
+ * No local DNS needed: this is not a real `.local` hostname at all — every
+ * request Chromium would make for it is intercepted before any DNS lookup
+ * and proxied here, in the test process, to the real API listener at
+ * API_URL, carrying the browser's own `Host: <hostname>` header through
+ * unchanged so apps/api's host-based fallback resolves it exactly as it
+ * would a real subdomain. (Rewriting the `host` header on Playwright's
+ * `route.continue()` does not work reliably — Chromium's network stack
+ * re-derives it from the connection target — so the proxy fetches with
+ * Node's own `http` client instead, which has no such restriction.)
+ */
+export async function gotoLiveSite(page: Page, hostname: string): Promise<void> {
+  const apiOrigin = new URL(API_URL);
+  await page.route("**/*", async (route) => {
+    const request = route.request();
+    const requestUrl = new URL(request.url());
+    const upstream = await new Promise<{ status: number; headers: http.IncomingHttpHeaders; body: Buffer }>((resolve, reject) => {
+      const proxied = http.request(
+        {
+          protocol: apiOrigin.protocol,
+          hostname: apiOrigin.hostname,
+          port: apiOrigin.port,
+          method: request.method(),
+          path: requestUrl.pathname + requestUrl.search,
+          headers: { ...request.headers(), host: hostname, "accept-encoding": "identity" },
+        },
+        (res) => {
+          const chunks: Buffer[] = [];
+          res.on("data", (chunk: Buffer) => chunks.push(chunk));
+          res.on("end", () => resolve({ status: res.statusCode ?? 502, headers: res.headers, body: Buffer.concat(chunks) }));
+        },
+      );
+      proxied.on("error", reject);
+      const body = request.postDataBuffer();
+      if (body) proxied.write(body);
+      proxied.end();
+    });
+
+    const { "transfer-encoding": _te, "content-length": _cl, connection: _conn, ...headers } = upstream.headers;
+    await route.fulfill({
+      status: upstream.status,
+      headers: Object.fromEntries(Object.entries(headers).map(([k, v]) => [k, Array.isArray(v) ? v.join(", ") : (v ?? "")])),
+      body: upstream.body,
+    });
+  });
+  await page.goto(`http://${hostname}/`);
+}
+
 /** Default props for every first-party block type, keyed by block type — for building test documents that exercise the whole library at once. */
 export const ALL_BLOCK_TYPE_PROPS: Record<string, Record<string, unknown>> = {
   hero: { heading: "Hero heading", subheading: "Hero subheading", ctaLabel: "Go", ctaHref: "#", background: "background" },
@@ -80,6 +139,17 @@ export const ALL_BLOCK_TYPE_PROPS: Record<string, Record<string, unknown>> = {
   footer: { text: "© Example Co", links: [{ label: "Privacy", href: "#" }] },
   nav: { brand: "Example Co", links: [{ label: "Home", href: "#" }] },
   embed: { html: "<p>embedded</p>", height: "md" },
+  form: {
+    heading: "Contact us",
+    fields: [
+      { type: "text", label: "Name", name: "name", required: true, options: "" },
+      { type: "email", label: "Email", name: "email", required: true, options: "" },
+      { type: "textarea", label: "Message", name: "message", required: true, options: "" },
+    ],
+    submitLabel: "Submit",
+    successMessage: "Thanks — we'll be in touch.",
+    turnstileEnabled: false,
+  },
 };
 
 export const ALL_BLOCK_TYPES = Object.keys(ALL_BLOCK_TYPE_PROPS);

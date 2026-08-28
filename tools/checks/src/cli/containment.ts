@@ -1,7 +1,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { scanRepo } from "../scan.js";
-import { checkAstroContainment, checkPuckContainment } from "../containment.js";
+import { checkAstroContainment, checkPuckContainment, checkRuntimeContainment } from "../containment.js";
 import { checkSsrSafety } from "../ssr-safety.js";
 
 const repoRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "..");
@@ -11,6 +11,7 @@ const files = scanRepo(repoRoot, roots);
 
 const astroViolations = checkAstroContainment(files);
 const puckViolations = checkPuckContainment(files);
+const runtimeViolations = checkRuntimeContainment(files);
 const ssrViolations = checkSsrSafety(files, ["packages/blocks"]);
 
 let failed = false;
@@ -29,6 +30,14 @@ if (puckViolations.length > 0) {
   for (const v of puckViolations) console.error(`  ${v.file} imports "${v.specifier}"`);
 } else {
   console.log("✓ Puck containment: packages/blocks stays Puck-free");
+}
+
+if (runtimeViolations.length > 0) {
+  failed = true;
+  console.error(`✗ Runtime separability (ADR-0010): ${runtimeViolations.length} violation(s)`);
+  for (const v of runtimeViolations) console.error(`  ${v.file} imports "${v.specifier}"`);
+} else {
+  console.log("✓ Runtime separability: packages/runtime imports no control-plane package");
 }
 
 if (ssrViolations.length > 0) {

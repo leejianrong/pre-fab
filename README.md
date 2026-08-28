@@ -13,7 +13,7 @@ customer owns. See `PLAN.md` for the problem and requirements (`R1`–`R20`),
 panel. Bottom row: the published blog index and a published post page — all
 rendered by the actual static publish pipeline, not mockups.*
 
-**Status: Slices 1–5 are built.** Slice 1 proved the one-write-path loop with
+**Status: Slices 1–6 are built.** Slice 1 proved the one-write-path loop with
 a single Hero block: create, edit in the Puck canvas, edit by CLI/MCP/pull-push
 round trip, publish to a live, rollback-able bundle. Slice 2 added the full
 first-party block library, theme tokens, block-level responsive overrides and
@@ -31,7 +31,25 @@ collection (title, slug, date, author, tags, body, cover, draft/published
 state), a frontmatter-plus-Markdown file format for `pull`/`push` (pleasant to
 hand-edit, unlike the raw `pages/*.json`), `postlist`/`postdetail` block types
 that turn a page into a paginated index or a per-post detail template, RSS
-and sitemap generation, and a blog admin panel in the editor.
+and sitemap generation, and a blog admin panel in the editor. Slice 6 adds
+forms and submissions — the first dynamic behaviour, and the slice where the
+runtime API (ADR-0007) is born: a `Form` block with a field builder
+(text/email/textarea/select/checkbox/file), a new `packages/runtime` package
+implementing form submission with no dependency on any control-plane package
+(ADR-0010, enforced by `pnpm run ci:containment`), submission storage in
+platform Postgres only, never the site tree (R20), per-IP/per-site rate
+limiting and optional Cloudflare Turnstile, notification email and webhook
+delivery with retry/backoff, CSV/JSON export, per-record deletion (PDPA/GDPR),
+and a submissions panel in the editor.
+
+One thing worth knowing about Slice 6 specifically: the Form block is the
+first block that ships client-side JS at all (`client:load` hydration in
+`@prefab/publish`'s page template) — every other first-party block ships
+zero JS (ADR-0007). Getting that working surfaced a real, previously
+harmless bug: bundle serving (`apps/api`'s `serveBundleFile`) served every
+non-`.html` file as `application/octet-stream`, which browsers refuse to
+execute as a module script. Fixed with a small content-type map; see the
+comment beside `BUNDLE_CONTENT_TYPE_BY_EXTENSION` in `apps/api/src/app.ts`.
 
 One thing worth knowing about Slice 5 specifically: a post's visibility is a
 pure function of `status` and `date` (`@prefab/schema`'s `isPostVisible`) —
@@ -39,7 +57,12 @@ there is no separate "scheduled" state. `apps/api`'s `publish.create` filters
 to visible posts *before* handing them to `@prefab/publish`, so a draft or a
 future-dated post is never even built into a route, let alone served.
 
-Two things worth knowing about Slice 4 specifically:
+Two things worth knowing about Slice 4 specifically, and the same is true of
+three Slice 6 adapters (`ResendEmailSender` in `apps/api/src/lib/email.ts`,
+`CloudflareTurnstileVerifier` in `apps/api/src/lib/turnstile.ts`, and the
+webhook dispatcher in `apps/api/src/lib/webhooks.ts`, whose retry/backoff
+logic is fully unit- and integration-tested but has never delivered to a
+real third-party endpoint):
 
 - **No Cloudflare account or domain exists in this environment**, so every
   test here runs against an in-memory `FakeDomainProvider`
@@ -76,6 +99,9 @@ packages/
   commands/        one command registry the CLI and MCP server both wrap (R12 parity)
   templates/       eight templates authored as exported site trees (ADR-0011);
                    `pnpm --filter @prefab/templates run generate` regenerates them
+  runtime/         Slice 6: the runtime API's storage-agnostic logic (validation,
+                   rate limiting, webhook backoff, CSV export) — zero dependency on
+                   any control-plane package (ADR-0010); apps/api wires it to Postgres
 tools/
   checks/          CI containment, parity and per-template Lighthouse/axe budget checks
 e2e/               Playwright acceptance tests, one per SLICES.md scenario
@@ -92,6 +118,11 @@ enforced by CI (`pnpm run ci:containment`, `pnpm run ci:parity`):
    command in `packages/commands`, and every command is wired into
    `apps/cli/src/main.ts` — so the CLI and MCP server can never drift out of
    parity with the API.
+4. `packages/runtime` never imports a control-plane package (`@prefab/db`,
+   `@prefab/api-client`, `@prefab/commands`, `@prefab/blocks`,
+   `@prefab/publish`, `@prefab/puck-adapter`) — Slice 6, ADR-0010. This is
+   the seam Slice 7's self-host runtime reimplements against SQLite instead
+   of Postgres; nothing about it may assume the control plane exists.
 
 ## Prerequisites
 
@@ -122,6 +153,12 @@ pnpm run db:migrate          # runs packages/db/migrations against prefab_dev
 - `PREFAB_API_URL`, `PREFAB_TOKEN` — used by the CLI and MCP server.
 - `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ZONE_ID` — optional (Slice 4). Unset
   (the default everywhere, including CI) uses the fake domain provider.
+- `RUNTIME_API_URL` — optional (Slice 6). Where a published site's Form
+  island posts submissions to; unset means the island renders but declines
+  to submit. `RESEND_API_KEY`/`RESEND_FROM_ADDRESS` and
+  `TURNSTILE_SECRET_KEY`/`TURNSTILE_SITE_KEY` are likewise optional and
+  default to the fake email outbox / a Turnstile verifier that always
+  succeeds, same discipline as the Cloudflare domain vars above.
 
 ### Running the pieces
 
@@ -145,6 +182,12 @@ reachable at `<slug>.<PUBLIC_SITE_HOST>` once published; `prefab domain add
 manage it from there). `prefab post create <siteId> <title>` adds a blog post
 (`post list`/`get`/`write` manage it from there, and it shows up in `pull`'s
 checkout as `posts/<slug>.md` — frontmatter + Markdown, not raw JSON).
+A page's `Form` block fields are edited the normal way (Puck canvas field
+builder, or by hand in `pages/*.json` via `pull`/`push`); its notification
+email and webhook are platform-side settings, set with `prefab form
+configure <siteId> <formId> --notify-email <email> --webhook-url <url>`
+(`formId` is the block's own id). `prefab submission list/export/delete
+<siteId> <formId>` manages what visitors have submitted.
 
 ## Tests
 

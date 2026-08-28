@@ -23,6 +23,8 @@ export const API_MUTATIONS = [
   { name: "domain.remove", method: "DELETE", path: "/v1/sites/:siteId/domains/:domainId" },
   { name: "publish.create", method: "POST", path: "/v1/sites/:siteId/publish" },
   { name: "publish.rollback", method: "POST", path: "/v1/sites/:siteId/publishes/:publishId/rollback" },
+  { name: "form.configure", method: "PUT", path: "/v1/sites/:siteId/forms/:formId" },
+  { name: "submission.delete", method: "DELETE", path: "/v1/sites/:siteId/forms/:formId/submissions/:submissionId" },
 ] as const;
 
 export type MutationName = (typeof API_MUTATIONS)[number]["name"];

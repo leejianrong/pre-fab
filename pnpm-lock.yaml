@@ -50,6 +50,9 @@ importers:
       '@prefab/publish':
         specifier: workspace:*
         version: link:../../packages/publish
+      '@prefab/runtime':
+        specifier: workspace:*
+        version: link:../../packages/runtime
       '@prefab/schema':
         specifier: workspace:*
         version: link:../../packages/schema
@@ -382,6 +385,15 @@ importers:
       react-dom:
         specifier: 19.0.0
         version: 19.0.0(react@19.0.0)
+      typescript:
+        specifier: 5.7.3
+        version: 5.7.3
+      vitest:
+        specifier: 3.0.4
+        version: 3.0.4(@types/node@22.20.1)(happy-dom@20.11.9)(lightningcss@1.33.0)(tsx@4.19.2)
+
+  packages/runtime:
+    devDependencies:
       typescript:
         specifier: 5.7.3
         version: 5.7.3

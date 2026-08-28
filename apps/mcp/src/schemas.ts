@@ -78,6 +78,18 @@ export const schemas = {
     expectedVersion: z.number().int().nonnegative(),
   },
 
+  "form.configure": {
+    siteId: z.string(),
+    formId: z.string(),
+    notifyEmail: z.string().email().nullable().optional(),
+    webhookUrl: z.string().url().nullable().optional(),
+    webhookSecret: z.string().nullable().optional(),
+  },
+  "form.get": { siteId: z.string(), formId: z.string() },
+  "submission.list": { siteId: z.string(), formId: z.string(), limit: z.number().int().optional(), offset: z.number().int().optional() },
+  "submission.export": { siteId: z.string(), formId: z.string(), format: z.enum(["csv", "json"]).optional() },
+  "submission.delete": { siteId: z.string(), formId: z.string(), submissionId: z.string() },
+
   "asset.upload": { siteId: z.string(), filePath: z.string().min(1) },
   "asset.list": { siteId: z.string() },
 

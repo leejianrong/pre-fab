@@ -15,6 +15,8 @@ import {
   domainVerify,
   domainRemove,
   exportSite,
+  formConfigure,
+  formGet,
   importSite,
   pageCreate,
   pageGet,
@@ -35,6 +37,9 @@ import {
   siteGet,
   siteList,
   siteOutline,
+  submissionDelete,
+  submissionExport,
+  submissionList,
   templateList,
   themeGet,
   themeSet,
@@ -261,6 +266,59 @@ post
           expectedVersion: Number(expectedVersion),
         });
       }),
+  );
+
+const form = program.command("form").description("Manage Form block notifications, webhooks and submissions (Slice 6)");
+form
+  .command("configure <siteId> <formId>")
+  .description("Set a form's notification email and/or webhook URL — pass an empty string to clear one")
+  .option("--notify-email <email>", "where a new submission is emailed")
+  .option("--webhook-url <url>", "where a new submission is POSTed")
+  .option("--webhook-secret <secret>", "sent as the x-prefab-webhook-secret header")
+  .action((siteId, formId, options: { notifyEmail?: string; webhookUrl?: string; webhookSecret?: string }) =>
+    runCommand(globalOptions(), async () =>
+      formConfigure.run(await resolveContext(), {
+        siteId,
+        formId,
+        notifyEmail: options.notifyEmail === "" ? null : options.notifyEmail,
+        webhookUrl: options.webhookUrl === "" ? null : options.webhookUrl,
+        webhookSecret: options.webhookSecret === "" ? null : options.webhookSecret,
+      }),
+    ),
+  );
+form
+  .command("get <siteId> <formId>")
+  .description("Show a form's published field manifest and current settings")
+  .action((siteId, formId) => runCommand(globalOptions(), async () => formGet.run(await resolveContext(), { siteId, formId })));
+
+const submission = program.command("submission").description("Manage a form's submissions (Slice 6)");
+submission
+  .command("list <siteId> <formId>")
+  .description("List a form's submissions")
+  .option("--limit <limit>", "page size")
+  .option("--offset <offset>")
+  .action((siteId, formId, options: { limit?: string; offset?: string }) =>
+    runCommand(globalOptions(), async () =>
+      submissionList.run(await resolveContext(), {
+        siteId,
+        formId,
+        limit: options.limit ? Number(options.limit) : undefined,
+        offset: options.offset ? Number(options.offset) : undefined,
+      }),
+    ),
+  );
+submission
+  .command("export <siteId> <formId>")
+  .description("Export a form's submissions — CSV by default")
+  .option("--format <format>", "csv or json", "csv")
+  .action((siteId, formId, options: { format?: "csv" | "json" }) =>
+    runCommand(globalOptions(), async () => submissionExport.run(await resolveContext(), { siteId, formId, format: options.format })),
+  );
+submission
+  .command("delete <siteId> <formId> <submissionId>")
+  .description("Delete a single submission — PDPA/GDPR per-record deletion")
+  .action((siteId, formId, submissionId) =>
+    runCommand(globalOptions(), async () => submissionDelete.run(await resolveContext(), { siteId, formId, submissionId })),
   );
 
 const asset = program.command("asset").description("Manage site assets (content-addressed uploads)");

@@ -22,6 +22,9 @@ const apiEnv = {
   EDITOR_ORIGIN: "http://localhost:5174",
   BUNDLE_STORE_DIR: bundleStoreDir,
   ASSET_STORE_DIR: assetStoreDir,
+  // Slice 6: where a published page's Form island posts submissions to —
+  // the same origin bundle serving itself runs on (apps/api serves both).
+  RUNTIME_API_URL: "http://localhost:8788",
 };
 
 export default defineConfig({

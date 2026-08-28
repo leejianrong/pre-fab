@@ -18,6 +18,7 @@ import { Columns, COLUMNS_BLOCK_TYPE, columnsDefaultProps } from "@prefab/blocks
 import { CardGrid, CARDGRID_BLOCK_TYPE, cardGridDefaultProps } from "@prefab/blocks";
 import { PostList, POSTLIST_BLOCK_TYPE, postListDefaultProps } from "@prefab/blocks";
 import { PostDetail, POSTDETAIL_BLOCK_TYPE, postDetailDefaultProps } from "@prefab/blocks";
+import { Form, FORM_BLOCK_TYPE, formDefaultProps } from "@prefab/blocks";
 import type { ThemeTokens } from "@prefab/schema";
 import { heroFields } from "./hero-fields.js";
 import { headingFields } from "./heading-fields.js";
@@ -37,6 +38,7 @@ import { columnsFields } from "./columns-fields.js";
 import { cardGridFields } from "./cardgrid-fields.js";
 import { postListFields } from "./postlist-fields.js";
 import { postDetailFields } from "./postdetail-fields.js";
+import { formFields } from "./form-fields.js";
 
 /**
  * The only file besides apps/editor allowed to import @puckeditor/core
@@ -165,6 +167,7 @@ const BLOCK_ENTRIES: BlockEntry<any>[] = [
     defaultProps: postDetailDefaultProps,
     Component: PostDetail,
   },
+  { type: FORM_BLOCK_TYPE, label: "Form", fields: formFields, defaultProps: formDefaultProps, Component: Form },
 ];
 
 // Puck's ComponentConfig<P> constrains P more tightly than a plain object

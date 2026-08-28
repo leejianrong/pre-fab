@@ -102,3 +102,34 @@ export const AdvanceFakeDomainBodySchema = z.object({
   status: z.enum(["pending", "active", "failed"]),
   verificationErrors: z.array(z.string()).optional(),
 });
+
+// ---- forms and submissions (Slice 6) ----
+// A blank string clears the setting (an owner turning notification or
+// webhook delivery back off) rather than being rejected — `.nullable()`
+// so a caller can also send an explicit `null` for the same effect.
+export const ConfigureFormBodySchema = z.object({
+  notifyEmail: z.string().email().max(320).nullable().optional(),
+  webhookUrl: z.string().url().max(2048).nullable().optional(),
+  webhookSecret: z.string().max(200).nullable().optional(),
+});
+
+export const ListSubmissionsQuerySchema = z.object({
+  limit: z.coerce.number().int().optional(),
+  offset: z.coerce.number().int().optional(),
+});
+
+export const ExportSubmissionsQuerySchema = z.object({
+  format: z.enum(["csv", "json"]).default("csv"),
+});
+
+/**
+ * The runtime API's own submit body — deliberately loose (`z.record`, not
+ * per-field validation): field-shape validation is @prefab/runtime's job
+ * (validateSubmissionValues, checked against the form's own manifest,
+ * where the field types actually live), not this route's. This schema
+ * only guards the wire shape before it ever reaches that logic.
+ */
+export const SubmitFormBodySchema = z.object({
+  values: z.record(z.string(), z.union([z.string(), z.boolean()])).default({}),
+  turnstileToken: z.string().max(4096).optional(),
+});

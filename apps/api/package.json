@@ -21,6 +21,7 @@
     "@prefab/blocks": "workspace:*",
     "@prefab/db": "workspace:*",
     "@prefab/publish": "workspace:*",
+    "@prefab/runtime": "workspace:*",
     "@prefab/schema": "workspace:*",
     "@prefab/templates": "workspace:*",
     "fastify": "5.2.1",
