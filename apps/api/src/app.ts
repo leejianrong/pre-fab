@@ -9,6 +9,9 @@ import {
   hashToken,
   withTenantContext,
   getAccountByEmail,
+  createAccount,
+  setVerificationCode,
+  markEmailVerified,
   createSession,
   createApiToken,
   createSite,
@@ -36,25 +39,31 @@ import {
   DEFAULT_THEME_TOKENS,
   diffPageDocuments,
   newUlid,
+  rekeyPageForFork,
   validatePageDocument,
   type PageDocument,
   type SiteManifest,
 } from "@prefab/schema";
 import { blockSchemaRegistry, HERO_BLOCK_TYPE, heroDefaultProps } from "@prefab/blocks";
 import { buildSiteBundle } from "@prefab/publish";
+import { TEMPLATE_MANIFESTS, loadTemplateCheckout } from "@prefab/templates/server";
 import { ApiError, conflict, forbidden, notFound, unauthorized, validationError } from "./errors.js";
 import { API_MUTATIONS } from "./mutations.js";
 import { resolvePrincipal, authorizeSite, SESSION_COOKIE, type Principal } from "./lib/auth.js";
-import { generateRawToken } from "./lib/tokens.js";
+import { generateRawToken, generateVerificationCode } from "./lib/tokens.js";
 import { buildSiteOutline } from "./lib/outline.js";
+import { createOutboxEmailSender } from "./lib/email.js";
 import { extensionFor, processImage, readAssetFile, sha256Hex, writeAssetFile } from "./lib/asset-storage.js";
 import {
   CreatePageBodySchema,
   CreateSiteBodySchema,
+  CreateSiteFromTemplateBodySchema,
   CreateTokenBodySchema,
   DevLoginBodySchema,
+  SignupBodySchema,
   UpdateThemeBodySchema,
   UploadAssetBodySchema,
+  VerifyEmailBodySchema,
   WritePageBodySchema,
 } from "./schemas.js";
 
@@ -92,6 +101,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   // body-size rejection before reaching UploadAssetBodySchema's own,
   // precise byte-size validation.
   const app = Fastify({ logger: false, bodyLimit: 12 * 1024 * 1024 });
+  const { sender: email, outbox: emailOutbox } = createOutboxEmailSender();
 
   app.register(cookie);
   // The editor SPA runs on its own Vite dev-server origin (ADR-0004 —
@@ -129,8 +139,12 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   }
 
   // ---- Dev-only bootstrap (not a product mutation, not in API_MUTATIONS) ----
-  // Slice 1 has no signup UI (SLICES.md) — this is how a seeded account gets
-  // a browser session. Slice 3 replaces it with real signup.
+  // Slice 1's stand-in for real signup — a seeded account gets a browser
+  // session with no password. Kept alongside Slice 3's real `/v1/signup` +
+  // `/v1/signup/verify` below rather than replaced by them: local dev, CI
+  // and this repo's own e2e suite all still seed one account and use this
+  // route to get a session for it (SLICES.md: "built on slice 1's identity
+  // primitive rather than replacing it").
   app.post("/v1/dev/login", async (request, reply) => {
     const body = parseBody(DevLoginBodySchema, request.body);
     const account = await withTenantContext(pool, {}, (client) => getAccountByEmail(client, body.email));
@@ -147,6 +161,67 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     );
     reply.setCookie(SESSION_COOKIE, raw, { path: "/", httpOnly: true, expires: session.expiresAt });
     return { accountId: account.id };
+  });
+
+  // ---- Dev-only bootstrap: read back what the outbox sender "sent" (not a
+  // product mutation, not in API_MUTATIONS) — the e2e/local-dev stand-in for
+  // opening an inbox, the same way `/v1/dev/login` stands in for a password. ----
+  app.get<{ Querystring: { to?: string } }>("/v1/dev/emails", async (request) => {
+    const { to } = request.query;
+    return to ? emailOutbox.filter((message) => message.to === to) : emailOutbox;
+  });
+
+  // ---- account.signup (Slice 3) ----
+  // Real signup, built on top of the same accounts/sessions tables dev/login
+  // uses — passwordless, a 6-digit emailed code instead, which fits
+  // ADR-0001's non-technical beachhead better than a password-reset flow.
+  app.post("/v1/signup", async (request) => {
+    const body = parseBody(SignupBodySchema, request.body);
+    const code = generateVerificationCode();
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+
+    const account = await withTenantContext(pool, {}, async (client) => {
+      const existing = await getAccountByEmail(client, body.email);
+      const account = existing ?? (await createAccount(client, { id: newUlid(), email: body.email }));
+      return setVerificationCode(client, account.id, { codeHash: hashToken(code), expiresAt });
+    });
+
+    await email.send({
+      to: account.email,
+      subject: "Your pre-fab verification code",
+      text: `Your verification code is ${code}. It expires in 15 minutes.`,
+    });
+
+    return { accountId: account.id, status: "pending_verification" as const };
+  });
+
+  // ---- account.verifyEmail (Slice 3) ----
+  // Verifying mints a session exactly the way dev/login does — the same
+  // primitive, reached through a real front door instead of a seeded email.
+  app.post("/v1/signup/verify", async (request, reply) => {
+    const body = parseBody(VerifyEmailBodySchema, request.body);
+
+    const account = await withTenantContext(pool, {}, (client) => getAccountByEmail(client, body.email));
+    const codeMatches = account?.verificationCodeHash === hashToken(body.code);
+    const notExpired =
+      account?.verificationCodeExpiresAt != null && account.verificationCodeExpiresAt.getTime() > Date.now();
+    if (!account || !account.verificationCodeHash || !codeMatches || !notExpired) {
+      throw unauthorized("invalid or expired verification code");
+    }
+
+    const verified = await withTenantContext(pool, {}, (client) => markEmailVerified(client, account.id));
+
+    const raw = generateRawToken();
+    const session = await withTenantContext(pool, {}, (client) =>
+      createSession(client, {
+        id: newUlid(),
+        accountId: verified.id,
+        tokenHash: hashToken(raw),
+        expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      }),
+    );
+    reply.setCookie(SESSION_COOKIE, raw, { path: "/", httpOnly: true, expires: session.expiresAt });
+    return { accountId: verified.id };
   });
 
   // ---- site.create ----
@@ -186,6 +261,55 @@ export function buildApp(deps: AppDeps): FastifyInstance {
       if (!written.ok) throw new Error("unreachable: brand-new page cannot already be at a later version");
 
       return { site, page: written.document };
+    });
+  });
+
+  // ---- template.list ----
+  // Not a mutation (a plain read), same as site.list/site.get above — no
+  // API_MUTATIONS entry, but still worth a read here since agents (R14
+  // spirit) and the editor's template gallery both need to enumerate what's
+  // available before forking one.
+  app.get("/v1/templates", async () => TEMPLATE_MANIFESTS);
+
+  // ---- site.createFromTemplate (Slice 3 / ADR-0011) ----
+  // Fork-on-use: every page and block gets a fresh ULID (rekeyPageForFork),
+  // so two forks of the same template are independent from the moment
+  // they're created — never `push`'s id-preserving write, which is the
+  // right choice for round-tripping a site back to itself but the wrong
+  // one here. Templates are seeds; they never receive upstream updates
+  // (ADR-0011).
+  app.post<{ Params: { templateId: string } }>("/v1/templates/:templateId/use", async (request) => {
+    const principal = await requirePrincipal(request);
+    if (principal.kind !== "session") throw forbidden("sites are created from a signed-in session, not an API token");
+    const body = parseBody(CreateSiteFromTemplateBodySchema, request.body);
+
+    const manifest = TEMPLATE_MANIFESTS.find((t) => t.id === request.params.templateId);
+    if (!manifest) throw notFound(`unknown template "${request.params.templateId}"`);
+    const checkout = await loadTemplateCheckout(manifest.id);
+
+    const siteId = newUlid();
+
+    return withTenantContext(pool, { accountId: principal.accountId, siteId }, async (client) => {
+      const site = await createSite(client, { id: siteId, slug: body.slug, name: body.name, ownerId: principal.accountId });
+      await createTheme(client, { id: newUlid(), siteId: site.id, tokens: checkout.theme });
+
+      const pages: PageDocument[] = [];
+      for (const templatePage of checkout.pages) {
+        const created = await createPage(client, { id: newUlid(), siteId: site.id, slug: templatePage.slug, title: templatePage.title });
+        const rekeyed = rekeyPageForFork(templatePage, { siteId: site.id, pageId: created.id });
+        const written = await writePageDocument(client, {
+          pageId: created.id,
+          siteId: site.id,
+          title: rekeyed.title,
+          slug: rekeyed.slug,
+          blocks: rekeyed.blocks,
+          expectedVersion: 0,
+        });
+        if (!written.ok) throw new Error("unreachable: brand-new page cannot already be at a later version");
+        pages.push(written.document);
+      }
+
+      return { site, pages, templateId: manifest.id };
     });
   });
 
@@ -271,6 +395,14 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     }
 
     return withTenantContext(pool, { siteId }, async (client) => {
+      // A pageId that exists but belongs to a different site is invisible
+      // under this transaction's RLS context either way — but checked
+      // explicitly here (matching the GET route just above) so it surfaces
+      // as a 404, not as writePageDocument's internal "page vanished"
+      // error falling through to a 500.
+      const existing = await getPageDocument(client, pageId);
+      if (!existing || existing.siteId !== siteId) throw notFound("page not found");
+
       const result = await writePageDocument(client, {
         pageId,
         siteId,

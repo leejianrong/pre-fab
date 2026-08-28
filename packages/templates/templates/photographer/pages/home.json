@@ -1,0 +1,136 @@
+{
+  "id": "01M136AM18AD2EGNVSKWAC3FPB",
+  "siteId": "01M136AM18P5E9A4F5E00NTGJG",
+  "slug": "home",
+  "title": "Home",
+  "schemaVersion": 1,
+  "version": 0,
+  "blocks": [
+    {
+      "id": "01M136AM18EG741FGRATY4A4VH",
+      "type": "nav",
+      "parent": null,
+      "order": 1000,
+      "schemaVersion": 1,
+      "props": {
+        "brand": "Lena Cruz",
+        "links": [
+          {
+            "label": "Portfolio",
+            "href": "#portfolio"
+          },
+          {
+            "label": "Contact",
+            "href": "#contact"
+          }
+        ]
+      },
+      "responsive": {}
+    },
+    {
+      "id": "01M136AM18N0BT540TH22SSK6S",
+      "type": "hero",
+      "parent": null,
+      "order": 2000,
+      "schemaVersion": 1,
+      "props": {
+        "heading": "Portraits and weddings, shot on location",
+        "subheading": "Based in Lisbon, available worldwide.",
+        "ctaLabel": "Enquire about a shoot",
+        "ctaHref": "#contact",
+        "background": "background"
+      },
+      "responsive": {}
+    },
+    {
+      "id": "01M136AM18SSH97R4WH28Y0G14",
+      "type": "heading",
+      "parent": null,
+      "order": 3000,
+      "schemaVersion": 1,
+      "props": {
+        "text": "Recent work",
+        "level": "h2",
+        "size": "heading",
+        "align": "left"
+      },
+      "responsive": {}
+    },
+    {
+      "id": "01M136AM19B9XNMKSDY0790BDW",
+      "type": "gallery",
+      "parent": null,
+      "order": 4000,
+      "schemaVersion": 1,
+      "props": {
+        "columns": 3,
+        "images": [
+          {
+            "src": "https://images.unsplash.com/photo-1519741497674-611481863552?w=900&q=80",
+            "alt": "Wedding couple embracing outdoors"
+          },
+          {
+            "src": "https://images.unsplash.com/photo-1511285560929-80b456fea0bc?w=900&q=80",
+            "alt": "Portrait in natural light"
+          },
+          {
+            "src": "https://images.unsplash.com/photo-1511285560929-80b456fea0bc?w=900&q=80&sat=-100",
+            "alt": "Black and white portrait"
+          },
+          {
+            "src": "https://images.unsplash.com/photo-1520854221256-17451cc331bf?w=900&q=80",
+            "alt": "Wedding reception detail"
+          },
+          {
+            "src": "https://images.unsplash.com/photo-1465495976277-4387d4b0b4c6?w=900&q=80",
+            "alt": "Outdoor engagement session"
+          },
+          {
+            "src": "https://images.unsplash.com/photo-1522673607200-164d1b6ce486?w=900&q=80",
+            "alt": "Studio portrait"
+          }
+        ]
+      },
+      "responsive": {}
+    },
+    {
+      "id": "01M136AM19P52T4MZPK79CEWQZ",
+      "type": "testimonial",
+      "parent": null,
+      "order": 5000,
+      "schemaVersion": 1,
+      "props": {
+        "quote": "Lena made our wedding day feel effortless. The photos are the thing we look at most from that whole year.",
+        "author": "Marco & Julie",
+        "role": ""
+      },
+      "responsive": {}
+    },
+    {
+      "id": "01M136AM19Q34W71PYD45B945G",
+      "type": "contactdetails",
+      "parent": null,
+      "order": 6000,
+      "schemaVersion": 1,
+      "props": {
+        "heading": "Enquire",
+        "email": "hello@lenacruz.example",
+        "phone": "",
+        "address": "Lisbon, Portugal"
+      },
+      "responsive": {}
+    },
+    {
+      "id": "01M136AM19TQ65PKX9D969WK6Q",
+      "type": "footer",
+      "parent": null,
+      "order": 7000,
+      "schemaVersion": 1,
+      "props": {
+        "text": "© Lena Cruz Photography",
+        "links": []
+      },
+      "responsive": {}
+    }
+  ]
+}

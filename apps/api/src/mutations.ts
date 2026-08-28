@@ -7,7 +7,10 @@
  * every entry, without booting a server or a database.
  */
 export const API_MUTATIONS = [
+  { name: "account.signup", method: "POST", path: "/v1/signup" },
+  { name: "account.verifyEmail", method: "POST", path: "/v1/signup/verify" },
   { name: "site.create", method: "POST", path: "/v1/sites" },
+  { name: "site.createFromTemplate", method: "POST", path: "/v1/templates/:templateId/use" },
   { name: "theme.update", method: "PUT", path: "/v1/sites/:siteId/theme" },
   { name: "page.create", method: "POST", path: "/v1/sites/:siteId/pages" },
   { name: "page.write", method: "PUT", path: "/v1/sites/:siteId/pages/:pageId" },

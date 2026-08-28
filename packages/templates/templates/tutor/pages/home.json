@@ -1,0 +1,142 @@
+{
+  "id": "01M136AM1BMWTJM0DQ497CTXGT",
+  "siteId": "01M136AM1B0AJGST62F303YPHY",
+  "slug": "home",
+  "title": "Home",
+  "schemaVersion": 1,
+  "version": 0,
+  "blocks": [
+    {
+      "id": "01M136AM1BPC15TFVXARC90NZ0",
+      "type": "nav",
+      "parent": null,
+      "order": 1000,
+      "schemaVersion": 1,
+      "props": {
+        "brand": "BrightPath Tutoring",
+        "links": [
+          {
+            "label": "Subjects",
+            "href": "#subjects"
+          },
+          {
+            "label": "FAQ",
+            "href": "#faq"
+          },
+          {
+            "label": "Contact",
+            "href": "#contact"
+          }
+        ]
+      },
+      "responsive": {}
+    },
+    {
+      "id": "01M136AM1BWZVAG88CE1QVET01",
+      "type": "hero",
+      "parent": null,
+      "order": 2000,
+      "schemaVersion": 1,
+      "props": {
+        "heading": "One-to-one tutoring that meets your kid where they are",
+        "subheading": "Maths, science and English, for ages 10 to 18 — online or in person.",
+        "ctaLabel": "Book a free trial session",
+        "ctaHref": "#contact",
+        "background": "background"
+      },
+      "responsive": {}
+    },
+    {
+      "id": "01M136AM1BQNKNDK22NK9PM45C",
+      "type": "heading",
+      "parent": null,
+      "order": 3000,
+      "schemaVersion": 1,
+      "props": {
+        "text": "Subjects I teach",
+        "level": "h2",
+        "size": "heading",
+        "align": "left"
+      },
+      "responsive": {}
+    },
+    {
+      "id": "01M136AM1BD457ZFMRYWX4YP42",
+      "type": "cardgrid",
+      "parent": null,
+      "order": 4000,
+      "schemaVersion": 1,
+      "props": {
+        "columns": 3,
+        "cards": [
+          {
+            "title": "Mathematics",
+            "body": "From long division to calculus — exam prep and everyday confidence.",
+            "href": ""
+          },
+          {
+            "title": "Science",
+            "body": "Biology, chemistry and physics, tied to what's actually on the syllabus.",
+            "href": ""
+          },
+          {
+            "title": "English",
+            "body": "Reading comprehension and essay writing, one paragraph at a time.",
+            "href": ""
+          }
+        ]
+      },
+      "responsive": {}
+    },
+    {
+      "id": "01M136AM1B9CB2N036BT61BV96",
+      "type": "faq",
+      "parent": null,
+      "order": 5000,
+      "schemaVersion": 1,
+      "props": {
+        "items": [
+          {
+            "question": "How long is a session?",
+            "answer": "Sessions run 50 minutes, weekly or twice-weekly depending on the subject."
+          },
+          {
+            "question": "Do you tutor online?",
+            "answer": "Yes — most sessions are online, with in-person available locally."
+          },
+          {
+            "question": "What ages do you work with?",
+            "answer": "Primarily ages 10 to 18, across primary through to exam-year students."
+          }
+        ]
+      },
+      "responsive": {}
+    },
+    {
+      "id": "01M136AM1CSFZPN2KZ8B904AY5",
+      "type": "contactdetails",
+      "parent": null,
+      "order": 6000,
+      "schemaVersion": 1,
+      "props": {
+        "heading": "Book a trial session",
+        "email": "hello@brightpathtutoring.example",
+        "phone": "+1 (555) 010-3300",
+        "address": ""
+      },
+      "responsive": {}
+    },
+    {
+      "id": "01M136AM1CPFC6EATQV7R1TV68",
+      "type": "footer",
+      "parent": null,
+      "order": 7000,
+      "schemaVersion": 1,
+      "props": {
+        "text": "© BrightPath Tutoring",
+        "links": []
+      },
+      "responsive": {}
+    }
+  ]
+}

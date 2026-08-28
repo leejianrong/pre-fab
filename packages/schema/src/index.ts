@@ -9,3 +9,4 @@ export * from "./registry.js";
 export * from "./validate.js";
 export * from "./tree.js";
 export * from "./diff.js";
+export * from "./rekey.js";

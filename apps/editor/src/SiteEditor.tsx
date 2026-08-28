@@ -15,12 +15,28 @@ import { api } from "./api.js";
 
 type Status = "idle" | "saving" | "saved" | "publishing" | "published";
 
-export function SiteEditor({ siteId, onBack }: { siteId: string; onBack: () => void }) {
+export function SiteEditor({
+  siteId,
+  firstRun,
+  onBack,
+}: {
+  siteId: string;
+  firstRun?: boolean;
+  onBack: () => void;
+}) {
   const [site, setSite] = useState<SiteSummary | null>(null);
   const [theme, setTheme] = useState<ThemeDocument | null>(null);
   const [page, setPage] = useState<PageDocument | null>(null);
   const [status, setStatus] = useState<Status>("idle");
   const [error, setError] = useState<string | null>(null);
+  const [showFirstRunBanner, setShowFirstRunBanner] = useState(Boolean(firstRun));
+  // Whether this site had ever gone live before this component mounted —
+  // set once, from the publish history fetched alongside the page. Drives
+  // the one-time celebration below: a site's first publish only, never a
+  // republish (SLICES.md: "a guided first edit and a publish celebration
+  // moment").
+  const hadPublishBefore = useRef(false);
+  const [celebration, setCelebration] = useState<{ liveUrl: string } | null>(null);
 
   // Puck owns live editing state internally once mounted (an "initial
   // value" component, not a fully controlled one) — these track what the
@@ -39,11 +55,17 @@ export function SiteEditor({ siteId, onBack }: { siteId: string; onBack: () => v
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const [s, t, pages] = await Promise.all([api.getSite(siteId), api.getTheme(siteId), api.listPages(siteId)]);
+      const [s, t, pages, publishes] = await Promise.all([
+        api.getSite(siteId),
+        api.getTheme(siteId),
+        api.listPages(siteId),
+        api.listPublishes(siteId),
+      ]);
       const firstPage = pages[0];
       if (!firstPage) throw new Error("this site has no pages yet");
       const p = await api.getPage(siteId, firstPage.id);
       if (cancelled) return;
+      hadPublishBefore.current = publishes.length > 0;
       setSite(s);
       setTheme(t);
       setPage(p);
@@ -110,8 +132,12 @@ export function SiteEditor({ siteId, onBack }: { siteId: string; onBack: () => v
     setStatus("publishing");
     setError(null);
     try {
-      await api.publish(siteId);
+      const result = await api.publish(siteId);
       setStatus("published");
+      if (!hadPublishBefore.current) {
+        hadPublishBefore.current = true;
+        setCelebration({ liveUrl: api.resolveUrl(result.liveUrl) });
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       setStatus("idle");
@@ -164,6 +190,31 @@ export function SiteEditor({ siteId, onBack }: { siteId: string; onBack: () => v
         {status === "saved" ? <span style={{ color: "#16a34a", fontSize: "0.875rem" }}>Saved</span> : null}
         {status === "published" ? <span style={{ color: "#16a34a", fontSize: "0.875rem" }}>Live</span> : null}
       </header>
+      {showFirstRunBanner ? (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "0.75rem",
+            padding: "0.5rem 1rem",
+            background: "#eef2ff",
+            borderBottom: "1px solid #c7d2fe",
+            fontSize: "0.875rem",
+            color: "#3730a3",
+          }}
+        >
+          <span style={{ flex: 1 }}>
+            👋 Try editing the heading below, then hit <strong>Publish</strong> to make your site live.
+          </span>
+          <button
+            onClick={() => setShowFirstRunBanner(false)}
+            aria-label="Dismiss"
+            style={{ border: "none", background: "none", cursor: "pointer", color: "#3730a3" }}
+          >
+            ✕
+          </button>
+        </div>
+      ) : null}
       <UnknownBlockList blocks={unknownBlocks} />
       <div style={{ flex: 1, minHeight: 0 }}>
         <Puck
@@ -177,6 +228,36 @@ export function SiteEditor({ siteId, onBack }: { siteId: string; onBack: () => v
       </div>
       {themeEditorOpen ? (
         <ThemeEditor tokens={theme.tokens} onSave={handleSaveTheme} onClose={() => setThemeEditorOpen(false)} />
+      ) : null}
+      {celebration ? (
+        <div
+          role="dialog"
+          aria-label="Site published"
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(15, 23, 42, 0.5)",
+            display: "grid",
+            placeItems: "center",
+            zIndex: 60,
+          }}
+        >
+          <div style={{ background: "white", borderRadius: "0.75rem", padding: "2rem", maxWidth: 420, textAlign: "center", display: "grid", gap: "0.75rem" }}>
+            <div style={{ fontSize: "2.5rem" }}>🎉</div>
+            <h2 style={{ margin: 0, fontSize: "1.25rem" }}>Your site is live!</h2>
+            <p style={{ margin: 0, color: "#64748b", fontSize: "0.9375rem" }}>
+              <a href={celebration.liveUrl} target="_blank" rel="noreferrer">
+                {celebration.liveUrl}
+              </a>
+            </p>
+            <button
+              onClick={() => setCelebration(null)}
+              style={{ padding: "0.5rem 1.5rem", background: "#4f46e5", color: "white", border: "none", borderRadius: "0.375rem", justifySelf: "center", cursor: "pointer" }}
+            >
+              Keep editing
+            </button>
+          </div>
+        </div>
       ) : null}
     </div>
   );

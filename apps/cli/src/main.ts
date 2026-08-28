@@ -1,6 +1,8 @@
 #!/usr/bin/env -S node --import tsx
 import { Command as Program } from "commander";
 import {
+  accountSignup,
+  accountVerifyEmail,
   assetList,
   assetUpload,
   build,
@@ -20,9 +22,11 @@ import {
   pull,
   push,
   siteCreate,
+  siteCreateFromTemplate,
   siteGet,
   siteList,
   siteOutline,
+  templateList,
   themeGet,
   themeSet,
   tokenCreate,
@@ -66,6 +70,37 @@ program
       if (cookie) await writeConfig({ apiUrl, cookie });
       return result;
     }),
+  );
+
+program
+  .command("signup <email>")
+  .description("Real signup (Slice 3): emails a 6-digit verification code — follow with `verify`")
+  .action((email: string) => runCommand(globalOptions(), async () => accountSignup.run(await resolveContext(), { email })));
+
+program
+  .command("verify <email> <code>")
+  .description("Verify a signup code and start a session — the real-signup equivalent of `login`")
+  .action((email: string, code: string) =>
+    runCommand(globalOptions(), async () => {
+      const apiUrl = program.opts().apiUrl ?? process.env.PREFAB_API_URL ?? "http://localhost:8787";
+      const ctx = createContext({ apiUrl });
+      const result = await accountVerifyEmail.run(ctx, { email, code });
+      const cookie = ctx.api.getSessionCookie();
+      if (cookie) await writeConfig({ apiUrl, cookie });
+      return result;
+    }),
+  );
+
+const template = program.command("template").description("Browse and fork templates (ADR-0011)");
+template
+  .command("list")
+  .description("List the templates available to fork a new site from")
+  .action(() => runCommand(globalOptions(), async () => templateList.run(await resolveContext(), {})));
+template
+  .command("use <templateId> <slug> <name>")
+  .description("Fork a template into a new site — every page and block gets a fresh id")
+  .action((templateId, slug, name) =>
+    runCommand(globalOptions(), async () => siteCreateFromTemplate.run(await resolveContext(), { templateId, slug, name })),
   );
 
 const site = program.command("site").description("Manage sites");

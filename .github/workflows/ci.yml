@@ -66,6 +66,21 @@ jobs:
           PGPASSWORD=postgres psql -h localhost -U postgres -d prefab_test -c "GRANT CONNECT ON DATABASE prefab_test TO prefab_app;"
       - run: pnpm run test:integration
 
+  # SLICES.md Slice 3: "Lighthouse and axe-core budgets in CI, per
+  # template" (R3, R6). No Postgres needed — each template's bundle is
+  # built and served standalone, straight from @prefab/templates' checkout
+  # files, the same way tools/checks' other checks never boot a database.
+  # Its own job for the same reason containment-and-parity is: a budget
+  # regression should never be buried in a wall of other output.
+  template-budgets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - name: Install Playwright's Chromium
+        run: pnpm --filter @prefab/ci-checks exec playwright install --with-deps chromium
+      - run: pnpm run ci:budgets
+
   # SLICES.md's End-to-end list, driven against the real editor, a real
   # API and a real publish (Playwright, Chromium) — these are slice 1's
   # acceptance criteria: the slice is done when these pass, not when the

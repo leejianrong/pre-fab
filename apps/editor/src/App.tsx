@@ -1,11 +1,17 @@
 import { useEffect, useState } from "react";
 import { ApiClientError } from "@prefab/api-client";
 import { LoginScreen } from "./LoginScreen.js";
+import { SignupScreen } from "./SignupScreen.js";
 import { SitePicker } from "./SitePicker.js";
 import { SiteEditor } from "./SiteEditor.js";
 import { api } from "./api.js";
 
-type Screen = { kind: "checking" } | { kind: "login" } | { kind: "picker" } | { kind: "editor"; siteId: string };
+type Screen =
+  | { kind: "checking" }
+  | { kind: "login" }
+  | { kind: "signup" }
+  | { kind: "picker" }
+  | { kind: "editor"; siteId: string; firstRun?: boolean };
 
 export function App() {
   const [screen, setScreen] = useState<Screen>({ kind: "checking" });
@@ -24,7 +30,20 @@ export function App() {
   }, []);
 
   if (screen.kind === "checking") return null;
-  if (screen.kind === "login") return <LoginScreen onLoggedIn={() => setScreen({ kind: "picker" })} />;
-  if (screen.kind === "picker") return <SitePicker onSiteSelected={(siteId) => setScreen({ kind: "editor", siteId })} />;
-  return <SiteEditor siteId={screen.siteId} onBack={() => setScreen({ kind: "picker" })} />;
+  if (screen.kind === "login") {
+    return <LoginScreen onLoggedIn={() => setScreen({ kind: "picker" })} onSignUp={() => setScreen({ kind: "signup" })} />;
+  }
+  if (screen.kind === "signup") {
+    return <SignupScreen onSignedUp={() => setScreen({ kind: "picker" })} onBackToLogin={() => setScreen({ kind: "login" })} />;
+  }
+  if (screen.kind === "picker") {
+    return <SitePicker onSiteSelected={(siteId, opts) => setScreen({ kind: "editor", siteId, firstRun: opts?.firstRun })} />;
+  }
+  return (
+    <SiteEditor
+      siteId={screen.siteId}
+      firstRun={screen.firstRun}
+      onBack={() => setScreen({ kind: "picker" })}
+    />
+  );
 }

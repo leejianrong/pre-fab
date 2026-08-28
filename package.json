@@ -18,6 +18,7 @@
     "typecheck": "pnpm -r --if-present run typecheck",
     "ci:containment": "pnpm --filter @prefab/ci-checks run containment",
     "ci:parity": "pnpm --filter @prefab/ci-checks run parity",
+    "ci:budgets": "pnpm --filter @prefab/ci-checks run budgets",
     "ci": "pnpm run lint && pnpm run typecheck && pnpm run ci:containment && pnpm run test:unit && pnpm run ci:parity"
   },
   "pnpm": {

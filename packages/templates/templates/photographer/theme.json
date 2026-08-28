@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "tokens": {
+    "color": {
+      "background": "#0b0b0d",
+      "foreground": "#f5f5f4",
+      "surface": "#18181b",
+      "surface-foreground": "#f5f5f4",
+      "border": "#27272a",
+      "accent": "#d4af37",
+      "accent-foreground": "#0b0b0d",
+      "muted": "#3f3f46",
+      "muted-foreground": "#d4d4d8"
+    },
+    "fontSize": {
+      "xs": "0.75rem",
+      "sm": "0.9375rem",
+      "body": "1.125rem",
+      "lg": "1.25rem",
+      "heading": "clamp(2rem, 4vw, 3.5rem)",
+      "display": "clamp(2.5rem, 6vw, 4.5rem)"
+    },
+    "spacing": {
+      "xs": "0.5rem",
+      "sm": "0.75rem",
+      "element": "1rem",
+      "lg": "2rem",
+      "section": "4rem"
+    },
+    "radius": {
+      "control": "0.25rem",
+      "card": "0.25rem",
+      "full": "9999px"
+    }
+  }
+}

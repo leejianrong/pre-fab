@@ -1,8 +1,13 @@
 import { useEffect, useState } from "react";
 import type { SiteSummary } from "@prefab/api-client";
+import { TemplateGallery } from "./TemplateGallery.js";
 import { api } from "./api.js";
 
-export function SitePicker({ onSiteSelected }: { onSiteSelected: (siteId: string) => void }) {
+export function SitePicker({
+  onSiteSelected,
+}: {
+  onSiteSelected: (siteId: string, opts?: { firstRun?: boolean }) => void;
+}) {
   const [sites, setSites] = useState<SiteSummary[] | null>(null);
   const [slug, setSlug] = useState("");
   const [name, setName] = useState("");
@@ -50,8 +55,9 @@ export function SitePicker({ onSiteSelected }: { onSiteSelected: (siteId: string
           </ul>
         )}
       </div>
+      <TemplateGallery onSiteCreated={(siteId) => onSiteSelected(siteId, { firstRun: true })} />
       <form onSubmit={createSite} style={{ display: "grid", gap: "0.5rem" }}>
-        <h2 style={{ fontSize: "1rem" }}>New site</h2>
+        <h2 style={{ fontSize: "1rem" }}>Or start blank</h2>
         <input placeholder="slug" value={slug} onChange={(e) => setSlug(e.target.value)} style={{ padding: "0.5rem" }} />
         <input placeholder="name" value={name} onChange={(e) => setName(e.target.value)} style={{ padding: "0.5rem" }} />
         <button type="submit" disabled={pending} style={{ padding: "0.5rem", background: "#4f46e5", color: "white", border: "none", borderRadius: "0.375rem" }}>

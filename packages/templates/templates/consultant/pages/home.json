@@ -1,0 +1,127 @@
+{
+  "id": "01M136AM0T9X3SKMXKZQFJR1PV",
+  "siteId": "01M136AM0RQ230PQQG94550PYP",
+  "slug": "home",
+  "title": "Home",
+  "schemaVersion": 1,
+  "version": 0,
+  "blocks": [
+    {
+      "id": "01M136AM0T1QYW0EBRFSKQ75QC",
+      "type": "nav",
+      "parent": null,
+      "order": 1000,
+      "schemaVersion": 1,
+      "props": {
+        "brand": "Ada Consulting",
+        "links": [
+          {
+            "label": "Services",
+            "href": "#services"
+          },
+          {
+            "label": "Contact",
+            "href": "#contact"
+          }
+        ]
+      },
+      "responsive": {}
+    },
+    {
+      "id": "01M136AM0TMFM6RPZHNGPJSVQM",
+      "type": "hero",
+      "parent": null,
+      "order": 2000,
+      "schemaVersion": 1,
+      "props": {
+        "heading": "Strategy and operations consulting for growing teams",
+        "subheading": "I help founders turn a messy first year into a business that runs without them in every room.",
+        "ctaLabel": "Book an introduction call",
+        "ctaHref": "#contact",
+        "background": "background"
+      },
+      "responsive": {}
+    },
+    {
+      "id": "01M136AM0TJEVB2RV9SX6P8T2S",
+      "type": "heading",
+      "parent": null,
+      "order": 3000,
+      "schemaVersion": 1,
+      "props": {
+        "text": "What I help with",
+        "level": "h2",
+        "size": "heading",
+        "align": "left"
+      },
+      "responsive": {}
+    },
+    {
+      "id": "01M136AM0TS25BNXB4JSQ551QS",
+      "type": "cardgrid",
+      "parent": null,
+      "order": 4000,
+      "schemaVersion": 1,
+      "props": {
+        "columns": 3,
+        "cards": [
+          {
+            "title": "Operations audit",
+            "body": "A structured review of how work actually moves through your team, with a prioritised fix list.",
+            "href": ""
+          },
+          {
+            "title": "Fractional COO",
+            "body": "Ongoing part-time operating support for founders who need a second pair of hands, not a full hire.",
+            "href": ""
+          },
+          {
+            "title": "Process design",
+            "body": "Turning tribal knowledge into documented, repeatable processes your team can run without you.",
+            "href": ""
+          }
+        ]
+      },
+      "responsive": {}
+    },
+    {
+      "id": "01M136AM0TSRKDG09PPNPYXV2T",
+      "type": "testimonial",
+      "parent": null,
+      "order": 5000,
+      "schemaVersion": 1,
+      "props": {
+        "quote": "Ada rebuilt our onboarding process in three weeks. We went from a 40% drop-off to under 10%.",
+        "author": "Priya Shah",
+        "role": "Founder, Fieldnote"
+      },
+      "responsive": {}
+    },
+    {
+      "id": "01M136AM0VSW7YQTF467WZXBTS",
+      "type": "contactdetails",
+      "parent": null,
+      "order": 6000,
+      "schemaVersion": 1,
+      "props": {
+        "heading": "Get in touch",
+        "email": "hello@adaconsulting.example",
+        "phone": "+1 (555) 010-2200",
+        "address": ""
+      },
+      "responsive": {}
+    },
+    {
+      "id": "01M136AM0V1BA5CMTMQKZ4PA92",
+      "type": "footer",
+      "parent": null,
+      "order": 7000,
+      "schemaVersion": 1,
+      "props": {
+        "text": "© Ada Consulting",
+        "links": []
+      },
+      "responsive": {}
+    }
+  ]
+}

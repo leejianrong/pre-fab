@@ -1,6 +1,6 @@
 import type { ComponentConfig, Config, DefaultRootRenderProps, Fields } from "@puckeditor/core";
 import type { ComponentType } from "react";
-import { Hero, HERO_BLOCK_TYPE, heroDefaultProps, resolveThemeTokens, themeTokensToStyleVars } from "@prefab/blocks";
+import { Hero, HERO_BLOCK_TYPE, heroDefaultProps, resolveThemeTokens, themeRootStyle } from "@prefab/blocks";
 import { Heading, HEADING_BLOCK_TYPE, headingDefaultProps } from "@prefab/blocks";
 import { Button, BUTTON_BLOCK_TYPE, buttonDefaultProps } from "@prefab/blocks";
 import { Embed, EMBED_BLOCK_TYPE, embedDefaultProps } from "@prefab/blocks";
@@ -174,7 +174,7 @@ export function createPuckConfig(tokens: ThemeTokens): Config {
   return {
     root: {
       render: ({ children }: DefaultRootRenderProps) => (
-        <div data-pf-theme-root="" style={themeTokensToStyleVars(resolvedTokens)}>
+        <div data-pf-theme-root="" style={themeRootStyle(resolvedTokens)}>
           {children}
         </div>
       ),

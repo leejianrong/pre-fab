@@ -1,0 +1,173 @@
+{
+  "id": "01M136AM1K5XKHWVBM8VST7KFS",
+  "siteId": "01M136AM1KZX9D8YCJN8GB1TZS",
+  "slug": "home",
+  "title": "Home",
+  "schemaVersion": 1,
+  "version": 0,
+  "blocks": [
+    {
+      "id": "01M136AM1KDC9V6VFCRM7K08TF",
+      "type": "nav",
+      "parent": null,
+      "order": 1000,
+      "schemaVersion": 1,
+      "props": {
+        "brand": "Northwind Digital",
+        "links": [
+          {
+            "label": "Services",
+            "href": "#services"
+          },
+          {
+            "label": "Work",
+            "href": "#work"
+          },
+          {
+            "label": "Contact",
+            "href": "#contact"
+          }
+        ]
+      },
+      "responsive": {}
+    },
+    {
+      "id": "01M136AM1KTZM9VTGWY4VAPJ0Q",
+      "type": "hero",
+      "parent": null,
+      "order": 2000,
+      "schemaVersion": 1,
+      "props": {
+        "heading": "A small studio for product design and web development",
+        "subheading": "We work with teams of 3 to 30 who need a shipped product, not a slide deck.",
+        "ctaLabel": "Start a project",
+        "ctaHref": "#contact",
+        "background": "background"
+      },
+      "responsive": {}
+    },
+    {
+      "id": "01M136AM1MPDBM98V2G9NZNS5R",
+      "type": "heading",
+      "parent": null,
+      "order": 3000,
+      "schemaVersion": 1,
+      "props": {
+        "text": "Services",
+        "level": "h2",
+        "size": "heading",
+        "align": "left"
+      },
+      "responsive": {}
+    },
+    {
+      "id": "01M136AM1M3PTVM3R0E5D4B74Q",
+      "type": "cardgrid",
+      "parent": null,
+      "order": 4000,
+      "schemaVersion": 1,
+      "props": {
+        "columns": 3,
+        "cards": [
+          {
+            "title": "Product design",
+            "body": "From a rough idea to a tested, buildable interface.",
+            "href": ""
+          },
+          {
+            "title": "Web development",
+            "body": "Fast, accessible, maintainable sites and web apps.",
+            "href": ""
+          },
+          {
+            "title": "Brand identity",
+            "body": "A visual system your team can actually keep using.",
+            "href": ""
+          }
+        ]
+      },
+      "responsive": {}
+    },
+    {
+      "id": "01M136AM1MDQ6BHM17TMQN8FGS",
+      "type": "heading",
+      "parent": null,
+      "order": 5000,
+      "schemaVersion": 1,
+      "props": {
+        "text": "Selected work",
+        "level": "h2",
+        "size": "heading",
+        "align": "left"
+      },
+      "responsive": {}
+    },
+    {
+      "id": "01M136AM1MG31BECC74XTF48J9",
+      "type": "cardgrid",
+      "parent": null,
+      "order": 6000,
+      "schemaVersion": 1,
+      "props": {
+        "columns": 3,
+        "cards": [
+          {
+            "title": "Fieldnote",
+            "body": "Redesigned onboarding for a field-services SaaS, cutting drop-off by 30%.",
+            "href": ""
+          },
+          {
+            "title": "Harbor Goods",
+            "body": "A new storefront and brand for a home-goods retailer.",
+            "href": ""
+          },
+          {
+            "title": "Loop Transit",
+            "body": "A real-time transit tracker used by four regional agencies.",
+            "href": ""
+          }
+        ]
+      },
+      "responsive": {}
+    },
+    {
+      "id": "01M136AM1MA2SYZ0HRQ6119TFA",
+      "type": "testimonial",
+      "parent": null,
+      "order": 7000,
+      "schemaVersion": 1,
+      "props": {
+        "quote": "Northwind shipped in six weeks what our last agency quoted eighteen for.",
+        "author": "Sam Okafor",
+        "role": "CEO, Harbor Goods"
+      },
+      "responsive": {}
+    },
+    {
+      "id": "01M136AM1MKK1SM3MDS77DQ28J",
+      "type": "contactdetails",
+      "parent": null,
+      "order": 8000,
+      "schemaVersion": 1,
+      "props": {
+        "heading": "Start a project",
+        "email": "hello@northwinddigital.example",
+        "phone": "+1 (555) 010-6600",
+        "address": ""
+      },
+      "responsive": {}
+    },
+    {
+      "id": "01M136AM1MMS6667AAG0M3TSRW",
+      "type": "footer",
+      "parent": null,
+      "order": 9000,
+      "schemaVersion": 1,
+      "props": {
+        "text": "© Northwind Digital",
+        "links": []
+      },
+      "responsive": {}
+    }
+  ]
+}

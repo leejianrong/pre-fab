@@ -40,3 +40,17 @@ export const UploadAssetBodySchema = z.object({
 export const DevLoginBodySchema = z.object({
   email: z.string().email(),
 });
+
+export const SignupBodySchema = z.object({
+  email: z.string().email(),
+});
+
+export const VerifyEmailBodySchema = z.object({
+  email: z.string().email(),
+  code: z.string().length(6),
+});
+
+export const CreateSiteFromTemplateBodySchema = z.object({
+  slug: z.string().min(1).max(64),
+  name: z.string().min(1).max(120),
+});
