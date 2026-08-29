@@ -1,6 +1,6 @@
 import "dotenv/config";
 import pg from "pg";
-import { runMigrations, withTenantContext, createAccount, getAccountByEmail } from "@prefab/db";
+import { runMigrations, withTenantContext, createAccount, getAccountByEmail, getOrCreateSubscription, updateSubscription } from "@prefab/db";
 import { newUlid } from "@prefab/schema";
 
 const { Pool } = pg;
@@ -24,9 +24,23 @@ export default async function globalSetup(): Promise<void> {
       "TRUNCATE webhook_deliveries, submissions, form_settings, forms, publishes, blocks, pages, themes, sites, api_tokens, sessions, accounts CASCADE",
     );
     const existing = await withTenantContext(pool, {}, (client) => getAccountByEmail(client, SEED_EMAIL));
-    if (!existing) {
-      await withTenantContext(pool, {}, (client) => createAccount(client, { id: newUlid(), email: SEED_EMAIL }));
-    }
+    const seeded = existing ?? (await withTenantContext(pool, {}, (client) => createAccount(client, { id: newUlid(), email: SEED_EMAIL })));
+
+    // Slice 8: pre-upgraded to pro so every pre-existing e2e spec (custom
+    // domains included) that predates the plan gate keeps working against
+    // the shared seeded account with no per-test upgrade step of its own.
+    // The gate itself is tested separately, against a dedicated fresh
+    // account (billing.spec.ts) — this seed account is never that test's
+    // subject.
+    await withTenantContext(pool, {}, (client) => getOrCreateSubscription(client, newUlid(), seeded.id));
+    await withTenantContext(pool, {}, (client) =>
+      updateSubscription(client, seeded.id, {
+        plan: "pro",
+        status: "active",
+        stripeCustomerId: "e2e_seed_cus",
+        stripeSubscriptionId: "e2e_seed_sub",
+      }),
+    );
   } finally {
     await pool.end();
   }

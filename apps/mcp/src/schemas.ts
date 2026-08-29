@@ -109,6 +109,15 @@ export const schemas = {
   build: { dir: z.string(), bundleStoreDir: z.string() },
   preview: { dir: z.string(), bundleStoreDir: z.string(), screenshot: z.boolean().optional() },
 
+  "member.invite": { siteId: z.string(), email: z.string().email(), role: z.enum(["editor", "viewer"]) },
+  "member.list": { siteId: z.string() },
+  "member.updateRole": { siteId: z.string(), accountId: z.string(), role: z.enum(["editor", "viewer"]) },
+  "member.remove": { siteId: z.string(), accountId: z.string() },
+
+  "subscription.get": {},
+  "plan.upgrade": {},
+  "plan.cancel": {},
+
   "export-bundle": {
     siteId: z.string(),
     outDir: z.string(),

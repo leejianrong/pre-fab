@@ -25,6 +25,12 @@ export const API_MUTATIONS = [
   { name: "publish.rollback", method: "POST", path: "/v1/sites/:siteId/publishes/:publishId/rollback" },
   { name: "form.configure", method: "PUT", path: "/v1/sites/:siteId/forms/:formId" },
   { name: "submission.delete", method: "DELETE", path: "/v1/sites/:siteId/forms/:formId/submissions/:submissionId" },
+  // ---- Slice 8: accounts, plans and billing (ADR-0005, ADR-0012) ----
+  { name: "member.invite", method: "POST", path: "/v1/sites/:siteId/members" },
+  { name: "member.updateRole", method: "PUT", path: "/v1/sites/:siteId/members/:accountId" },
+  { name: "member.remove", method: "DELETE", path: "/v1/sites/:siteId/members/:accountId" },
+  { name: "plan.upgrade", method: "POST", path: "/v1/account/plan" },
+  { name: "plan.cancel", method: "POST", path: "/v1/account/plan/cancel" },
 ] as const;
 
 export type MutationName = (typeof API_MUTATIONS)[number]["name"];

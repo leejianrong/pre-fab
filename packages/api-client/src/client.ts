@@ -20,11 +20,15 @@ import type {
   PublishRecord,
   PublishResult,
   SignupResult,
+  SiteMember,
   SiteOutline,
+  SiteRole,
   SiteSummary,
+  Subscription,
   TemplateSummary,
   ThemeDocument,
   ThemeTokens,
+  UpgradePlanResult,
   UploadAssetInput,
   VerifyEmailResult,
   WritePageInput,
@@ -37,6 +41,7 @@ export type ApiErrorCode =
   | "conflict"
   | "unauthorized"
   | "forbidden"
+  | "plan_required"
   | "rate_limited"
   | "internal";
 
@@ -357,6 +362,36 @@ export class ApiClient {
 
   deleteSubmission(siteId: string, formId: string, submissionId: string): Promise<{ removed: true }> {
     return this.request("DELETE", `/v1/sites/${siteId}/forms/${formId}/submissions/${submissionId}`);
+  }
+
+  // ---- member.invite / member.list / member.updateRole / member.remove (Slice 8) ----
+  inviteMember(siteId: string, input: { email: string; role: Exclude<SiteRole, "owner"> }): Promise<SiteMember> {
+    return this.request("POST", `/v1/sites/${siteId}/members`, input);
+  }
+
+  listMembers(siteId: string): Promise<SiteMember[]> {
+    return this.request("GET", `/v1/sites/${siteId}/members`);
+  }
+
+  updateMemberRole(siteId: string, accountId: string, role: Exclude<SiteRole, "owner">): Promise<SiteMember> {
+    return this.request("PUT", `/v1/sites/${siteId}/members/${accountId}`, { role });
+  }
+
+  removeMember(siteId: string, accountId: string): Promise<{ removed: true }> {
+    return this.request("DELETE", `/v1/sites/${siteId}/members/${accountId}`);
+  }
+
+  // ---- plan.upgrade / plan.cancel / subscription.get (Slice 8, ADR-0012) ----
+  getSubscription(): Promise<Subscription> {
+    return this.request("GET", "/v1/account/subscription");
+  }
+
+  upgradePlan(): Promise<UpgradePlanResult> {
+    return this.request("POST", "/v1/account/plan", { plan: "pro" });
+  }
+
+  cancelPlan(): Promise<Subscription> {
+    return this.request("POST", "/v1/account/plan/cancel");
   }
 
   resolveUrl(path: string): string {

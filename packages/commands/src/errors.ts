@@ -34,8 +34,12 @@ export function commandErrorFromApiCode(code: string, status: number, message: s
     case "unauthorized":
     case "forbidden":
       return new CommandError("auth", code, message, details);
+    // Slice 8's plan gate: actionable by the caller (upgrade the plan),
+    // the same R13 kind as a validation error, never "upstream" — nothing
+    // failed on our end.
     case "validation_error":
     case "not_found":
+    case "plan_required":
       return new CommandError("user_error", code, message, details);
     default:
       return new CommandError("upstream", code || "internal", message, details);

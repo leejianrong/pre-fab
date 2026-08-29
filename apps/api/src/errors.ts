@@ -1,4 +1,12 @@
-export type ApiErrorCode = "validation_error" | "not_found" | "conflict" | "unauthorized" | "forbidden" | "rate_limited" | "internal";
+export type ApiErrorCode =
+  | "validation_error"
+  | "not_found"
+  | "conflict"
+  | "unauthorized"
+  | "forbidden"
+  | "plan_required"
+  | "rate_limited"
+  | "internal";
 
 const STATUS_BY_CODE: Record<ApiErrorCode, number> = {
   validation_error: 400,
@@ -6,6 +14,10 @@ const STATUS_BY_CODE: Record<ApiErrorCode, number> = {
   forbidden: 403,
   not_found: 404,
   conflict: 409,
+  // Slice 8's first plan gate (ADR-0012): distinct from a bare 403 so the
+  // CLI/MCP/editor can point an owner at "upgrade" specifically, rather
+  // than a generic "not allowed."
+  plan_required: 402,
   rate_limited: 429,
   internal: 500,
 };
@@ -35,3 +47,4 @@ export const unauthorized = (message = "authentication required") => new ApiErro
 export const forbidden = (message = "not allowed") => new ApiError("forbidden", message);
 export const validationError = (message: string, details?: unknown) => new ApiError("validation_error", message, details);
 export const rateLimited = (message = "too many requests") => new ApiError("rate_limited", message);
+export const planRequired = (message: string) => new ApiError("plan_required", message);
