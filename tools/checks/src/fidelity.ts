@@ -189,6 +189,19 @@ export async function checkFidelity(workDir: string): Promise<BlockFidelityResul
     const hostedPage = await browser.newPage({ viewport: { width: 1280, height: 5000 } });
     const ejectedPage = await browser.newPage({ viewport: { width: 1280, height: 5000 } });
 
+    // The mapembed block renders a live third-party iframe
+    // (google.com/maps) — its actual pixels are Google's live map tiles,
+    // which are not visually deterministic between two independent page
+    // loads (traffic overlays, tile-cache state, timing), let alone across
+    // machines. That non-determinism belongs to Google's servers, not to
+    // pre-fab's own rendering — this check exists to catch a divergence in
+    // what *pre-fab* emits (the iframe's src, size and position), so both
+    // pages block the request identically instead, making the comparison
+    // deterministic without weakening what it actually tests.
+    for (const page of [hostedPage, ejectedPage]) {
+      await page.route("https://www.google.com/maps**", (route) => route.abort());
+    }
+
     for (const group of groups) {
       await hostedPage.goto(`${hostedPreview.url}${group.route}`, { waitUntil: "load" });
       await ejectedPage.goto(`${ejectedPreview.url}${group.route}`, { waitUntil: "load" });
