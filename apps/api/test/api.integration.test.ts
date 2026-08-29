@@ -67,6 +67,16 @@ async function seedAccountAndLogin(email: string) {
   return { cookie: cookie!.split(";")[0]!, accountId: (login.json() as { accountId: string }).accountId };
 }
 
+/** Slice 8's plan gate blocks a free account from custom domains — every domain test predates that gate and needs the account upgraded first, via the same dev-only fake-Stripe route custom-domains.spec.ts's e2e equivalent uses. */
+async function upgradeToPro(accountId: string) {
+  const advanced = await app.inject({
+    method: "POST",
+    url: `/v1/dev/stripe/${accountId}/advance`,
+    payload: { event: "checkout_completed" },
+  });
+  expect(advanced.statusCode).toBe(200);
+}
+
 describe("apps/api — the one write path", () => {
   it("creates a site with a default home page and Hero block, and enforces auth", async () => {
     const { cookie } = await seedAccountAndLogin(`site-${newUlid()}@example.com`);
@@ -446,7 +456,8 @@ describe("template fork-on-use (Slice 3, ADR-0011)", () => {
 
 describe("custom domains (Slice 4, ADR-0007) — against the fake provider", () => {
   it("runs the full lifecycle: add (pending) -> verify (still pending) -> DNS propagates -> verify (active) -> repeated polls stay stable -> remove", async () => {
-    const { cookie } = await seedAccountAndLogin(`domain-${newUlid()}@example.com`);
+    const { cookie, accountId } = await seedAccountAndLogin(`domain-${newUlid()}@example.com`);
+    await upgradeToPro(accountId);
     const created = await app.inject({
       method: "POST",
       url: "/v1/sites",
@@ -507,7 +518,8 @@ describe("custom domains (Slice 4, ADR-0007) — against the fake provider", () 
   });
 
   it("surfaces a specific, actionable error when DNS verification fails, rather than a generic failure", async () => {
-    const { cookie } = await seedAccountAndLogin(`domain-fail-${newUlid()}@example.com`);
+    const { cookie, accountId } = await seedAccountAndLogin(`domain-fail-${newUlid()}@example.com`);
+    await upgradeToPro(accountId);
     const created = await app.inject({
       method: "POST",
       url: "/v1/sites",
@@ -536,7 +548,8 @@ describe("custom domains (Slice 4, ADR-0007) — against the fake provider", () 
   });
 
   it("rejects an invalid hostname with a specific validation error, naming the problem (R18-style)", async () => {
-    const { cookie } = await seedAccountAndLogin(`domain-invalid-${newUlid()}@example.com`);
+    const { cookie, accountId } = await seedAccountAndLogin(`domain-invalid-${newUlid()}@example.com`);
+    await upgradeToPro(accountId);
     const created = await app.inject({
       method: "POST",
       url: "/v1/sites",
@@ -565,6 +578,7 @@ describe("custom domains (Slice 4, ADR-0007) — against the fake provider", () 
 
   it("rejects a domain add/verify/remove from a token scoped to a different site (RLS, ADR-0008)", async () => {
     const owner = await seedAccountAndLogin(`domain-rls-${newUlid()}@example.com`);
+    await upgradeToPro(owner.accountId);
     const createdA = await app.inject({
       method: "POST",
       url: "/v1/sites",
@@ -632,7 +646,8 @@ describe("host-based public routing (Slice 4, R1) — <slug>.<platformHost> and 
   });
 
   it("serves a site for an active custom domain, and 404s once it's removed", async () => {
-    const { cookie } = await seedAccountAndLogin(`host-domain-${newUlid()}@example.com`);
+    const { cookie, accountId } = await seedAccountAndLogin(`host-domain-${newUlid()}@example.com`);
+    await upgradeToPro(accountId);
     const site = await publishedSite(cookie, "host-domain");
 
     const added = await app.inject({

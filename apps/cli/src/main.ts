@@ -20,10 +20,16 @@ import {
   formConfigure,
   formGet,
   importSite,
+  memberInvite,
+  memberList,
+  memberRemove,
+  memberUpdateRole,
   pageCreate,
   pageGet,
   pageList,
   pageWrite,
+  planCancel,
+  planUpgrade,
   postCreate,
   postGet,
   postList,
@@ -42,6 +48,7 @@ import {
   submissionDelete,
   submissionExport,
   submissionList,
+  subscriptionGet,
   templateList,
   themeGet,
   themeSet,
@@ -334,6 +341,42 @@ asset
   .command("list <siteId>")
   .description("List a site's uploaded assets")
   .action((siteId) => runCommand(globalOptions(), async () => assetList.run(await resolveContext(), { siteId })));
+
+const member = program.command("member").description("Manage a site's owner/editor/viewer roles (Slice 8)");
+member
+  .command("invite <siteId> <email> <role>")
+  .description("Invite an existing account as editor or viewer — the invited email must already have a prefab account")
+  .action((siteId, email, role: "editor" | "viewer") =>
+    runCommand(globalOptions(), async () => memberInvite.run(await resolveContext(), { siteId, email, role })),
+  );
+member
+  .command("list <siteId>")
+  .description("List a site's members and their roles")
+  .action((siteId) => runCommand(globalOptions(), async () => memberList.run(await resolveContext(), { siteId })));
+member
+  .command("set-role <siteId> <accountId> <role>")
+  .description("Change an invited member's role — the site owner's own role cannot be changed this way")
+  .action((siteId, accountId, role: "editor" | "viewer") =>
+    runCommand(globalOptions(), async () => memberUpdateRole.run(await resolveContext(), { siteId, accountId, role })),
+  );
+member
+  .command("remove <siteId> <accountId>")
+  .description("Remove an invited member — the site owner cannot be removed this way")
+  .action((siteId, accountId) => runCommand(globalOptions(), async () => memberRemove.run(await resolveContext(), { siteId, accountId })));
+
+const plan = program.command("plan").description("Manage this platform's own subscription plan (Slice 8, ADR-0012) — never a tenant's own BYO-Stripe (ADR-0005)");
+plan
+  .command("get")
+  .description("Show the signed-in account's plan and subscription state")
+  .action(() => runCommand(globalOptions(), async () => subscriptionGet.run(await resolveContext(), {})));
+plan
+  .command("upgrade")
+  .description("Start (or complete, if already pro) an upgrade to the pro plan — prints a checkout URL when one is needed")
+  .action(() => runCommand(globalOptions(), async () => planUpgrade.run(await resolveContext(), {})));
+plan
+  .command("cancel")
+  .description("Cancel the pro plan — data and export keep working for a 30-day retention window (R7)")
+  .action(() => runCommand(globalOptions(), async () => planCancel.run(await resolveContext(), {})));
 
 program
   .command("token-create <siteId> <name>")

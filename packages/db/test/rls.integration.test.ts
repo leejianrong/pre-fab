@@ -7,6 +7,7 @@ import { createTheme, getTheme } from "../src/repositories/themes.js";
 import { createPage, getPageDocument, writePageDocument } from "../src/repositories/pages.js";
 import { createPublish, getLivePublish, setLivePublish } from "../src/repositories/publishes.js";
 import { createCustomDomain, findActiveCustomDomainByHostname, updateCustomDomainStatus } from "../src/repositories/custom-domains.js";
+import { addSiteMember, getSiteMemberRole } from "../src/repositories/site-members.js";
 
 const migrateUrl = process.env.MIGRATE_DATABASE_URL_TEST;
 const appUrl = process.env.DATABASE_URL_TEST;
@@ -193,6 +194,86 @@ describe("public read policies (Slice 4, R1/ADR-0007) — no tenant context, sco
 
     const foundPending = await withTenantContext(appPool, {}, (client) => findActiveCustomDomainByHostname(client, pendingHostname));
     expect(foundPending).toBeNull();
+  });
+});
+
+describe("site_members roles (Slice 8) — RLS enforcement, not just application logic", () => {
+  it("getSiteMemberRole resolves owner/editor/viewer correctly, and null for an account with no relationship to the site", async () => {
+    const owner = await withTenantContext(migratePool, {}, (client) =>
+      createAccount(client, { id: newUlid(), email: `role-owner-${newUlid()}@example.com` }),
+    );
+    const editor = await withTenantContext(migratePool, {}, (client) =>
+      createAccount(client, { id: newUlid(), email: `role-editor-${newUlid()}@example.com` }),
+    );
+    const viewer = await withTenantContext(migratePool, {}, (client) =>
+      createAccount(client, { id: newUlid(), email: `role-viewer-${newUlid()}@example.com` }),
+    );
+    const outsider = await withTenantContext(migratePool, {}, (client) =>
+      createAccount(client, { id: newUlid(), email: `role-outsider-${newUlid()}@example.com` }),
+    );
+    const site = await withTenantContext(appPool, { accountId: owner.id }, (client) =>
+      createSite(client, { id: newUlid(), slug: `roles-${newUlid()}`, name: "Roles", ownerId: owner.id }),
+    );
+    await withTenantContext(appPool, { siteId: site.id, accountId: owner.id }, (client) =>
+      addSiteMember(client, { siteId: site.id, accountId: owner.id, role: "owner" }),
+    );
+    await withTenantContext(appPool, { siteId: site.id }, (client) =>
+      addSiteMember(client, { siteId: site.id, accountId: editor.id, role: "editor" }),
+    );
+    await withTenantContext(appPool, { siteId: site.id }, (client) =>
+      addSiteMember(client, { siteId: site.id, accountId: viewer.id, role: "viewer" }),
+    );
+
+    expect(await withTenantContext(appPool, { siteId: site.id }, (client) => getSiteMemberRole(client, site.id, owner.id))).toBe("owner");
+    expect(await withTenantContext(appPool, { siteId: site.id }, (client) => getSiteMemberRole(client, site.id, editor.id))).toBe("editor");
+    expect(await withTenantContext(appPool, { siteId: site.id }, (client) => getSiteMemberRole(client, site.id, viewer.id))).toBe("viewer");
+    expect(await withTenantContext(appPool, { siteId: site.id }, (client) => getSiteMemberRole(client, site.id, outsider.id))).toBeNull();
+  });
+
+  it("an invited editor or viewer can see the site row via sites_member_access, even though they are not sites.owner_id", async () => {
+    const owner = await withTenantContext(migratePool, {}, (client) =>
+      createAccount(client, { id: newUlid(), email: `member-access-owner-${newUlid()}@example.com` }),
+    );
+    const viewer = await withTenantContext(migratePool, {}, (client) =>
+      createAccount(client, { id: newUlid(), email: `member-access-viewer-${newUlid()}@example.com` }),
+    );
+    const site = await withTenantContext(appPool, { accountId: owner.id }, (client) =>
+      createSite(client, { id: newUlid(), slug: `member-access-${newUlid()}`, name: "Member Access", ownerId: owner.id }),
+    );
+    await withTenantContext(appPool, { siteId: site.id }, (client) =>
+      addSiteMember(client, { siteId: site.id, accountId: viewer.id, role: "viewer" }),
+    );
+
+    // sites_owner_access alone would reject this (owner_id !== viewer.id) —
+    // sites_member_access is what makes it visible.
+    const asViewer = await withTenantContext(appPool, { accountId: viewer.id, siteId: site.id }, (client) => getSite(client, site.id));
+    expect(asViewer?.id).toBe(site.id);
+  });
+
+  it("an account with no site_members row and no siteId context of its own cannot discover the site — sites_owner_access and sites_member_access both fail closed", async () => {
+    const owner = await withTenantContext(migratePool, {}, (client) =>
+      createAccount(client, { id: newUlid(), email: `no-member-owner-${newUlid()}@example.com` }),
+    );
+    const outsider = await withTenantContext(migratePool, {}, (client) =>
+      createAccount(client, { id: newUlid(), email: `no-member-outsider-${newUlid()}@example.com` }),
+    );
+    const site = await withTenantContext(appPool, { accountId: owner.id }, (client) =>
+      createSite(client, { id: newUlid(), slug: `no-member-${newUlid()}`, name: "No Member", ownerId: owner.id }),
+    );
+
+    // No siteId in context (the outsider does not already know it's
+    // authorized for this site — the same shape listSitesForAccount's own
+    // cross-tenant test above uses): neither owner-equality nor a
+    // site_members row exists for this account, so the row stays invisible.
+    const asOutsider = await withTenantContext(appPool, { accountId: outsider.id }, (client) => getSite(client, site.id));
+    expect(asOutsider).toBeNull();
+
+    // authorizeSite's actual shape does set siteId context to resolve
+    // role (it must, to read site_members at all) — what stays enforced
+    // there is getSiteMemberRole itself returning null, checked above.
+    expect(
+      await withTenantContext(appPool, { accountId: outsider.id, siteId: site.id }, (client) => getSiteMemberRole(client, site.id, outsider.id)),
+    ).toBeNull();
   });
 });
 

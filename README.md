@@ -13,7 +13,7 @@ customer owns. See `PLAN.md` for the problem and requirements (`R1`–`R20`),
 panel. Bottom row: the published blog index and a published post page — all
 rendered by the actual static publish pipeline, not mockups.*
 
-**Status: Slices 1–7 are built.** Slice 1 proved the one-write-path loop with
+**Status: Slices 1–8 are built.** Slice 1 proved the one-write-path loop with
 a single Hero block: create, edit in the Puck canvas, edit by CLI/MCP/pull-push
 round trip, publish to a live, rollback-able bundle. Slice 2 added the full
 first-party block library, theme tokens, block-level responsive overrides and
@@ -55,7 +55,43 @@ plain `npm install && npm run build` and has zero `@prefab/*` dependencies
 (R11); and a screenshot-diff fidelity harness (`tools/checks`'s own
 `ci:fidelity` job) proving every first-party block renders within 0.1%
 pixel delta between the hosted pipeline and an ejected-and-rebuilt project
-(R9).
+(R9). Slice 8 turns pre-fab into a business: Stripe subscriptions for
+*our* plans (free/pro), kept explicitly separate in code from a tenant's
+own bring-your-own Stripe (ADR-0005, milestone 2, not built yet) — see
+`apps/api/src/lib/stripe.ts`'s module comment for why the two must never
+be conflated. Custom domains are the first plan gate (ADR-0012):
+`domain.add` 402s with `plan_required` on the free plan, `plan.upgrade`
+starts a checkout (a real Stripe Checkout Session against a live account,
+or the fake provider's dev-only advance route otherwise), and
+`plan.cancel` starts a 30-day retention window in which the site keeps
+serving and export keeps working with no gate at all (R7) — only once
+that window fully elapses does the site stop serving. A failed payment
+(`invoice.payment_failed`) moves the account to a `past_due` grace state,
+not an immediate takedown; a subsequent `invoice.payment_succeeded`
+reactivates it. `site_members` adds owner/editor/viewer roles — invited
+by email to an existing account, enforced by `authorizeSite`'s role
+lookup (`apps/api/src/lib/auth.ts`) under the same RLS tenant-context
+mechanism every other query uses (ADR-0008), not a second authorization
+path — and it replaces `sites.owner_id` as the actual access-control
+mechanism (kept only as the historical/display field). Inbound Stripe
+webhooks (`POST /v1/webhooks/stripe`) are signature-verified and
+idempotent via `stripe_webhook_events`, since Stripe itself retries
+delivery.
+
+One thing worth knowing about Slice 8 specifically, and the same
+UNVERIFIED discipline as Slice 4/6's Cloudflare/Resend/Turnstile
+adapters: **no Stripe account exists in this environment**, so every test
+here runs against an in-memory `FakeStripeProvider`
+(`apps/api/src/lib/stripe.ts`) plus a dev-only
+`/v1/dev/stripe/:accountId/advance` route (the same shape as Slice 4's
+`/v1/dev/domains/:id/advance`) that drives checkout-completed/payment-
+failed/payment-succeeded/canceled transitions directly, without a real
+checkout redirect to click through. `RealStripeProvider` in the same file
+— including its hand-rolled `Stripe-Signature` HMAC verification — is
+written from Stripe's public API docs but has never been exercised
+against a live account or real webhook delivery; treat it as an informed
+draft, not a verified integration, the same caveat as
+`CloudflareDomainProvider`.
 
 One thing worth knowing about Slice 7 specifically: the fidelity harness
 doesn't compare the hosted site against a second, hand-maintained renderer
@@ -192,6 +228,11 @@ pnpm run db:migrate          # runs packages/db/migrations against prefab_dev
   `TURNSTILE_SECRET_KEY`/`TURNSTILE_SITE_KEY` are likewise optional and
   default to the fake email outbox / a Turnstile verifier that always
   succeeds, same discipline as the Cloudflare domain vars above.
+- `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID_PRO` —
+  optional (Slice 8). Unset (the default everywhere, including CI) uses
+  `FakeStripeProvider` and the dev-only `/v1/dev/stripe/:accountId/advance`
+  route instead of real Stripe — *our* billing only, never a tenant's own
+  BYO-Stripe (ADR-0005).
 
 ### Running the pieces
 

@@ -19,6 +19,8 @@ import { build } from "./build.js";
 import { preview } from "./preview.js";
 import { exportBundle } from "./export-bundle.js";
 import { eject } from "./eject.js";
+import { memberInvite, memberList, memberUpdateRole, memberRemove } from "./member.js";
+import { subscriptionGet, planUpgrade, planCancel } from "./plan.js";
 
 /**
  * Every command apps/cli and apps/mcp expose, in one place. Both wrap this
@@ -69,6 +71,13 @@ export const commandRegistry = defineRegistry([
   preview,
   exportBundle,
   eject,
+  memberInvite,
+  memberList,
+  memberUpdateRole,
+  memberRemove,
+  subscriptionGet,
+  planUpgrade,
+  planCancel,
 ]);
 
 export {
@@ -115,4 +124,11 @@ export {
   preview,
   exportBundle,
   eject,
+  memberInvite,
+  memberList,
+  memberUpdateRole,
+  memberRemove,
+  subscriptionGet,
+  planUpgrade,
+  planCancel,
 };

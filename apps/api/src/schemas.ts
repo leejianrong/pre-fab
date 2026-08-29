@@ -133,3 +133,24 @@ export const SubmitFormBodySchema = z.object({
   values: z.record(z.string(), z.union([z.string(), z.boolean()])).default({}),
   turnstileToken: z.string().max(4096).optional(),
 });
+
+// ---- Slice 8: accounts, plans and billing (ADR-0005, ADR-0012) ----
+const SiteRoleSchema = z.enum(["editor", "viewer"]);
+
+export const InviteMemberBodySchema = z.object({
+  email: z.string().email(),
+  role: SiteRoleSchema,
+});
+
+export const UpdateMemberRoleBodySchema = z.object({
+  role: SiteRoleSchema,
+});
+
+export const UpgradePlanBodySchema = z.object({
+  plan: z.literal("pro"),
+});
+
+/** Dev-only (see `/v1/dev/stripe/:accountId/advance`) — drives the FakeStripeProvider the same way real Stripe webhook delivery would. */
+export const AdvanceFakeStripeBodySchema = z.object({
+  event: z.enum(["checkout_completed", "payment_failed", "payment_succeeded", "canceled"]),
+});

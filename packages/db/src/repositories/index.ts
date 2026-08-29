@@ -11,3 +11,5 @@ export * from "./posts.js";
 export * from "./forms.js";
 export * from "./submissions.js";
 export * from "./webhook-deliveries.js";
+export * from "./site-members.js";
+export * from "./subscriptions.js";

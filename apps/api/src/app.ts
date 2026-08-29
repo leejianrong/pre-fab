@@ -52,6 +52,16 @@ import {
   listAllSubmissionsForExport,
   getSubmission,
   deleteSubmission,
+  addSiteMember,
+  getSiteMemberRole,
+  listSiteMembers,
+  updateSiteMemberRole,
+  removeSiteMember,
+  getOrCreateSubscription,
+  getSubscriptionByAccountId,
+  getSubscriptionByStripeCustomerId,
+  updateSubscription,
+  recordStripeWebhookEvent,
   type Pool,
   type PoolClient,
   type SiteRow,
@@ -75,9 +85,18 @@ import { blockSchemaRegistry, HERO_BLOCK_TYPE, heroDefaultProps, FORM_BLOCK_TYPE
 import { buildSiteBundle } from "@prefab/publish";
 import { TEMPLATE_MANIFESTS, loadTemplateCheckout } from "@prefab/templates/server";
 import { submitForm, toCsv, createInMemoryRateLimiter, type TurnstileVerifier } from "@prefab/runtime";
-import { ApiError, conflict, forbidden, notFound, rateLimited, unauthorized, validationError } from "./errors.js";
+import { ApiError, conflict, forbidden, notFound, planRequired, rateLimited, unauthorized, validationError } from "./errors.js";
 import { API_MUTATIONS } from "./mutations.js";
 import { resolvePrincipal, authorizeSite, SESSION_COOKIE, type Principal } from "./lib/auth.js";
+import { createStripeProvider, FakeStripeProvider, type StripeProvider } from "./lib/stripe.js";
+import {
+  canAddCustomDomain,
+  isRetentionExpired,
+  applyCheckoutCompleted,
+  applyPaymentFailed,
+  applyPaymentSucceeded,
+  applyCanceled,
+} from "./lib/subscriptions.js";
 import { generateRawToken, generateVerificationCode } from "./lib/tokens.js";
 import { buildSiteOutline } from "./lib/outline.js";
 import { createEmailSender, createOutboxEmailSender, type EmailSender } from "./lib/email.js";
@@ -113,6 +132,10 @@ import {
   VerifyEmailBodySchema,
   WritePageBodySchema,
   WritePostBodySchema,
+  InviteMemberBodySchema,
+  UpdateMemberRoleBodySchema,
+  UpgradePlanBodySchema,
+  AdvanceFakeStripeBodySchema,
 } from "./schemas.js";
 
 export interface AppDeps {
@@ -132,6 +155,10 @@ export interface AppDeps {
   /** Where a published site's Form island posts submissions to. Defaults to RUNTIME_API_URL, then falls back to this server's own public origin. */
   runtimeApiUrl?: string;
   fetchImpl?: typeof fetch;
+  /** Slice 8. *Our* billing (ADR-0012) — never the tenant's own BYO-Stripe (ADR-0005). Defaults to createStripeProvider()'s env-based choice (the fake unless STRIPE_SECRET_KEY is set). */
+  stripeProvider?: StripeProvider;
+  /** Stripe's webhook signing secret — required only when a real StripeProvider is configured. Defaults to STRIPE_WEBHOOK_SECRET. */
+  stripeWebhookSecret?: string;
 }
 
 function parseBody<T>(schema: z.ZodType<T>, body: unknown): T {
@@ -236,6 +263,8 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   const fetchImpl = deps.fetchImpl ?? fetch;
   const turnstile = deps.turnstile ?? createTurnstileVerifier();
   const turnstileSiteKey = deps.turnstileSiteKey ?? process.env.TURNSTILE_SITE_KEY ?? "";
+  const stripeProvider = deps.stripeProvider ?? createStripeProvider();
+  const stripeWebhookSecret = deps.stripeWebhookSecret ?? process.env.STRIPE_WEBHOOK_SECRET ?? "";
   const runtimeApiUrl = deps.runtimeApiUrl ?? process.env.RUNTIME_API_URL ?? "";
   // Slice 6's runtime API (ADR-0007/ADR-0010): apps/api is the control
   // plane, so it's the one place allowed to wire @prefab/runtime's storage
@@ -263,6 +292,25 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   const { sender: email, outbox: emailOutbox } = createOutboxEmailSender();
   const formEmailSender = deps.formEmailSender ?? createEmailSender(email);
   const formNotifier = new EmailFormNotifier(formEmailSender);
+
+  // Stripe webhook signature verification needs the exact raw request
+  // bytes (Stripe-Signature is an HMAC over the literal body, not the
+  // re-serialized JSON) — this replaces Fastify's default JSON parser
+  // globally, stashing the raw buffer on the request alongside the
+  // ordinarily-parsed body, so every other route's `request.body` is
+  // completely unaffected.
+  app.addContentTypeParser<Buffer>("application/json", { parseAs: "buffer" }, (request, body, done) => {
+    (request as FastifyRequest & { rawBody?: Buffer }).rawBody = body;
+    if (body.length === 0) {
+      done(null, undefined);
+      return;
+    }
+    try {
+      done(null, JSON.parse(body.toString("utf8")));
+    } catch (error) {
+      done(error as Error, undefined);
+    }
+  });
 
   app.register(cookie);
   // The editor SPA runs on its own Vite dev-server origin (ADR-0004 —
@@ -399,6 +447,9 @@ export function buildApp(deps: AppDeps): FastifyInstance {
 
     return withTenantContext(pool, { accountId: principal.accountId, siteId }, async (client) => {
       const site = await createSite(client, { id: siteId, slug: body.slug, name: body.name, ownerId: principal.accountId });
+      // Slice 8: the owner's role row exists from the same moment the site
+      // does — authorizeSite's role lookup has nothing else to go on.
+      await addSiteMember(client, { siteId: site.id, accountId: principal.accountId, role: "owner" });
       await createTheme(client, { id: newUlid(), siteId: site.id, tokens: DEFAULT_THEME_TOKENS });
 
       const page = await createPage(client, { id: newUlid(), siteId: site.id, slug: "home", title: "Home" });
@@ -452,6 +503,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
 
     return withTenantContext(pool, { accountId: principal.accountId, siteId }, async (client) => {
       const site = await createSite(client, { id: siteId, slug: body.slug, name: body.name, ownerId: principal.accountId });
+      await addSiteMember(client, { siteId: site.id, accountId: principal.accountId, role: "owner" });
       await createTheme(client, { id: newUlid(), siteId: site.id, tokens: checkout.theme });
 
       const pages: PageDocument[] = [];
@@ -502,7 +554,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
 
   app.put<{ Params: { siteId: string } }>("/v1/sites/:siteId/theme", async (request) => {
     const principal = await requirePrincipal(request);
-    const { siteId } = await authorizeSite(pool, principal, request.params.siteId);
+    const { siteId } = await authorizeSite(pool, principal, request.params.siteId, { minRole: "editor" });
     const body = parseBody(UpdateThemeBodySchema, request.body);
     return withTenantContext(pool, { siteId }, (client) => updateThemeTokens(client, siteId, body.tokens));
   });
@@ -510,7 +562,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   // ---- page.create ----
   app.post<{ Params: { siteId: string } }>("/v1/sites/:siteId/pages", async (request) => {
     const principal = await requirePrincipal(request);
-    const { siteId } = await authorizeSite(pool, principal, request.params.siteId);
+    const { siteId } = await authorizeSite(pool, principal, request.params.siteId, { minRole: "editor" });
     const body = parseBody(CreatePageBodySchema, request.body);
     return withTenantContext(pool, { siteId }, (client) =>
       createPage(client, { id: newUlid(), siteId, slug: body.slug, title: body.title }),
@@ -534,7 +586,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   // ---- page.write — the core mutation (ADR-0003 / ADR-0006 / R17 / R18) ----
   app.put<{ Params: { siteId: string; pageId: string } }>("/v1/sites/:siteId/pages/:pageId", async (request) => {
     const principal = await requirePrincipal(request);
-    const { siteId } = await authorizeSite(pool, principal, request.params.siteId);
+    const { siteId } = await authorizeSite(pool, principal, request.params.siteId, { minRole: "editor" });
     const { pageId } = request.params;
     const body = parseBody(WritePageBodySchema, request.body);
 
@@ -590,7 +642,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   // `dedupeSlug` gets unit-tested against directly.
   app.post<{ Params: { siteId: string } }>("/v1/sites/:siteId/posts", async (request) => {
     const principal = await requirePrincipal(request);
-    const { siteId } = await authorizeSite(pool, principal, request.params.siteId);
+    const { siteId } = await authorizeSite(pool, principal, request.params.siteId, { minRole: "editor" });
     const body = parseBody(CreatePostBodySchema, request.body);
 
     return withTenantContext(pool, { siteId }, async (client) => {
@@ -634,7 +686,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   // ---- post.write — the collection's core mutation, same discipline as page.write (ADR-0006/R17/R18) ----
   app.put<{ Params: { siteId: string; postId: string } }>("/v1/sites/:siteId/posts/:postId", async (request) => {
     const principal = await requirePrincipal(request);
-    const { siteId } = await authorizeSite(pool, principal, request.params.siteId);
+    const { siteId } = await authorizeSite(pool, principal, request.params.siteId, { minRole: "editor" });
     const { postId } = request.params;
     const body = parseBody(WritePostBodySchema, request.body);
 
@@ -691,7 +743,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   // props at publish time (see publish.create below), never written here. ----
   app.put<{ Params: { siteId: string; formId: string } }>("/v1/sites/:siteId/forms/:formId", async (request) => {
     const principal = await requirePrincipal(request);
-    const { siteId } = await authorizeSite(pool, principal, request.params.siteId);
+    const { siteId } = await authorizeSite(pool, principal, request.params.siteId, { minRole: "editor" });
     const body = parseBody(ConfigureFormBodySchema, request.body);
     return withTenantContext(pool, { siteId }, (client) =>
       upsertFormSettings(client, {
@@ -729,7 +781,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     "/v1/sites/:siteId/forms/:formId/submissions/export",
     async (request, reply) => {
       const principal = await requirePrincipal(request);
-      const { siteId } = await authorizeSite(pool, principal, request.params.siteId);
+      const { siteId } = await authorizeSite(pool, principal, request.params.siteId, { minRole: "editor" });
       const { formId } = request.params;
       const query = parseQuery(ExportSubmissionsQuerySchema, request.query);
 
@@ -762,7 +814,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     "/v1/sites/:siteId/forms/:formId/submissions/:submissionId",
     async (request) => {
       const principal = await requirePrincipal(request);
-      const { siteId } = await authorizeSite(pool, principal, request.params.siteId);
+      const { siteId } = await authorizeSite(pool, principal, request.params.siteId, { minRole: "editor" });
       const { submissionId } = request.params;
       const existing = await withTenantContext(pool, { siteId }, (client) => getSubmission(client, siteId, submissionId));
       if (!existing || existing.formId !== request.params.formId) throw notFound("submission not found");
@@ -779,7 +831,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   // client needed on any surface.
   app.post<{ Params: { siteId: string } }>("/v1/sites/:siteId/assets", async (request) => {
     const principal = await requirePrincipal(request);
-    const { siteId, accountId } = await authorizeSite(pool, principal, request.params.siteId);
+    const { siteId, accountId } = await authorizeSite(pool, principal, request.params.siteId, { minRole: "editor" });
     const body = parseBody(UploadAssetBodySchema, request.body);
 
     let bytes: Buffer;
@@ -861,7 +913,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   app.post<{ Params: { siteId: string } }>("/v1/sites/:siteId/tokens", async (request) => {
     const principal = await requirePrincipal(request);
     if (principal.kind !== "session") throw forbidden("tokens are minted from a signed-in session, not another token");
-    const { siteId, accountId } = await authorizeSite(pool, principal, request.params.siteId);
+    const { siteId, accountId } = await authorizeSite(pool, principal, request.params.siteId, { minRole: "owner" });
     const body = parseBody(CreateTokenBodySchema, request.body);
 
     const raw = generateRawToken();
@@ -881,8 +933,17 @@ export function buildApp(deps: AppDeps): FastifyInstance {
 
   app.post<{ Params: { siteId: string } }>("/v1/sites/:siteId/domains", async (request) => {
     const principal = await requirePrincipal(request);
-    const { siteId, accountId } = await authorizeSite(pool, principal, request.params.siteId);
+    const { siteId, accountId } = await authorizeSite(pool, principal, request.params.siteId, { minRole: "owner" });
     const body = parseBody(AddDomainBodySchema, request.body);
+
+    // Slice 8's first plan gate (ADR-0012): custom domains are the free
+    // tier's paid line. A `past_due` grace-period account keeps full
+    // access — only an actually `canceled` subscription is blocked, same
+    // as free (lib/subscriptions.ts's canAddCustomDomain).
+    const subscription = await withTenantContext(pool, {}, (client) => getOrCreateSubscription(client, newUlid(), accountId));
+    if (!canAddCustomDomain(subscription)) {
+      throw planRequired("custom domains require the pro plan — upgrade to add one");
+    }
 
     const hostname = normalizeHostname(body.hostname);
     let classification;
@@ -922,7 +983,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     "/v1/sites/:siteId/domains/:domainId/verify",
     async (request) => {
       const principal = await requirePrincipal(request);
-      const { siteId } = await authorizeSite(pool, principal, request.params.siteId);
+      const { siteId } = await authorizeSite(pool, principal, request.params.siteId, { minRole: "owner" });
       const { domainId } = request.params;
 
       const domain = await withTenantContext(pool, { siteId }, (client) => getCustomDomain(client, siteId, domainId));
@@ -946,7 +1007,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   // ---- domain.remove (Slice 4): deprovisioning the provider hostname is best-effort — the DB row is what actually controls whether this build's host-routing serves the domain, so it is removed regardless of whether the provider call succeeds. ----
   app.delete<{ Params: { siteId: string; domainId: string } }>("/v1/sites/:siteId/domains/:domainId", async (request) => {
     const principal = await requirePrincipal(request);
-    const { siteId } = await authorizeSite(pool, principal, request.params.siteId);
+    const { siteId } = await authorizeSite(pool, principal, request.params.siteId, { minRole: "owner" });
     const { domainId } = request.params;
 
     const domain = await withTenantContext(pool, { siteId }, (client) => getCustomDomain(client, siteId, domainId));
@@ -981,6 +1042,210 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     },
   );
 
+  // ---- member.invite / member.list / member.updateRole / member.remove
+  // (Slice 8): owner/editor/viewer roles, the same site_members table
+  // authorizeSite's role lookup itself reads. Invite-only by email — the
+  // invited account must already exist (this repo's dev-only email outbox
+  // has no separate "invite" notification to send, so there is nothing to
+  // build here beyond what SLICES.md's own test list asks for: role
+  // enforcement, not an invitation-email flow). ----
+  app.post<{ Params: { siteId: string } }>("/v1/sites/:siteId/members", async (request) => {
+    const principal = await requirePrincipal(request);
+    const { siteId } = await authorizeSite(pool, principal, request.params.siteId, { minRole: "owner" });
+    const body = parseBody(InviteMemberBodySchema, request.body);
+
+    return withTenantContext(pool, { siteId }, async (client) => {
+      const account = await getAccountByEmail(client, body.email);
+      if (!account) throw notFound("no account with that email — the invited person must sign up first");
+      const existingRole = await getSiteMemberRole(client, siteId, account.id);
+      if (existingRole) throw conflict(`${body.email} is already a member of this site`);
+      return addSiteMember(client, { siteId, accountId: account.id, role: body.role });
+    });
+  });
+
+  app.get<{ Params: { siteId: string } }>("/v1/sites/:siteId/members", async (request) => {
+    const principal = await requirePrincipal(request);
+    const { siteId } = await authorizeSite(pool, principal, request.params.siteId);
+    return withTenantContext(pool, { siteId }, (client) => listSiteMembers(client, siteId));
+  });
+
+  app.put<{ Params: { siteId: string; accountId: string } }>("/v1/sites/:siteId/members/:accountId", async (request) => {
+    const principal = await requirePrincipal(request);
+    const { siteId } = await authorizeSite(pool, principal, request.params.siteId, { minRole: "owner" });
+    const body = parseBody(UpdateMemberRoleBodySchema, request.body);
+    const targetAccountId = request.params.accountId;
+
+    return withTenantContext(pool, { siteId }, async (client) => {
+      const existingRole = await getSiteMemberRole(client, siteId, targetAccountId);
+      if (!existingRole) throw notFound("that account is not a member of this site");
+      if (existingRole === "owner") throw forbidden("the site owner's role cannot be changed");
+      const updated = await updateSiteMemberRole(client, siteId, targetAccountId, body.role);
+      if (!updated) throw notFound("that account is not a member of this site");
+      return updated;
+    });
+  });
+
+  app.delete<{ Params: { siteId: string; accountId: string } }>("/v1/sites/:siteId/members/:accountId", async (request) => {
+    const principal = await requirePrincipal(request);
+    const { siteId } = await authorizeSite(pool, principal, request.params.siteId, { minRole: "owner" });
+    const targetAccountId = request.params.accountId;
+
+    return withTenantContext(pool, { siteId }, async (client) => {
+      const existingRole = await getSiteMemberRole(client, siteId, targetAccountId);
+      if (!existingRole) throw notFound("that account is not a member of this site");
+      if (existingRole === "owner") throw forbidden("the site owner cannot be removed");
+      await removeSiteMember(client, siteId, targetAccountId);
+      return { removed: true };
+    });
+  });
+
+  // ---- plan.upgrade / plan.cancel / subscription.get (Slice 8, ADR-0012):
+  // *our* billing, account-level (not site-scoped — an account's plan
+  // covers every site it owns), and reachable only from a signed-in
+  // session, never an API token — the same restriction token.create
+  // already applies to site-level administration, for the same reason:
+  // billing is not something a scoped, revocable site token should be
+  // able to touch. ----
+  app.get("/v1/account/subscription", async (request) => {
+    const principal = await requirePrincipal(request);
+    if (principal.kind !== "session") throw forbidden("billing is read from a signed-in session, not an API token");
+    return withTenantContext(pool, {}, (client) => getOrCreateSubscription(client, newUlid(), principal.accountId));
+  });
+
+  app.post("/v1/account/plan", async (request) => {
+    const principal = await requirePrincipal(request);
+    if (principal.kind !== "session") throw forbidden("billing is managed from a signed-in session, not an API token");
+    parseBody(UpgradePlanBodySchema, request.body);
+
+    const subscription = await withTenantContext(pool, {}, (client) => getOrCreateSubscription(client, newUlid(), principal.accountId));
+    if (canAddCustomDomain(subscription)) {
+      // Already pro and not canceled — idempotent, no new checkout needed.
+      return { subscription, checkout: null };
+    }
+
+    const priceId = process.env.STRIPE_PRICE_ID_PRO ?? "price_pro_fake";
+    const checkout = await stripeProvider.createCheckoutSession({ accountId: principal.accountId, priceId });
+    return { subscription, checkout };
+  });
+
+  app.post("/v1/account/plan/cancel", async (request) => {
+    const principal = await requirePrincipal(request);
+    if (principal.kind !== "session") throw forbidden("billing is managed from a signed-in session, not an API token");
+
+    const subscription = await withTenantContext(pool, {}, (client) => getOrCreateSubscription(client, newUlid(), principal.accountId));
+    if (subscription.status === "canceled") return subscription;
+
+    // Best-effort against Stripe, same discipline as domain.remove's
+    // provider deprovisioning: our own record is what actually controls
+    // access, so it is updated regardless of whether the provider call
+    // succeeds.
+    if (subscription.stripeSubscriptionId) {
+      await stripeProvider.cancelSubscription(subscription.stripeSubscriptionId).catch((error) => {
+        app.log.error(error, "failed to cancel subscription with Stripe — canceling our own record anyway");
+      });
+    }
+    return withTenantContext(pool, {}, (client) => updateSubscription(client, principal.accountId, applyCanceled()));
+  });
+
+  // ---- Dev-only: drive the fake Stripe provider's state, the same
+  // "dev-only bootstrap, not a product mutation" pattern as
+  // /v1/dev/domains/:id/advance — simulates a webhook arriving without a
+  // real Stripe account (this environment has none, same as Cloudflare/
+  // Resend/Turnstile in prior slices). Keyed by accountId directly since
+  // FakeStripeProvider carries no session state of its own to correlate
+  // back (see its own module comment). ----
+  app.post<{ Params: { accountId: string } }>("/v1/dev/stripe/:accountId/advance", async (request) => {
+    if (!(stripeProvider instanceof FakeStripeProvider)) {
+      throw notFound("the fake stripe provider is not in use — nothing to advance");
+    }
+    const body = parseBody(AdvanceFakeStripeBodySchema, request.body);
+    const { accountId } = request.params;
+
+    const subscription = await withTenantContext(pool, {}, (client) => getOrCreateSubscription(client, newUlid(), accountId));
+
+    const patch =
+      body.event === "checkout_completed"
+        ? applyCheckoutCompleted({
+            stripeCustomerId: subscription.stripeCustomerId ?? `fake_cus_${newUlid()}`,
+            stripeSubscriptionId: subscription.stripeSubscriptionId ?? `fake_sub_${newUlid()}`,
+          })
+        : body.event === "payment_failed"
+          ? applyPaymentFailed()
+          : body.event === "payment_succeeded"
+            ? applyPaymentSucceeded()
+            : applyCanceled();
+
+    const updated = await withTenantContext(pool, {}, (client) => updateSubscription(client, accountId, patch));
+    return { subscription: updated };
+  });
+
+  // ---- Stripe webhooks (Slice 8): the real, signature-verified inbound
+  // path — dunning (invoice.payment_failed/succeeded) and a
+  // cancellation initiated from the Stripe dashboard both only ever
+  // arrive this way, never through a mutation this platform's own UI
+  // calls. UNVERIFIED against a live Stripe account (see lib/stripe.ts's
+  // module comment) — structurally complete, never exercised against
+  // real Stripe delivery. Idempotent via stripe_webhook_events: Stripe
+  // itself retries delivery, so the same event.id can arrive more than
+  // once. ----
+  app.post("/v1/webhooks/stripe", async (request, reply) => {
+    const rawBody = (request as FastifyRequest & { rawBody?: Buffer }).rawBody ?? Buffer.from("");
+    const signature = request.headers["stripe-signature"] as string | undefined;
+
+    let event;
+    try {
+      event = stripeProvider.constructEvent(rawBody, signature, stripeWebhookSecret);
+    } catch (error) {
+      throw validationError(error instanceof Error ? error.message : "invalid webhook payload");
+    }
+
+    const isNewEvent = await withTenantContext(pool, {}, (client) => recordStripeWebhookEvent(client, event.id, event.type));
+    if (!isNewEvent) {
+      reply.status(200);
+      return { ok: true, deduped: true };
+    }
+
+    // checkout.session.completed is special: it's the one event where we
+    // don't have a stripe_customer_id on file yet to look the account up
+    // by — that's exactly what this event is establishing. It carries the
+    // accountId back instead, via client_reference_id (or metadata, kept
+    // as a fallback in case Stripe's dashboard-driven checkout ever
+    // doesn't thread client_reference_id through).
+    if (event.type === "checkout.session.completed") {
+      const object = event.data.object as { customer?: string; subscription?: string; client_reference_id?: string; metadata?: { accountId?: string } };
+      const accountId = object.client_reference_id ?? object.metadata?.accountId;
+      if (accountId && object.customer && object.subscription) {
+        await withTenantContext(pool, {}, (client) => getOrCreateSubscription(client, newUlid(), accountId));
+        await withTenantContext(pool, {}, (client) =>
+          updateSubscription(client, accountId, applyCheckoutCompleted({ stripeCustomerId: object.customer!, stripeSubscriptionId: object.subscription! })),
+        );
+      }
+      reply.status(200);
+      return { ok: true };
+    }
+
+    const customerId = event.data.object.customer as string | undefined;
+    if (customerId) {
+      const subscription = await withTenantContext(pool, {}, (client) => getSubscriptionByStripeCustomerId(client, customerId));
+      if (subscription) {
+        const patch =
+          event.type === "invoice.payment_failed"
+            ? applyPaymentFailed()
+            : event.type === "invoice.payment_succeeded"
+              ? applyPaymentSucceeded()
+              : event.type === "customer.subscription.deleted"
+                ? applyCanceled()
+                : null;
+        if (patch) {
+          await withTenantContext(pool, {}, (client) => updateSubscription(client, subscription.accountId, patch));
+        }
+      }
+    }
+
+    reply.status(200);
+    return { ok: true };
+  });
+
   // ---- site.outline (R14) ----
   app.get<{ Params: { siteId: string } }>("/v1/sites/:siteId/outline", async (request) => {
     const principal = await requirePrincipal(request);
@@ -995,7 +1260,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   // ---- publish.create ----
   app.post<{ Params: { siteId: string } }>("/v1/sites/:siteId/publish", async (request) => {
     const principal = await requirePrincipal(request);
-    const { siteId, accountId } = await authorizeSite(pool, principal, request.params.siteId);
+    const { siteId, accountId } = await authorizeSite(pool, principal, request.params.siteId, { minRole: "editor" });
 
     const { manifest, theme, pages, posts } = await withTenantContext(pool, { siteId }, async (client) => {
       const site = await getSite(client, siteId);
@@ -1071,7 +1336,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     "/v1/sites/:siteId/publishes/:publishId/rollback",
     async (request) => {
       const principal = await requirePrincipal(request);
-      const { siteId } = await authorizeSite(pool, principal, request.params.siteId);
+      const { siteId } = await authorizeSite(pool, principal, request.params.siteId, { minRole: "editor" });
       await withTenantContext(pool, { siteId }, (client) => setLivePublish(client, siteId, request.params.publishId));
       const live = await withTenantContext(pool, { siteId }, (client) => getLivePublish(client, siteId));
       return { publish: live };
@@ -1223,6 +1488,18 @@ export function buildApp(deps: AppDeps): FastifyInstance {
 
     if (!siteId) {
       return reply.status(404).send({ error: { code: "not_found", message: "not found" } });
+    }
+
+    // Slice 8, R7: cancelling stops serving only after the 30-day
+    // retention window fully elapses — never sooner, and never blocking
+    // export, which doesn't go through this route at all. A grace-period
+    // (past_due) account is never affected here; only isRetentionExpired's
+    // one condition is.
+    const site = await withTenantContext(pool, { siteId }, (client) => getSite(client, siteId as string));
+    const subscription = site ? await withTenantContext(pool, {}, (client) => getSubscriptionByAccountId(client, site.ownerId)) : null;
+    if (subscription && isRetentionExpired(subscription)) {
+      reply.type("text/html; charset=utf-8");
+      return reply.status(404).send("<!doctype html><title>Not available</title><p>This site is no longer available.</p>");
     }
 
     const live = await withTenantContext(pool, { siteId }, (client) => getLivePublish(client, siteId as string));

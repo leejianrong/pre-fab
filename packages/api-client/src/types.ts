@@ -254,4 +254,41 @@ export interface ListSubmissionsResult {
   total: number;
 }
 
+// ---- Slice 8: accounts, plans and billing (ADR-0005, ADR-0012) ----
+export type SiteRole = "owner" | "editor" | "viewer";
+
+export interface SiteMember {
+  siteId: string;
+  accountId: string;
+  role: SiteRole;
+  createdAt: string;
+}
+
+export type Plan = "free" | "pro";
+export type SubscriptionStatus = "active" | "past_due" | "canceled";
+
+export interface Subscription {
+  id: string;
+  accountId: string;
+  plan: Plan;
+  status: SubscriptionStatus;
+  stripeCustomerId: string | null;
+  stripeSubscriptionId: string | null;
+  gracePeriodEndsAt: string | null;
+  canceledAt: string | null;
+  retentionEndsAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CheckoutSession {
+  sessionId: string;
+  url: string;
+}
+
+export interface UpgradePlanResult {
+  subscription: Subscription;
+  checkout: CheckoutSession | null;
+}
+
 export type { PageDocument, PostDocument, PostStatus, ThemeDocument, ThemeTokens, BlockNode, DocumentDiff, FieldDiff };
