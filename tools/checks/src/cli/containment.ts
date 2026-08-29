@@ -11,7 +11,7 @@ const files = scanRepo(repoRoot, roots);
 
 const astroViolations = checkAstroContainment(files);
 const puckViolations = checkPuckContainment(files);
-const runtimeViolations = checkRuntimeContainment(files);
+const runtimeViolations = checkRuntimeContainment(files, ["packages/runtime", "apps/self-host"]);
 const ssrViolations = checkSsrSafety(files, ["packages/blocks"]);
 
 let failed = false;

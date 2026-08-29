@@ -108,6 +108,15 @@ export const schemas = {
   diff: { dir: z.string() },
   build: { dir: z.string(), bundleStoreDir: z.string() },
   preview: { dir: z.string(), bundleStoreDir: z.string(), screenshot: z.boolean().optional() },
+
+  "export-bundle": {
+    siteId: z.string(),
+    outDir: z.string(),
+    bundleStoreDir: z.string(),
+    runtimeApiUrl: z.string().optional(),
+    baseUrl: z.string().optional(),
+  },
+  eject: { siteId: z.string(), outDir: z.string(), runtimeApiUrl: z.string().optional() },
 } as const;
 
 export type SchemaCommandName = keyof typeof schemas;

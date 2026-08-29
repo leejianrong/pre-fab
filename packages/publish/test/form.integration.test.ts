@@ -85,4 +85,27 @@ describe("buildSiteBundle — Form block hydration (Slice 6, ADR-0007)", () => {
     // into the page so the client can rehydrate with the same values.
     expect(html).toContain("api.example.test");
   }, 60_000);
+
+  // Slice 7 (ADR-0010, R20): every bundle carries the publish-safe form
+  // manifest the self-host runtime needs to seed its own forms store, and
+  // nothing else — no notifyEmail/webhookUrl/webhookSecret, which never
+  // exist in a page document in the first place.
+  it("writes prefab-forms.json with every Form block's publish-safe manifest, and nothing else", async () => {
+    bundleStoreDir = await mkdtemp(path.join(tmpdir(), "pf-bundles-"));
+    const { site, theme, pages, formBlockId } = testSite();
+
+    const result = await buildSiteBundle({ site, theme, pages, bundleStoreDir, runtimeApiUrl: "https://api.example.test" });
+    const formsJson = JSON.parse(await readFile(path.join(result.bundlePath, "prefab-forms.json"), "utf8"));
+
+    expect(formsJson).toEqual([
+      {
+        id: formBlockId,
+        siteId: site.id,
+        heading: formDefaultProps.heading,
+        fields: formDefaultProps.fields,
+        submitLabel: formDefaultProps.submitLabel,
+        turnstileEnabled: formDefaultProps.turnstileEnabled,
+      },
+    ]);
+  }, 60_000);
 });

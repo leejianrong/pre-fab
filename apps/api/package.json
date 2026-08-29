@@ -13,7 +13,7 @@
     "seed": "tsx src/seed.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test:unit": "vitest run --passWithNoTests --exclude '**/*.integration.test.ts'",
-    "test:integration": "vitest run test/*.integration.test.ts --testTimeout=60000"
+    "test:integration": "vitest run test/*.integration.test.ts --testTimeout=60000 --no-file-parallelism"
   },
   "dependencies": {
     "@fastify/cookie": "11.0.2",

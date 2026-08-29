@@ -8,3 +8,5 @@ export type { PushArgs, PushResult } from "./commands/push.js";
 export type { DiffArgs, DiffResult } from "./commands/diff.js";
 export type { BuildArgs, BuildResult } from "./commands/build.js";
 export type { PreviewArgs, PreviewResult } from "./commands/preview.js";
+export type { ExportBundleArgs, ExportBundleResult } from "./commands/export-bundle.js";
+export type { EjectArgs, EjectResult } from "./commands/eject.js";
