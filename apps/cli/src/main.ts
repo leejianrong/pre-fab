@@ -14,6 +14,8 @@ import {
   domainList,
   domainVerify,
   domainRemove,
+  eject,
+  exportBundle,
   exportSite,
   formConfigure,
   formGet,
@@ -380,6 +382,32 @@ program
   .command("diff [dir]")
   .description("Show local checkout against the site's current remote state")
   .action((dir = ".") => runCommand(globalOptions(), async () => diff.run(await resolveContext(), { dir })));
+
+program
+  .command("export-bundle <siteId> <outDir>")
+  .description("Export tier (a) (ADR-0010): a self-contained static bundle plus an import manifest — free, on every plan (R7)")
+  .option("--runtime-api-url <url>", "where this export's Form island(s) will post submissions once served (self-host it with apps/self-host)")
+  .option("--base-url <url>", "anchors RSS/sitemap absolute links")
+  .action((siteId, outDir, options: { runtimeApiUrl?: string; baseUrl?: string }) =>
+    runCommand(globalOptions(), async () =>
+      exportBundle.run(await resolveContext(), {
+        siteId,
+        outDir,
+        bundleStoreDir: bundleStoreDir(),
+        runtimeApiUrl: options.runtimeApiUrl,
+        baseUrl: options.baseUrl,
+      }),
+    ),
+  );
+program
+  .command("eject <siteId> <outDir>")
+  .description("Export tier (c) (ADR-0010): generate a standalone Astro project — npm install && npm run build, no pre-fab package required at runtime (R11)")
+  .option("--runtime-api-url <url>", "where this export's Form island(s) will post submissions once served (self-host it with apps/self-host)")
+  .action((siteId, outDir, options: { runtimeApiUrl?: string }) =>
+    runCommand(globalOptions(), async () =>
+      eject.run(await resolveContext(), { siteId, outDir, runtimeApiUrl: options.runtimeApiUrl }),
+    ),
+  );
 
 program
   .command("build [dir]")

@@ -1,0 +1,17 @@
+node_modules/
+.claude/worktrees/
+.claude/.agent-slots/
+dist/
+build/
+.astro/
+.astro-workspace/
+.data/
+*.tsbuildinfo
+.env
+.env.local
+coverage/
+playwright-report/
+test-results/
+.turbo/
+*.log
+.git/

@@ -24,6 +24,7 @@ import type { PageDocument, PostDocument, SiteManifest, ThemeDocument } from "@p
 import { createBuildWorkspace, ensureBundleStore } from "./workspace.js";
 import { hashDirectory } from "./content-hash.js";
 import { generateRssFeed, generateSitemap } from "./feeds.js";
+import { extractPublishSafeForms } from "./form-manifest.js";
 
 interface WorkerInput {
   site: SiteManifest;
@@ -94,6 +95,22 @@ async function main(): Promise<void> {
     await writeFile(
       path.join(workspace.outDir, "sitemap.xml"),
       generateSitemap({ pages: input.pages, posts: input.posts, baseUrl: input.baseUrl }),
+      "utf8",
+    );
+
+    // Slice 7 (ADR-0010, R20): every Form block's *publish-safe* manifest
+    // (heading/fields/submitLabel/turnstileEnabled — no notifyEmail, no
+    // webhookUrl/Secret, no submitted values) travels inside the bundle
+    // itself, the same fields apps/api's `forms` table snapshots at publish
+    // time. This is what lets the self-host runtime seed its own forms
+    // store from nothing but an exported bundle, with no separate publish
+    // step of its own — see apps/self-host's own comment on why
+    // notifyEmail/webhookUrl/webhookSecret are deliberately never written
+    // here (R20: those are operator-configured locally, never in a site
+    // source tree).
+    await writeFile(
+      path.join(workspace.outDir, "prefab-forms.json"),
+      JSON.stringify(extractPublishSafeForms(input.site.id, input.pages)),
       "utf8",
     );
 

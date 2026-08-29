@@ -7,6 +7,7 @@
     "containment": "tsx src/cli/containment.ts",
     "parity": "tsx src/cli/parity.ts",
     "budgets": "tsx src/cli/budgets.ts",
+    "fidelity": "tsx src/cli/fidelity.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test:unit": "vitest run"
   },
@@ -19,9 +20,12 @@
     "axe-core": "4.13.0",
     "chrome-launcher": "1.2.1",
     "lighthouse": "13.4.1",
-    "playwright": "1.62.1"
+    "pixelmatch": "7.2.0",
+    "playwright": "1.62.1",
+    "pngjs": "7.0.0"
   },
   "devDependencies": {
+    "@types/pngjs": "6.0.5",
     "tsx": "4.19.2",
     "typescript": "5.7.3",
     "vitest": "3.0.4"

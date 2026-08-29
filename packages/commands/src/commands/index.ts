@@ -17,6 +17,8 @@ import { push, importSite } from "./push.js";
 import { diff } from "./diff.js";
 import { build } from "./build.js";
 import { preview } from "./preview.js";
+import { exportBundle } from "./export-bundle.js";
+import { eject } from "./eject.js";
 
 /**
  * Every command apps/cli and apps/mcp expose, in one place. Both wrap this
@@ -65,6 +67,8 @@ export const commandRegistry = defineRegistry([
   diff,
   build,
   preview,
+  exportBundle,
+  eject,
 ]);
 
 export {
@@ -109,4 +113,6 @@ export {
   diff,
   build,
   preview,
+  exportBundle,
+  eject,
 };

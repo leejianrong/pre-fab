@@ -1,0 +1,30 @@
+{
+  "name": "@prefab/self-host",
+  "version": "0.0.0",
+  "license": "Apache-2.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "start": "tsx src/server.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test:unit": "vitest run --passWithNoTests --exclude '**/*.integration.test.ts'",
+    "test:integration": "vitest run test/*.integration.test.ts --testTimeout=60000"
+  },
+  "dependencies": {
+    "@prefab/runtime": "workspace:*",
+    "@prefab/schema": "workspace:*",
+    "better-sqlite3": "11.8.1",
+    "fastify": "5.2.1",
+    "tsx": "4.19.2",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "7.6.12",
+    "typescript": "5.7.3",
+    "vitest": "3.0.4"
+  }
+}

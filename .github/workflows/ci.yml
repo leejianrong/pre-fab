@@ -81,6 +81,22 @@ jobs:
         run: pnpm --filter @prefab/ci-checks exec playwright install --with-deps chromium
       - run: pnpm run ci:budgets
 
+  # SLICES.md Slice 7: "screenshot-diff fidelity harness" (R9) — every
+  # first-party block, rendered by the hosted pipeline and by an
+  # ejected-and-`npm run build`-from-scratch Astro project (ADR-0010 tier
+  # c) built from the same document, must be within 0.1% pixel delta. Its
+  # own job for the same reason template-budgets is: this needs a real
+  # `npm install` of the ejected project's own dependency tree, which is
+  # slow enough that a regression here shouldn't be buried in other output.
+  fidelity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - name: Install Playwright's Chromium
+        run: pnpm --filter @prefab/ci-checks exec playwright install --with-deps chromium
+      - run: pnpm run ci:fidelity
+
   # SLICES.md's End-to-end list, driven against the real editor, a real
   # API and a real publish (Playwright, Chromium) — these are slice 1's
   # acceptance criteria: the slice is done when these pass, not when the

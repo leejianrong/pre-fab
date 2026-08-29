@@ -13,7 +13,7 @@ customer owns. See `PLAN.md` for the problem and requirements (`R1`–`R20`),
 panel. Bottom row: the published blog index and a published post page — all
 rendered by the actual static publish pipeline, not mockups.*
 
-**Status: Slices 1–6 are built.** Slice 1 proved the one-write-path loop with
+**Status: Slices 1–7 are built.** Slice 1 proved the one-write-path loop with
 a single Hero block: create, edit in the Puck canvas, edit by CLI/MCP/pull-push
 round trip, publish to a live, rollback-able bundle. Slice 2 added the full
 first-party block library, theme tokens, block-level responsive overrides and
@@ -40,7 +40,34 @@ implementing form submission with no dependency on any control-plane package
 platform Postgres only, never the site tree (R20), per-IP/per-site rate
 limiting and optional Cloudflare Turnstile, notification email and webhook
 delivery with retry/backoff, CSV/JSON export, per-record deletion (PDPA/GDPR),
-and a submissions panel in the editor.
+and a submissions panel in the editor. Slice 7 cashes in the anti-lock-in
+promise (ADR-0010): `apps/self-host`, an Apache-2.0 runtime that serves an
+exported bundle and reimplements `@prefab/runtime`'s storage interfaces
+against SQLite instead of Postgres — `submitForm` itself runs completely
+unchanged — so forms keep working with zero pre-fab infrastructure
+reachable (R10); `prefab export-bundle`, tier (a)'s self-contained static
+bundle plus an import manifest declaring its schema version and how far
+back an import is still accepted from; `prefab eject`, tier (c)'s
+standalone Astro project generator, which vendors the handful of
+`@prefab/schema` runtime helpers `@prefab/blocks` actually needs and copies
+every block's source byte-for-byte, so the ejected project builds with
+plain `npm install && npm run build` and has zero `@prefab/*` dependencies
+(R11); and a screenshot-diff fidelity harness (`tools/checks`'s own
+`ci:fidelity` job) proving every first-party block renders within 0.1%
+pixel delta between the hosted pipeline and an ejected-and-rebuilt project
+(R9).
+
+One thing worth knowing about Slice 7 specifically: the fidelity harness
+doesn't compare the hosted site against a second, hand-maintained renderer
+— it reuses the *exact same* `SITE_PAGE_ASTRO` template tier (a) and the
+hosted pipeline both already build with (`@prefab/publish`'s
+`page-template.ts`), so a fidelity regression can only come from the eject
+generator's own vendoring/aliasing, never from two templates drifting out
+of sync with each other. See `apps/self-host/README.md` for the self-host
+runtime's configuration, backup and upgrade story, including the one thing
+that's deliberately *not* portable in an exported bundle: a form's
+notification email and webhook secret (R20) are configured directly
+against the self-hosted instance, never written into `prefab-forms.json`.
 
 One thing worth knowing about Slice 6 specifically: the Form block is the
 first block that ships client-side JS at all (`client:load` hydration in
@@ -86,6 +113,8 @@ apps/
   cli/            prefab CLI — commander, wraps packages/commands
   mcp/             MCP server — stdio, wraps packages/commands
   editor/         Puck canvas SPA (Vite + React 19)
+  self-host/      Slice 7, ADR-0010 tier b: Apache-2.0 self-host runtime —
+                   serves a bundle, implements the runtime API against SQLite
 packages/
   schema/          document model: ULIDs, Zod validation, flat block tree, diff,
                    posts (Slice 5) and their frontmatter+Markdown file format
@@ -95,7 +124,8 @@ packages/
   db/              Postgres access + migrations, RLS keyed on site_id
   api-client/      typed HTTP client shared by the CLI, MCP server and editor
   publish/         Astro build pipeline — content-addressed bundles, atomic
-                   pointer swap, RSS/sitemap generation (Slice 5)
+                   pointer swap, RSS/sitemap generation (Slice 5); eject.ts
+                   generates tier (c)'s standalone Astro project (Slice 7)
   commands/        one command registry the CLI and MCP server both wrap (R12 parity)
   templates/       eight templates authored as exported site trees (ADR-0011);
                    `pnpm --filter @prefab/templates run generate` regenerates them
@@ -103,7 +133,8 @@ packages/
                    rate limiting, webhook backoff, CSV export) — zero dependency on
                    any control-plane package (ADR-0010); apps/api wires it to Postgres
 tools/
-  checks/          CI containment, parity and per-template Lighthouse/axe budget checks
+  checks/          CI containment, parity, per-template Lighthouse/axe budget
+                   checks, and the eject-vs-hosted fidelity harness (Slice 7, R9)
 e2e/               Playwright acceptance tests, one per SLICES.md scenario
 scripts/           local Postgres setup
 ```
@@ -118,11 +149,13 @@ enforced by CI (`pnpm run ci:containment`, `pnpm run ci:parity`):
    command in `packages/commands`, and every command is wired into
    `apps/cli/src/main.ts` — so the CLI and MCP server can never drift out of
    parity with the API.
-4. `packages/runtime` never imports a control-plane package (`@prefab/db`,
-   `@prefab/api-client`, `@prefab/commands`, `@prefab/blocks`,
-   `@prefab/publish`, `@prefab/puck-adapter`) — Slice 6, ADR-0010. This is
-   the seam Slice 7's self-host runtime reimplements against SQLite instead
-   of Postgres; nothing about it may assume the control plane exists.
+4. `packages/runtime` and `apps/self-host` never import a control-plane
+   package (`@prefab/db`, `@prefab/api-client`, `@prefab/commands`,
+   `@prefab/blocks`, `@prefab/publish`, `@prefab/puck-adapter`) — Slice 6/7,
+   ADR-0010. `apps/self-host` is the seam actually cashed in: it
+   reimplements `@prefab/runtime`'s storage interfaces against SQLite, and
+   `submitForm` itself (`packages/runtime/src/submit.ts`) runs unchanged
+   against them.
 
 ## Prerequisites
 
@@ -189,6 +222,28 @@ configure <siteId> <formId> --notify-email <email> --webhook-url <url>`
 (`formId` is the block's own id). `prefab submission list/export/delete
 <siteId> <formId>` manages what visitors have submitted.
 
+Export (Slice 7, free on every plan, R7): `prefab export <siteId> <dir>` is
+the file-tree projection round-trip already used by `pull`/`push`. The three
+ADR-0010 tiers are `prefab export-bundle <siteId> <outDir> --runtime-api-url
+<url>` (tier a: a self-contained static bundle plus `manifest.json`), running
+`apps/self-host` against that bundle (tier b — see its own README), and
+`prefab eject <siteId> <outDir>` (tier c: a standalone Astro project —
+`cd <outDir> && npm install && npm run build`, no `@prefab/*` dependency).
+
+## Self-hosting a site
+
+`apps/self-host` serves an exported bundle and keeps its forms working with
+zero connection to pre-fab (R10):
+
+```bash
+prefab export-bundle <siteId> ./site --runtime-api-url http://localhost:8080
+cd apps/self-host
+BUNDLE_DIR=../../site DATA_DIR=./data npm run start
+```
+
+See `apps/self-host/README.md` for configuration, Docker, backups and
+upgrades.
+
 ## Tests
 
 ```bash
@@ -197,6 +252,7 @@ pnpm run test:integration   # per-package, against real Postgres (dev:db first)
 pnpm run test:e2e           # Playwright, spins up its own api+editor+DB
 pnpm run ci                 # lint + typecheck + containment + unit + parity
 pnpm run ci:budgets         # per-template Lighthouse (R3) + axe-core (R6) budgets
+pnpm run ci:fidelity        # Slice 7: hosted-vs-ejected pixel delta per block (R9)
 ```
 
 Integration and e2e tests run against real Postgres and a real Astro build —
@@ -204,8 +260,10 @@ nothing here is mocked at the boundary CI actually cares about.
 
 ## CI
 
-`.github/workflows/ci.yml` runs six jobs on every push/PR: `lint-typecheck`,
+`.github/workflows/ci.yml` runs seven jobs on every push/PR: `lint-typecheck`,
 `containment-and-parity` (the enforced invariants above), `unit-tests`,
 `integration-tests` (Postgres 16 service container), `template-budgets`
-(Lighthouse + axe-core per template, no database needed), and `e2e`
+(Lighthouse + axe-core per template, no database needed), `fidelity` (Slice
+7's hosted-vs-ejected screenshot diff, R9 — its own job because it needs a
+real `npm install` of the ejected project's dependency tree), and `e2e`
 (Postgres 16 + `playwright install --with-deps chromium`).
