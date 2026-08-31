@@ -33,6 +33,13 @@ import type {
   VerifyEmailResult,
   WritePageInput,
   WritePostInput,
+  SetAvailabilityInput,
+  AvailabilityRule,
+  ListBookingsQuery,
+  ListBookingsResult,
+  Booking,
+  ConnectCalendarInput,
+  CalendarConnectionStatus,
 } from "./types.js";
 
 export type ApiErrorCode =
@@ -392,6 +399,42 @@ export class ApiClient {
 
   cancelPlan(): Promise<Subscription> {
     return this.request("POST", "/v1/account/plan/cancel");
+  }
+
+  // ---- availability.set / availability.get (Slice 9, ADR-0009) ----
+  setAvailability(siteId: string, input: SetAvailabilityInput): Promise<AvailabilityRule> {
+    return this.request("PUT", `/v1/sites/${siteId}/availability`, input);
+  }
+
+  getAvailability(siteId: string): Promise<AvailabilityRule | null> {
+    return this.request("GET", `/v1/sites/${siteId}/availability`);
+  }
+
+  // ---- booking.list / booking.cancel (Slice 9) ----
+  listBookings(siteId: string, query: ListBookingsQuery = {}): Promise<ListBookingsResult> {
+    const params = new URLSearchParams();
+    if (query.limit !== undefined) params.set("limit", String(query.limit));
+    if (query.offset !== undefined) params.set("offset", String(query.offset));
+    if (query.status !== undefined) params.set("status", query.status);
+    const qs = params.toString();
+    return this.request("GET", `/v1/sites/${siteId}/bookings${qs ? `?${qs}` : ""}`);
+  }
+
+  cancelBooking(siteId: string, bookingId: string): Promise<Booking> {
+    return this.request("POST", `/v1/sites/${siteId}/bookings/${bookingId}/cancel`);
+  }
+
+  // ---- calendar.connect / calendar.disconnect / calendar.status (Slice 9) ----
+  connectCalendar(siteId: string, input: ConnectCalendarInput): Promise<CalendarConnectionStatus> {
+    return this.request("POST", `/v1/sites/${siteId}/calendar`, input);
+  }
+
+  disconnectCalendar(siteId: string): Promise<{ removed: true }> {
+    return this.request("DELETE", `/v1/sites/${siteId}/calendar`);
+  }
+
+  getCalendarStatus(siteId: string): Promise<CalendarConnectionStatus | null> {
+    return this.request("GET", `/v1/sites/${siteId}/calendar`);
   }
 
   resolveUrl(path: string): string {

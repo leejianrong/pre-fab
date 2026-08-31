@@ -150,6 +150,12 @@ export const ALL_BLOCK_TYPE_PROPS: Record<string, Record<string, unknown>> = {
     successMessage: "Thanks — we'll be in touch.",
     turnstileEnabled: false,
   },
+  booking: {
+    heading: "Book a time",
+    description: "Pick a slot that works for you.",
+    confirmLabel: "Confirm booking",
+    successMessage: "You're booked — check your email for details.",
+  },
 };
 
 export const ALL_BLOCK_TYPES = Object.keys(ALL_BLOCK_TYPE_PROPS);

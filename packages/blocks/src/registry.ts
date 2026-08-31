@@ -38,6 +38,8 @@ import { PostDetail } from "./postdetail/PostDetail.js";
 import { postDetailBlockDefinition, type PostDetailProps } from "./postdetail/schema.js";
 import { Form } from "./form/Form.js";
 import { formBlockDefinition, type FormProps } from "./form/schema.js";
+import { Booking } from "./booking/Booking.js";
+import { bookingBlockDefinition, type BookingProps } from "./booking/schema.js";
 
 /**
  * One entry per first-party block: its schema-half definition
@@ -118,6 +120,11 @@ const BLOCK_ENTRIES: BlockEntry[] = [
     definition: formBlockDefinition,
     Component: Form,
     summary: (props: FormProps) => `form (${props.fields.length} field${props.fields.length === 1 ? "" : "s"})`,
+  },
+  {
+    definition: bookingBlockDefinition,
+    Component: Booking,
+    summary: (props: BookingProps) => props.heading || "booking widget",
   },
 ];
 

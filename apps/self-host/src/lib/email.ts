@@ -6,15 +6,23 @@
  * about it, and a real provider adapter behind the same one-method
  * interface for an operator who configures one.
  */
+export interface EmailAttachment {
+  filename: string;
+  content: string;
+  contentType: string;
+}
+
 export interface EmailMessage {
   to: string;
   subject: string;
   text: string;
+  attachments?: EmailAttachment[];
   sentAt: string;
 }
 
 export interface EmailSender {
-  send(message: { to: string; subject: string; text: string }): Promise<void>;
+  /** `attachments` (Slice 9: a booking confirmation's ICS invite) is optional, same shape as apps/api/src/lib/email.ts's identical addition. */
+  send(message: { to: string; subject: string; text: string; attachments?: EmailAttachment[] }): Promise<void>;
 }
 
 /** Logs to stdout — visible in `docker logs`, which is the whole point for a self-hosted instance with no mail provider configured. */
@@ -22,7 +30,7 @@ export function createConsoleEmailSender(): EmailSender {
   return {
     async send(message) {
       const entry: EmailMessage = { ...message, sentAt: new Date().toISOString() };
-      console.log(`[self-host email] to=${entry.to} subject="${entry.subject}"\n${entry.text}`);
+      console.log(`[self-host email] to=${entry.to} subject="${entry.subject}"${entry.attachments?.length ? ` attachments=${entry.attachments.map((a) => a.filename).join(",")}` : ""}\n${entry.text}`);
     },
   };
 }
@@ -39,11 +47,17 @@ export class ResendEmailSender implements EmailSender {
     private readonly fetchImpl: typeof fetch = fetch,
   ) {}
 
-  async send(message: { to: string; subject: string; text: string }): Promise<void> {
+  async send(message: { to: string; subject: string; text: string; attachments?: EmailAttachment[] }): Promise<void> {
     const response = await this.fetchImpl("https://api.resend.com/emails", {
       method: "POST",
       headers: { authorization: `Bearer ${this.apiKey}`, "content-type": "application/json" },
-      body: JSON.stringify({ from: this.from, to: message.to, subject: message.subject, text: message.text }),
+      body: JSON.stringify({
+        from: this.from,
+        to: message.to,
+        subject: message.subject,
+        text: message.text,
+        ...(message.attachments?.length ? { attachments: message.attachments.map((a) => ({ filename: a.filename, content: a.content })) } : {}),
+      }),
     });
     if (!response.ok) {
       const body = await response.text().catch(() => "");

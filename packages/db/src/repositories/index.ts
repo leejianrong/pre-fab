@@ -13,3 +13,7 @@ export * from "./submissions.js";
 export * from "./webhook-deliveries.js";
 export * from "./site-members.js";
 export * from "./subscriptions.js";
+export * from "./availability-rules.js";
+export * from "./booking-widgets.js";
+export * from "./bookings.js";
+export * from "./calendar-connections.js";

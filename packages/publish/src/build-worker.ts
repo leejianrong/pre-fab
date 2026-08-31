@@ -25,6 +25,8 @@ import { createBuildWorkspace, ensureBundleStore } from "./workspace.js";
 import { hashDirectory } from "./content-hash.js";
 import { generateRssFeed, generateSitemap } from "./feeds.js";
 import { extractPublishSafeForms } from "./form-manifest.js";
+import { extractPublishSafeBookingWidgets } from "./booking-manifest.js";
+import type { PublishableAvailabilityRule } from "./build.js";
 
 interface WorkerInput {
   site: SiteManifest;
@@ -34,6 +36,7 @@ interface WorkerInput {
   baseUrl: string;
   runtimeApiUrl: string;
   turnstileSiteKey: string;
+  availabilityRule: PublishableAvailabilityRule | null;
   bundleStoreDir: string;
 }
 
@@ -113,6 +116,24 @@ async function main(): Promise<void> {
       JSON.stringify(extractPublishSafeForms(input.site.id, input.pages)),
       "utf8",
     );
+
+    // Slice 9 (ADR-0010, R20 discipline extended): every Booking block's
+    // publish-safe manifest, the same "self-host needs a bundle to seed
+    // its own runtime store from" reasoning as prefab-forms.json — visitor
+    // bookings themselves, and the site's availability rules, are never
+    // written here (owner-configured platform state, not portable page
+    // content — see 0008_slice9.sql's header comment).
+    await writeFile(
+      path.join(workspace.outDir, "prefab-booking-widgets.json"),
+      JSON.stringify(extractPublishSafeBookingWidgets(input.site.id, input.pages)),
+      "utf8",
+    );
+
+    // The site's own availability rule (owner-configured platform state,
+    // never page-document content) — written here too so a self-hosted
+    // instance can seed local slot computation with zero extra operator
+    // setup (R10). `null` when the site never called `availability.set`.
+    await writeFile(path.join(workspace.outDir, "prefab-availability.json"), JSON.stringify(input.availabilityRule), "utf8");
 
     const contentHash = await hashDirectory(workspace.outDir);
     await ensureBundleStore(input.bundleStoreDir);

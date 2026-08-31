@@ -6,7 +6,14 @@ import {
   accountVerifyEmail,
   assetList,
   assetUpload,
+  availabilityGet,
+  availabilitySet,
+  bookingCancel,
+  bookingList,
   build,
+  calendarConnect,
+  calendarDisconnect,
+  calendarStatus,
   createContext,
   diff,
   devLogin,
@@ -377,6 +384,53 @@ plan
   .command("cancel")
   .description("Cancel the pro plan — data and export keep working for a 30-day retention window (R7)")
   .action(() => runCommand(globalOptions(), async () => planCancel.run(await resolveContext(), {})));
+
+const availability = program.command("availability").description("Manage a site's booking availability (Slice 9, ADR-0009)");
+availability
+  .command("set <siteId> <configJson>")
+  .description("Replace a site's availability rule — configJson is a JSON-encoded {timezone, weeklyWindows, dateOverrides, slotDurationMinutes, bufferBeforeMinutes, bufferAfterMinutes, minNoticeMinutes, maxHorizonDays}")
+  .action((siteId, configJson) =>
+    runCommand(globalOptions(), async () => availabilitySet.run(await resolveContext(), { siteId, ...JSON.parse(configJson) })),
+  );
+availability
+  .command("get <siteId>")
+  .description("Show a site's current availability rule")
+  .action((siteId) => runCommand(globalOptions(), async () => availabilityGet.run(await resolveContext(), { siteId })));
+
+const booking = program.command("booking").description("Manage a site's bookings (Slice 9)");
+booking
+  .command("list <siteId>")
+  .option("--limit <n>", "max results", (v) => Number.parseInt(v, 10))
+  .option("--offset <n>", "pagination offset", (v) => Number.parseInt(v, 10))
+  .option("--status <status>", "filter by status: confirmed or canceled")
+  .description("List a site's bookings")
+  .action((siteId, options: { limit?: number; offset?: number; status?: "confirmed" | "canceled" }) =>
+    runCommand(globalOptions(), async () => bookingList.run(await resolveContext(), { siteId, ...options })),
+  );
+booking
+  .command("cancel <siteId> <bookingId>")
+  .description("Cancel a booking as the site owner — releases the slot and best-effort updates the visitor's calendar invite")
+  .action((siteId, bookingId) => runCommand(globalOptions(), async () => bookingCancel.run(await resolveContext(), { siteId, bookingId })));
+
+const calendar = program.command("calendar").description("Manage a site's two-way calendar sync (Slice 9)");
+calendar
+  .command("connect <siteId> <provider>")
+  .option("--code <authorizationCode>", "a pre-obtained OAuth authorization code (real providers only)")
+  .option("--redirect-uri <uri>", "the redirect URI used to obtain the code (real providers only)")
+  .description("Connect Google Calendar or Microsoft 365 for two-way sync — provider is 'google' or 'microsoft'")
+  .action((siteId, provider: "google" | "microsoft", options: { code?: string; redirectUri?: string }) =>
+    runCommand(globalOptions(), async () =>
+      calendarConnect.run(await resolveContext(), { siteId, provider, authorizationCode: options.code, redirectUri: options.redirectUri }),
+    ),
+  );
+calendar
+  .command("disconnect <siteId>")
+  .description("Disconnect a site's calendar sync")
+  .action((siteId) => runCommand(globalOptions(), async () => calendarDisconnect.run(await resolveContext(), { siteId })));
+calendar
+  .command("status <siteId>")
+  .description("Show a site's calendar connection status")
+  .action((siteId) => runCommand(globalOptions(), async () => calendarStatus.run(await resolveContext(), { siteId })));
 
 program
   .command("token-create <siteId> <name>")

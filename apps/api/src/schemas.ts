@@ -154,3 +154,68 @@ export const UpgradePlanBodySchema = z.object({
 export const AdvanceFakeStripeBodySchema = z.object({
   event: z.enum(["checkout_completed", "payment_failed", "payment_succeeded", "canceled"]),
 });
+
+// ---- Slice 9: scheduling and bookings (ADR-0009) ----
+const WeeklyWindowSchema = z.object({
+  dayOfWeek: z.number().int().min(0).max(6),
+  startMinute: z.number().int().min(0).max(1439),
+  endMinute: z.number().int().min(1).max(1440),
+});
+
+const DateOverrideSchema = z.object({
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "date must be YYYY-MM-DD"),
+  closed: z.boolean(),
+  windows: z.array(z.object({ startMinute: z.number().int().min(0).max(1439), endMinute: z.number().int().min(1).max(1440) })),
+});
+
+export const SetAvailabilityBodySchema = z.object({
+  timezone: z.string().min(1).max(64),
+  weeklyWindows: z.array(WeeklyWindowSchema).max(50),
+  dateOverrides: z.array(DateOverrideSchema).max(200),
+  slotDurationMinutes: z.number().int().min(5).max(24 * 60),
+  bufferBeforeMinutes: z.number().int().min(0).max(24 * 60),
+  bufferAfterMinutes: z.number().int().min(0).max(24 * 60),
+  minNoticeMinutes: z.number().int().min(0).max(365 * 24 * 60),
+  maxHorizonDays: z.number().int().min(1).max(730),
+});
+
+export const ListBookingsQuerySchema = z.object({
+  limit: z.coerce.number().int().optional(),
+  offset: z.coerce.number().int().optional(),
+  status: z.enum(["confirmed", "canceled"]).optional(),
+});
+
+export const ListSlotsQuerySchema = z.object({
+  /** ISO 8601 instants, UTC-ms — the caller (the Booking block's slot picker) already knows the visitor's own timezone and converts locally; this endpoint only ever deals in absolute instants. */
+  rangeStart: z.coerce.date(),
+  rangeEnd: z.coerce.date(),
+});
+
+export const CreateBookingBodySchema = z.object({
+  startsAt: z.coerce.date(),
+  visitorName: z.string().min(1).max(200),
+  visitorEmail: z.string().email().max(320),
+  visitorTimezone: z.string().min(1).max(64),
+  notes: z.string().max(2000).optional(),
+});
+
+export const ManageBookingBodySchema = z.object({
+  token: z.string().min(1),
+});
+
+export const RescheduleBookingBodySchema = z.object({
+  token: z.string().min(1),
+  startsAt: z.coerce.date(),
+});
+
+export const ConnectCalendarBodySchema = z.object({
+  provider: z.enum(["google", "microsoft"]),
+  authorizationCode: z.string().optional(),
+  redirectUri: z.string().optional(),
+});
+
+/** Dev-only (see `/v1/dev/calendar/:siteId/advance`) — drives the FakeCalendarProvider the same way a real sync/outage would. */
+export const AdvanceFakeCalendarBodySchema = z.object({
+  busy: z.array(z.object({ startMs: z.number(), endMs: z.number() })).optional(),
+  unavailable: z.boolean().optional(),
+});

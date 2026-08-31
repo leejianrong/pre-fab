@@ -291,4 +291,78 @@ export interface UpgradePlanResult {
   checkout: CheckoutSession | null;
 }
 
+// ---- Slice 9: scheduling and bookings (ADR-0009) ----
+export interface WeeklyWindow {
+  dayOfWeek: number;
+  startMinute: number;
+  endMinute: number;
+}
+
+export interface DateOverride {
+  date: string;
+  closed: boolean;
+  windows: Array<{ startMinute: number; endMinute: number }>;
+}
+
+export interface SetAvailabilityInput {
+  timezone: string;
+  weeklyWindows: WeeklyWindow[];
+  dateOverrides: DateOverride[];
+  slotDurationMinutes: number;
+  bufferBeforeMinutes: number;
+  bufferAfterMinutes: number;
+  minNoticeMinutes: number;
+  maxHorizonDays: number;
+}
+
+export interface AvailabilityRule extends SetAvailabilityInput {
+  id: string;
+  siteId: string;
+}
+
+export type BookingStatus = "confirmed" | "canceled";
+
+export interface Booking {
+  id: string;
+  siteId: string;
+  widgetId: string;
+  startsAt: string;
+  endsAt: string;
+  visitorName: string;
+  visitorEmail: string;
+  visitorTimezone: string;
+  notes: string | null;
+  status: BookingStatus;
+  externalEventId: string | null;
+  createdAt: string;
+  canceledAt: string | null;
+}
+
+export interface ListBookingsQuery {
+  limit?: number;
+  offset?: number;
+  status?: BookingStatus;
+}
+
+export interface ListBookingsResult {
+  bookings: Booking[];
+  total: number;
+}
+
+export type CalendarProviderName = "google" | "microsoft";
+
+export interface CalendarConnectionStatus {
+  id: string;
+  provider: CalendarProviderName;
+  status: "connected" | "error";
+  externalCalendarId: string | null;
+  lastSyncError?: string | null;
+}
+
+export interface ConnectCalendarInput {
+  provider: CalendarProviderName;
+  authorizationCode?: string;
+  redirectUri?: string;
+}
+
 export type { PageDocument, PostDocument, PostStatus, ThemeDocument, ThemeTokens, BlockNode, DocumentDiff, FieldDiff };

@@ -60,6 +60,10 @@ async function runExportBundle(
   const pageRefs = await ctx.api.listPages(args.siteId);
   const pages = await Promise.all(pageRefs.map((p) => ctx.api.getPage(args.siteId, p.id)));
   const posts = await allPosts(ctx, args.siteId);
+  // Slice 9 (R10): the site's availability rule, carried into the bundle
+  // so a self-hosted instance can seed local slot computation with no
+  // separate step — see build-worker.ts's own comment.
+  const availabilityRule = await ctx.api.getAvailability(args.siteId);
 
   const siteManifest = {
     id: site.id,
@@ -78,6 +82,7 @@ async function runExportBundle(
     baseUrl: args.baseUrl,
     runtimeApiUrl: args.runtimeApiUrl ?? "http://localhost:8080",
     turnstileSiteKey: args.turnstileSiteKey,
+    availabilityRule: availabilityRule ? { ...availabilityRule, siteId: site.id } : null,
     bundleStoreDir: args.bundleStoreDir,
   });
 

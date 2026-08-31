@@ -20,4 +20,5 @@ export * from "./cardgrid/index.js";
 export * from "./postlist/index.js";
 export * from "./postdetail/index.js";
 export * from "./form/index.js";
+export * from "./booking/index.js";
 export * from "./markdown-lite.js";
