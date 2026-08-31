@@ -53,6 +53,11 @@ beforeAll(async () => {
     platformHost: TEST_PLATFORM_HOST,
     calendarProviders: { google: calendarProvider, microsoft: calendarProvider },
     bookingEmailSender,
+    // Explicit rather than inherited from RUNTIME_API_URL (unset in CI's
+    // integration-tests job — nothing before Slice 9 needed it) — a
+    // booking's manage-link email assertions below need a real absolute
+    // URL regardless of what the ambient environment happens to set.
+    runtimeApiUrl: "http://localhost:8787",
   });
   await app.ready();
 });
