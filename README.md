@@ -13,7 +13,7 @@ customer owns. See `PLAN.md` for the problem and requirements (`R1`–`R20`),
 panel. Bottom row: the published blog index and a published post page — all
 rendered by the actual static publish pipeline, not mockups.*
 
-**Status: Slices 1–8 are built.** Slice 1 proved the one-write-path loop with
+**Status: Slices 1–9 are built.** Slice 1 proved the one-write-path loop with
 a single Hero block: create, edit in the Puck canvas, edit by CLI/MCP/pull-push
 round trip, publish to a live, rollback-able bundle. Slice 2 added the full
 first-party block library, theme tokens, block-level responsive overrides and
@@ -76,7 +76,57 @@ path — and it replaces `sites.owner_id` as the actual access-control
 mechanism (kept only as the historical/display field). Inbound Stripe
 webhooks (`POST /v1/webhooks/stripe`) are signature-verified and
 idempotent via `stripe_webhook_events`, since Stripe itself retries
-delivery.
+delivery. Slice 9 cashes in ADR-0009 (build the booking core, don't embed
+Cal.com): availability rules (weekly recurring windows, date overrides,
+buffers, minimum notice, maximum booking horizon — one per site,
+`availability.set`/`availability.get`), slot computation
+(`@prefab/runtime`'s `computeAvailableSlots` — rules minus existing
+bookings minus synced calendar busy time, entirely pure and
+dependency-free so it's unit-tested directly and reused unchanged by
+self-host), and a timezone-aware `Booking` block with the same
+`client:load`-hydrated, publish-safe-manifest-snapshotting shape Slice 6's
+`Form` block established (`booking_widgets`, mirroring `forms` exactly —
+see `packages/db/migrations/0008_slice9.sql`'s own header comment for the
+full RLS/PII reasoning). Two visitors racing for the same slot resolve to
+exactly one success and one clean rejection via a partial unique index on
+`bookings (site_id, starts_at) WHERE status = 'confirmed'` — the same
+optimistic-concurrency discipline ADR-0006 established for `page.write`,
+applied to a resource whose first write has no prior version to compare
+against. Every wall-clock↔UTC conversion (weekly windows, ICS generation)
+goes through `@prefab/runtime`'s `timezone.ts`, a small DST-correct
+two-pass `Intl.DateTimeFormat`-based converter with its own heavy unit
+coverage across real 2026 US/EU DST transition dates in both directions —
+no external timezone-database dependency. Booking confirmation, cancellation
+and reschedule emails carry a hand-validated RFC 5545 ICS attachment
+(`@prefab/runtime`'s `ics.ts`, unit-tested for structural validity, not
+just generation) to both the visitor and the site owner. Two-way sync with
+Google Calendar and Microsoft 365 follows the same fake-by-default
+adapter shape as every other external provider in this codebase — see the
+next paragraph — and calendar sync is deliberately a side-channel, never a
+precondition: a booking still succeeds with `calendarSyncOk: false` when a
+connected calendar is unreachable, and the dashboard surfaces the
+degradation via the connection's `status`/`lastSyncError`. The runtime API
+extension (`booking.create`/`cancel`/`reschedule`, plus slot listing) stays
+inside ADR-0010's separability constraint exactly like Slice 6/7's forms
+did — `apps/self-host` reimplements the same `packages/runtime` storage
+interfaces against SQLite, minus calendar sync itself (a self-hosted
+instance has no OAuth callback surface to run one from in this milestone;
+local availability and bookings work completely unaffected, which is R10's
+actual requirement).
+
+One thing worth knowing about Slice 9 specifically, and the same
+UNVERIFIED discipline as every other external adapter in this codebase:
+**no real Google or Microsoft developer account exists in this
+environment**, so every test here runs against an in-memory
+`FakeCalendarProvider` (`apps/api/src/lib/calendar-provider.ts`), driven
+via the dev-only `/v1/dev/calendar/:siteId/advance` endpoint the same way
+`FakeDomainProvider`/`FakeStripeProvider` are. `RealGoogleCalendarProvider`
+and `RealMicrosoftCalendarProvider` in the same file are written from each
+provider's public API docs (OAuth token exchange/refresh, event
+create/update/delete, free/busy or getSchedule queries) but have never
+been exercised against a live account — treat them as informed drafts,
+not verified integrations, exactly like `CloudflareDomainProvider` and
+`RealStripeProvider` before them.
 
 One thing worth knowing about Slice 8 specifically, and the same
 UNVERIFIED discipline as Slice 4/6's Cloudflare/Resend/Turnstile
@@ -150,12 +200,13 @@ apps/
   mcp/             MCP server — stdio, wraps packages/commands
   editor/         Puck canvas SPA (Vite + React 19)
   self-host/      Slice 7, ADR-0010 tier b: Apache-2.0 self-host runtime —
-                   serves a bundle, implements the runtime API against SQLite
+                   serves a bundle, implements the runtime API (forms, and
+                   Slice 9's bookings minus calendar sync) against SQLite
 packages/
   schema/          document model: ULIDs, Zod validation, flat block tree, diff,
                    posts (Slice 5) and their frontmatter+Markdown file format
   blocks/          first-party block components — SSR-safe, no Puck import;
-                   includes postlist/postdetail (Slice 5)
+                   includes postlist/postdetail (Slice 5), Booking (Slice 9)
   puck-adapter/    translates the flat schema <-> Puck's content/zones shape
   db/              Postgres access + migrations, RLS keyed on site_id
   api-client/      typed HTTP client shared by the CLI, MCP server and editor
@@ -167,7 +218,9 @@ packages/
                    `pnpm --filter @prefab/templates run generate` regenerates them
   runtime/         Slice 6: the runtime API's storage-agnostic logic (validation,
                    rate limiting, webhook backoff, CSV export) — zero dependency on
-                   any control-plane package (ADR-0010); apps/api wires it to Postgres
+                   any control-plane package (ADR-0010); apps/api wires it to Postgres.
+                   Slice 9 adds slot computation, DST-correct timezone conversion,
+                   ICS generation and booking create/cancel/reschedule, same discipline
 tools/
   checks/          CI containment, parity, per-template Lighthouse/axe budget
                    checks, and the eject-vs-hosted fidelity harness (Slice 7, R9)
@@ -233,6 +286,12 @@ pnpm run db:migrate          # runs packages/db/migrations against prefab_dev
   `FakeStripeProvider` and the dev-only `/v1/dev/stripe/:accountId/advance`
   route instead of real Stripe — *our* billing only, never a tenant's own
   BYO-Stripe (ADR-0005).
+- `GOOGLE_CALENDAR_CLIENT_ID`/`GOOGLE_CALENDAR_CLIENT_SECRET` and
+  `MICROSOFT_CALENDAR_CLIENT_ID`/`MICROSOFT_CALENDAR_CLIENT_SECRET`/
+  `MICROSOFT_CALENDAR_TENANT` — optional (Slice 9). Unset (the default
+  everywhere, including CI) uses `FakeCalendarProvider` for that provider,
+  driven via the dev-only `/v1/dev/calendar/:siteId/advance` route, same
+  discipline as every adapter above.
 
 ### Running the pieces
 
@@ -262,6 +321,16 @@ email and webhook are platform-side settings, set with `prefab form
 configure <siteId> <formId> --notify-email <email> --webhook-url <url>`
 (`formId` is the block's own id). `prefab submission list/export/delete
 <siteId> <formId>` manages what visitors have submitted.
+
+Scheduling (Slice 9): `prefab availability set <siteId> <configJson>` sets
+a site's one availability rule (weekly windows, date overrides, buffers,
+minimum notice, maximum horizon — `configJson` is a JSON-encoded object,
+see `prefab availability set --help`), `availability get` reads it back.
+A page's `Booking` block is edited the normal way (Puck canvas or
+`pages/*.json`); `prefab booking list/cancel <siteId>` manages what
+visitors have booked, and `prefab calendar connect <siteId> <provider>`
+(`google` or `microsoft`) turns on two-way sync — `calendar status`/
+`calendar disconnect` manage it from there.
 
 Export (Slice 7, free on every plan, R7): `prefab export <siteId> <dir>` is
 the file-tree projection round-trip already used by `pull`/`push`. The three

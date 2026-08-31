@@ -11,15 +11,23 @@
  * product mutation" pattern `/v1/dev/login` already uses, so e2e and local
  * dev can read a sent code without a real inbox.
  */
+export interface EmailAttachment {
+  filename: string;
+  content: string;
+  contentType: string;
+}
+
 export interface EmailMessage {
   to: string;
   subject: string;
   text: string;
+  attachments?: EmailAttachment[];
   sentAt: string;
 }
 
 export interface EmailSender {
-  send(message: { to: string; subject: string; text: string }): Promise<void>;
+  /** `attachments` (Slice 9: a booking confirmation's ICS invite) is optional — every sender that predates it, and every message that doesn't need one, is unaffected. */
+  send(message: { to: string; subject: string; text: string; attachments?: EmailAttachment[] }): Promise<void>;
 }
 
 export function createOutboxEmailSender(): { sender: EmailSender; outbox: EmailMessage[] } {
@@ -30,7 +38,7 @@ export function createOutboxEmailSender(): { sender: EmailSender; outbox: EmailM
       async send(message) {
         const entry: EmailMessage = { ...message, sentAt: new Date().toISOString() };
         outbox.push(entry);
-        console.log(`[email] to=${entry.to} subject="${entry.subject}"\n${entry.text}`);
+        console.log(`[email] to=${entry.to} subject="${entry.subject}"${entry.attachments?.length ? ` attachments=${entry.attachments.map((a) => a.filename).join(",")}` : ""}\n${entry.text}`);
       },
     },
   };
@@ -50,11 +58,18 @@ export class ResendEmailSender implements EmailSender {
     private readonly fetchImpl: typeof fetch = fetch,
   ) {}
 
-  async send(message: { to: string; subject: string; text: string }): Promise<void> {
+  async send(message: { to: string; subject: string; text: string; attachments?: EmailAttachment[] }): Promise<void> {
     const response = await this.fetchImpl("https://api.resend.com/emails", {
       method: "POST",
       headers: { authorization: `Bearer ${this.apiKey}`, "content-type": "application/json" },
-      body: JSON.stringify({ from: this.from, to: message.to, subject: message.subject, text: message.text }),
+      body: JSON.stringify({
+        from: this.from,
+        to: message.to,
+        subject: message.subject,
+        text: message.text,
+        // Resend's documented shape: base64 `content` per attachment (https://resend.com/docs/api-reference/emails/send-email).
+        ...(message.attachments?.length ? { attachments: message.attachments.map((a) => ({ filename: a.filename, content: a.content })) } : {}),
+      }),
     });
     if (!response.ok) {
       const body = await response.text().catch(() => "");

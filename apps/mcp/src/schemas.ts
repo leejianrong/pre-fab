@@ -118,6 +118,32 @@ export const schemas = {
   "plan.upgrade": {},
   "plan.cancel": {},
 
+  "availability.set": {
+    siteId: z.string(),
+    timezone: z.string().min(1),
+    weeklyWindows: z.array(z.object({ dayOfWeek: z.number().int().min(0).max(6), startMinute: z.number().int(), endMinute: z.number().int() })),
+    dateOverrides: z.array(
+      z.object({
+        date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        closed: z.boolean(),
+        windows: z.array(z.object({ startMinute: z.number().int(), endMinute: z.number().int() })),
+      }),
+    ),
+    slotDurationMinutes: z.number().int().min(5),
+    bufferBeforeMinutes: z.number().int().min(0),
+    bufferAfterMinutes: z.number().int().min(0),
+    minNoticeMinutes: z.number().int().min(0),
+    maxHorizonDays: z.number().int().min(1),
+  },
+  "availability.get": { siteId: z.string() },
+
+  "booking.list": { siteId: z.string(), limit: z.number().int().optional(), offset: z.number().int().optional(), status: z.enum(["confirmed", "canceled"]).optional() },
+  "booking.cancel": { siteId: z.string(), bookingId: z.string() },
+
+  "calendar.connect": { siteId: z.string(), provider: z.enum(["google", "microsoft"]), authorizationCode: z.string().optional(), redirectUri: z.string().optional() },
+  "calendar.disconnect": { siteId: z.string() },
+  "calendar.status": { siteId: z.string() },
+
   "export-bundle": {
     siteId: z.string(),
     outDir: z.string(),

@@ -21,6 +21,9 @@ import { exportBundle } from "./export-bundle.js";
 import { eject } from "./eject.js";
 import { memberInvite, memberList, memberUpdateRole, memberRemove } from "./member.js";
 import { subscriptionGet, planUpgrade, planCancel } from "./plan.js";
+import { availabilitySet, availabilityGet } from "./availability.js";
+import { bookingList, bookingCancel } from "./booking.js";
+import { calendarConnect, calendarDisconnect, calendarStatus } from "./calendar.js";
 
 /**
  * Every command apps/cli and apps/mcp expose, in one place. Both wrap this
@@ -78,6 +81,13 @@ export const commandRegistry = defineRegistry([
   subscriptionGet,
   planUpgrade,
   planCancel,
+  availabilitySet,
+  availabilityGet,
+  bookingList,
+  bookingCancel,
+  calendarConnect,
+  calendarDisconnect,
+  calendarStatus,
 ]);
 
 export {
@@ -131,4 +141,11 @@ export {
   subscriptionGet,
   planUpgrade,
   planCancel,
+  availabilitySet,
+  availabilityGet,
+  bookingList,
+  bookingCancel,
+  calendarConnect,
+  calendarDisconnect,
+  calendarStatus,
 };

@@ -57,3 +57,54 @@ CREATE TABLE IF NOT EXISTS webhook_deliveries (
 );
 
 CREATE INDEX IF NOT EXISTS webhook_deliveries_status_next_attempt_idx ON webhook_deliveries (status, next_attempt_at);
+
+-- Slice 9 (ADR-0009, R10): mirrors the shape of
+-- packages/db/migrations/0008_slice9.sql minus RLS/ulid/jsonb, same
+-- reasoning as forms/form_settings/submissions/webhook_deliveries above.
+-- No `calendar_connections` table here at all: a self-hosted instance has
+-- no OAuth callback surface to offer two-way sync from in this milestone
+-- (see runtime-adapters.ts's own comment) — local availability rules and
+-- bookings are what R10 actually requires to keep working.
+CREATE TABLE IF NOT EXISTS availability_rules (
+  site_id TEXT PRIMARY KEY,
+  timezone TEXT NOT NULL DEFAULT 'UTC',
+  weekly_windows TEXT NOT NULL DEFAULT '[]',
+  date_overrides TEXT NOT NULL DEFAULT '[]',
+  slot_duration_minutes INTEGER NOT NULL DEFAULT 30,
+  buffer_before_minutes INTEGER NOT NULL DEFAULT 0,
+  buffer_after_minutes INTEGER NOT NULL DEFAULT 0,
+  min_notice_minutes INTEGER NOT NULL DEFAULT 60,
+  max_horizon_days INTEGER NOT NULL DEFAULT 30
+);
+
+CREATE TABLE IF NOT EXISTS booking_widgets (
+  id TEXT PRIMARY KEY,
+  site_id TEXT NOT NULL,
+  heading TEXT NOT NULL DEFAULT '',
+  description TEXT NOT NULL DEFAULT '',
+  confirm_label TEXT NOT NULL DEFAULT 'Confirm booking',
+  success_message TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS bookings (
+  id TEXT PRIMARY KEY,
+  site_id TEXT NOT NULL,
+  widget_id TEXT NOT NULL REFERENCES booking_widgets (id) ON DELETE CASCADE,
+  starts_at TEXT NOT NULL,
+  ends_at TEXT NOT NULL,
+  visitor_name TEXT NOT NULL,
+  visitor_email TEXT NOT NULL,
+  visitor_timezone TEXT NOT NULL,
+  notes TEXT,
+  status TEXT NOT NULL DEFAULT 'confirmed' CHECK (status IN ('confirmed', 'canceled')),
+  manage_token_hash TEXT NOT NULL UNIQUE,
+  external_event_id TEXT,
+  created_at TEXT NOT NULL,
+  canceled_at TEXT
+);
+
+-- Same double-booking guarantee as the Postgres side's partial unique
+-- index — SQLite's own UNIQUE index likewise only ever counts one 'live'
+-- row per (site_id, starts_at) toward the constraint.
+CREATE UNIQUE INDEX IF NOT EXISTS bookings_site_id_starts_at_confirmed_idx ON bookings (site_id, starts_at) WHERE status = 'confirmed';
+CREATE INDEX IF NOT EXISTS bookings_site_id_widget_id_starts_at_idx ON bookings (site_id, widget_id, starts_at);

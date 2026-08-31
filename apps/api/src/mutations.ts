@@ -31,6 +31,17 @@ export const API_MUTATIONS = [
   { name: "member.remove", method: "DELETE", path: "/v1/sites/:siteId/members/:accountId" },
   { name: "plan.upgrade", method: "POST", path: "/v1/account/plan" },
   { name: "plan.cancel", method: "POST", path: "/v1/account/plan/cancel" },
+  // ---- Slice 9: scheduling and bookings (ADR-0009) ----
+  // booking.create/cancel/reschedule on a published site are runtime
+  // mutations, not control-plane ones — they have no signed-in principal
+  // (a visitor, not an owner) and so are deliberately absent from this
+  // manifest, the same way submission.create isn't here either (see
+  // /v1/runtime/forms/:formId/submissions). Only owner-authenticated,
+  // dashboard-facing mutations are listed below.
+  { name: "availability.set", method: "PUT", path: "/v1/sites/:siteId/availability" },
+  { name: "booking.cancel", method: "POST", path: "/v1/sites/:siteId/bookings/:bookingId/cancel" },
+  { name: "calendar.connect", method: "POST", path: "/v1/sites/:siteId/calendar" },
+  { name: "calendar.disconnect", method: "DELETE", path: "/v1/sites/:siteId/calendar" },
 ] as const;
 
 export type MutationName = (typeof API_MUTATIONS)[number]["name"];

@@ -21,7 +21,7 @@ export default async function globalSetup(): Promise<void> {
   try {
     await runMigrations(pool);
     await pool.query(
-      "TRUNCATE webhook_deliveries, submissions, form_settings, forms, publishes, blocks, pages, themes, sites, api_tokens, sessions, accounts CASCADE",
+      "TRUNCATE webhook_deliveries, submissions, form_settings, forms, bookings, booking_widgets, availability_rules, calendar_connections, publishes, blocks, pages, themes, sites, api_tokens, sessions, accounts CASCADE",
     );
     const existing = await withTenantContext(pool, {}, (client) => getAccountByEmail(client, SEED_EMAIL));
     const seeded = existing ?? (await withTenantContext(pool, {}, (client) => createAccount(client, { id: newUlid(), email: SEED_EMAIL })));

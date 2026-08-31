@@ -62,6 +62,15 @@ import {
   getSubscriptionByStripeCustomerId,
   updateSubscription,
   recordStripeWebhookEvent,
+  getAccount,
+  upsertAvailabilityRule,
+  getAvailabilityRule,
+  upsertPublishedBookingWidget,
+  listBookings,
+  getBooking,
+  getCalendarConnection,
+  upsertCalendarConnection,
+  deleteCalendarConnection,
   type Pool,
   type PoolClient,
   type SiteRow,
@@ -81,10 +90,20 @@ import {
   type PostDocument,
   type SiteManifest,
 } from "@prefab/schema";
-import { blockSchemaRegistry, HERO_BLOCK_TYPE, heroDefaultProps, FORM_BLOCK_TYPE, type FormProps } from "@prefab/blocks";
+import { blockSchemaRegistry, HERO_BLOCK_TYPE, heroDefaultProps, FORM_BLOCK_TYPE, BOOKING_BLOCK_TYPE, type FormProps, type BookingProps } from "@prefab/blocks";
 import { buildSiteBundle } from "@prefab/publish";
 import { TEMPLATE_MANIFESTS, loadTemplateCheckout } from "@prefab/templates/server";
-import { submitForm, toCsv, createInMemoryRateLimiter, type TurnstileVerifier } from "@prefab/runtime";
+import {
+  submitForm,
+  toCsv,
+  createInMemoryRateLimiter,
+  listAvailableSlots,
+  createBooking,
+  cancelBookingAsOwner,
+  cancelBookingByToken,
+  rescheduleBookingByToken,
+  type TurnstileVerifier,
+} from "@prefab/runtime";
 import { ApiError, conflict, forbidden, notFound, planRequired, rateLimited, unauthorized, validationError } from "./errors.js";
 import { API_MUTATIONS } from "./mutations.js";
 import { resolvePrincipal, authorizeSite, SESSION_COOKIE, type Principal } from "./lib/auth.js";
@@ -112,6 +131,15 @@ import { createTurnstileVerifier } from "./lib/turnstile.js";
 import { EmailFormNotifier } from "./lib/form-notifier.js";
 import { createPostgresFormManifestStore, createPostgresFormSettingsStore, createPostgresSubmissionStore } from "./lib/runtime-adapters.js";
 import { createPostgresWebhookQueue, retryDueWebhookDeliveries } from "./lib/webhooks.js";
+import { createCalendarProvider, FakeCalendarProvider, type CalendarProvider } from "./lib/calendar-provider.js";
+import {
+  createPostgresAvailabilityStore,
+  createPostgresBookingStore,
+  createPostgresBookingWidgetStore,
+  createPostgresCalendarSyncPort,
+} from "./lib/booking-adapters.js";
+import { EmailBookingNotifier } from "./lib/booking-notifier.js";
+import { renderManageBookingPage } from "./lib/booking-manage-page.js";
 import {
   CreatePageBodySchema,
   CreatePostBodySchema,
@@ -136,6 +164,14 @@ import {
   UpdateMemberRoleBodySchema,
   UpgradePlanBodySchema,
   AdvanceFakeStripeBodySchema,
+  SetAvailabilityBodySchema,
+  ListBookingsQuerySchema,
+  ListSlotsQuerySchema,
+  CreateBookingBodySchema,
+  ManageBookingBodySchema,
+  RescheduleBookingBodySchema,
+  ConnectCalendarBodySchema,
+  AdvanceFakeCalendarBodySchema,
 } from "./schemas.js";
 
 export interface AppDeps {
@@ -159,6 +195,10 @@ export interface AppDeps {
   stripeProvider?: StripeProvider;
   /** Stripe's webhook signing secret — required only when a real StripeProvider is configured. Defaults to STRIPE_WEBHOOK_SECRET. */
   stripeWebhookSecret?: string;
+  /** Slice 9. One CalendarProvider per provider name — both default to createCalendarProvider()'s env-based choice (the fake unless that provider's OAuth client id/secret are configured). Injectable so a test (or the dev-only advance endpoint) can reach the exact same fake instance the routes use. */
+  calendarProviders?: Record<"google" | "microsoft", CalendarProvider>;
+  /** Slice 9 — the sender used for booking confirmation/cancellation/reschedule emails specifically, same reasoning as formEmailSender. Defaults to createEmailSender()'s env-based choice. */
+  bookingEmailSender?: EmailSender;
 }
 
 function parseBody<T>(schema: z.ZodType<T>, body: unknown): T {
@@ -283,6 +323,16 @@ export function buildApp(deps: AppDeps): FastifyInstance {
       return key.startsWith("site:") ? siteRateLimiter.consume(key) : ipRateLimiter.consume(key);
     },
   };
+  // Slice 9's runtime API (ADR-0007/ADR-0009/ADR-0010) — the same
+  // "apps/api is the one place allowed to wire @prefab/runtime's storage
+  // interfaces to Postgres (and a real calendar API)" discipline as forms.
+  const calendarProviders = deps.calendarProviders ?? { google: createCalendarProvider("google"), microsoft: createCalendarProvider("microsoft") };
+  const bookingWidgetStore = createPostgresBookingWidgetStore(pool);
+  const availabilityStore = createPostgresAvailabilityStore(pool);
+  const bookingStore = createPostgresBookingStore(pool);
+  const calendarSyncPort = createPostgresCalendarSyncPort(pool, calendarProviders);
+  const bookingRateLimiter = createInMemoryRateLimiter({ limit: 20, windowMs: 60_000 });
+  const bookingRuntimeDeps = { widgets: bookingWidgetStore, availability: availabilityStore, bookings: bookingStore, calendarSync: calendarSyncPort };
   // Default is 1 MiB — too small for asset.upload's JSON+base64 body (up
   // to ~10.9 MiB for an 8 MiB file at base64's ~4/3 expansion). Comfortably
   // above that so a legitimately-sized upload never hits Fastify's own
@@ -292,6 +342,8 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   const { sender: email, outbox: emailOutbox } = createOutboxEmailSender();
   const formEmailSender = deps.formEmailSender ?? createEmailSender(email);
   const formNotifier = new EmailFormNotifier(formEmailSender);
+  const bookingEmailSender = deps.bookingEmailSender ?? createEmailSender(email);
+  const bookingNotifier = new EmailBookingNotifier(bookingEmailSender);
 
   // Stripe webhook signature verification needs the exact raw request
   // bytes (Stripe-Signature is an HMAC over the literal body, not the
@@ -1246,6 +1298,124 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     return { ok: true };
   });
 
+  // ---- Slice 9: scheduling and bookings (ADR-0009) — owner-authenticated,
+  // dashboard-facing mutations and reads. The visitor-facing runtime API
+  // (slot listing, booking create/cancel/reschedule) lives further below,
+  // alongside the runtime form routes it mirrors. ----
+
+  // ---- availability.set / availability.get: one rule per site, whole-
+  // document replace (see 0008_slice9.sql's own header comment for why
+  // there is no per-block availability config). ----
+  app.put<{ Params: { siteId: string } }>("/v1/sites/:siteId/availability", async (request) => {
+    const principal = await requirePrincipal(request);
+    const { siteId } = await authorizeSite(pool, principal, request.params.siteId, { minRole: "editor" });
+    const body = parseBody(SetAvailabilityBodySchema, request.body);
+    return withTenantContext(pool, { siteId }, (client) => upsertAvailabilityRule(client, { id: newUlid(), siteId, ...body }));
+  });
+
+  app.get<{ Params: { siteId: string } }>("/v1/sites/:siteId/availability", async (request) => {
+    const principal = await requirePrincipal(request);
+    const { siteId } = await authorizeSite(pool, principal, request.params.siteId);
+    return withTenantContext(pool, { siteId }, (client) => getAvailabilityRule(client, siteId));
+  });
+
+  // ---- booking.list (dashboard) ----
+  app.get<{ Params: { siteId: string } }>("/v1/sites/:siteId/bookings", async (request) => {
+    const principal = await requirePrincipal(request);
+    const { siteId } = await authorizeSite(pool, principal, request.params.siteId);
+    const query = parseQuery(ListBookingsQuerySchema, request.query);
+    return withTenantContext(pool, { siteId }, (client) => listBookings(client, siteId, query));
+  });
+
+  // ---- booking.cancel (owner-initiated) — same finish path
+  // (cancelBookingAsOwner) a visitor's own manage-page cancel uses. ----
+  app.post<{ Params: { siteId: string; bookingId: string } }>("/v1/sites/:siteId/bookings/:bookingId/cancel", async (request) => {
+    const principal = await requirePrincipal(request);
+    const { siteId } = await authorizeSite(pool, principal, request.params.siteId, { minRole: "editor" });
+    const [site, rule] = await Promise.all([
+      withTenantContext(pool, { siteId }, (client) => getSite(client, siteId)),
+      withTenantContext(pool, { siteId }, (client) => getAvailabilityRule(client, siteId)),
+    ]);
+    if (!site) throw notFound("site not found");
+    const owner = await withTenantContext(pool, {}, (client) => getAccount(client, site.ownerId));
+
+    const result = await cancelBookingAsOwner(
+      { siteId, bookingId: request.params.bookingId, ownerEmail: owner?.email ?? null, ownerTimezone: rule?.timezone ?? "UTC" },
+      { bookings: bookingStore, calendarSync: calendarSyncPort, notifier: bookingNotifier },
+    );
+    if (result.status === "not_found") throw notFound("booking not found");
+    // result.booking is @prefab/runtime's narrower BookingRecord shape (no
+    // status/createdAt/canceledAt) — re-fetch the full row so this response
+    // matches booking.list's shape exactly, the same "one canonical Booking
+    // shape across every route" discipline the rest of this API follows.
+    return withTenantContext(pool, { siteId }, (client) => getBooking(client, siteId, result.booking.id));
+  });
+
+  // ---- calendar.connect / calendar.disconnect / calendar.status (Slice 9
+  // two-way sync) — owner-only (billing-adjacent credential management,
+  // same minRole as token.create/domain administration). "connect" hands
+  // back real tokens only for a RealGoogleCalendarProvider/
+  // RealMicrosoftCalendarProvider (UNVERIFIED — see calendar-provider.ts's
+  // module comment); the fake always succeeds synchronously, no
+  // authorizationCode required. ----
+  app.post<{ Params: { siteId: string } }>("/v1/sites/:siteId/calendar", async (request) => {
+    const principal = await requirePrincipal(request);
+    const { siteId } = await authorizeSite(pool, principal, request.params.siteId, { minRole: "owner" });
+    const body = parseBody(ConnectCalendarBodySchema, request.body);
+    const provider = calendarProviders[body.provider];
+    const tokens = await provider.connect({ authorizationCode: body.authorizationCode, redirectUri: body.redirectUri });
+    const connection = await withTenantContext(pool, { siteId }, (client) =>
+      upsertCalendarConnection(client, {
+        id: newUlid(),
+        siteId,
+        provider: body.provider,
+        externalCalendarId: tokens.externalCalendarId,
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+        tokenExpiresAt: new Date(tokens.expiresAt),
+      }),
+    );
+    return { id: connection.id, provider: connection.provider, status: connection.status, externalCalendarId: connection.externalCalendarId };
+  });
+
+  app.delete<{ Params: { siteId: string } }>("/v1/sites/:siteId/calendar", async (request) => {
+    const principal = await requirePrincipal(request);
+    const { siteId } = await authorizeSite(pool, principal, request.params.siteId, { minRole: "owner" });
+    await withTenantContext(pool, { siteId }, (client) => deleteCalendarConnection(client, siteId));
+    return { removed: true };
+  });
+
+  // Never returns access/refresh tokens — the dashboard only needs
+  // provider/status/lastSyncError to render a connected/degraded badge
+  // (SLICES.md integration test: "the dashboard surfaces the failure").
+  app.get<{ Params: { siteId: string } }>("/v1/sites/:siteId/calendar", async (request) => {
+    const principal = await requirePrincipal(request);
+    const { siteId } = await authorizeSite(pool, principal, request.params.siteId);
+    const connection = await withTenantContext(pool, { siteId }, (client) => getCalendarConnection(client, siteId));
+    if (!connection) return null;
+    return { id: connection.id, provider: connection.provider, status: connection.status, externalCalendarId: connection.externalCalendarId, lastSyncError: connection.lastSyncError };
+  });
+
+  // ---- Dev-only: drive the fake calendar provider's state, the same
+  // "dev-only bootstrap, not a product mutation" pattern as
+  // /v1/dev/domains/:id/advance and /v1/dev/stripe/:accountId/advance —
+  // simulates synced busy time arriving, or the provider becoming
+  // unreachable, with no real Google/Microsoft account in this
+  // environment. ----
+  app.post<{ Params: { siteId: string } }>("/v1/dev/calendar/:siteId/advance", async (request) => {
+    const connection = await withTenantContext(pool, { siteId: request.params.siteId }, (client) => getCalendarConnection(client, request.params.siteId));
+    if (!connection) throw notFound("no calendar connection for this site");
+    const provider = calendarProviders[connection.provider];
+    if (!(provider instanceof FakeCalendarProvider)) {
+      throw notFound("the fake calendar provider is not in use — nothing to advance");
+    }
+    const body = parseBody(AdvanceFakeCalendarBodySchema, request.body);
+    const calendarId = connection.externalCalendarId ?? "default";
+    if (body.busy) provider.setBusyTimes(calendarId, body.busy);
+    if (body.unavailable !== undefined) provider.setUnavailable(calendarId, body.unavailable);
+    return { ok: true };
+  });
+
   // ---- site.outline (R14) ----
   app.get<{ Params: { siteId: string } }>("/v1/sites/:siteId/outline", async (request) => {
     const principal = await requirePrincipal(request);
@@ -1262,7 +1432,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     const principal = await requirePrincipal(request);
     const { siteId, accountId } = await authorizeSite(pool, principal, request.params.siteId, { minRole: "editor" });
 
-    const { manifest, theme, pages, posts } = await withTenantContext(pool, { siteId }, async (client) => {
+    const { manifest, theme, pages, posts, availabilityRule } = await withTenantContext(pool, { siteId }, async (client) => {
       const site = await getSite(client, siteId);
       if (!site) throw notFound("site not found");
       const theme = await getTheme(client, siteId);
@@ -1283,22 +1453,54 @@ export function buildApp(deps: AppDeps): FastifyInstance {
       // tenant context and no dependency on page documents at all (R20 /
       // ADR-0010) — see upsertPublishedForm's own comment for why this
       // never touches form_settings.
+      // Slice 9: snapshot every Booking block's own props into
+      // `booking_widgets` — mirrors the Form loop immediately above, and
+      // for the identical reason (the runtime resolves a widgetId with no
+      // tenant context at all). The site's availability rule itself is
+      // never touched here — it isn't page-document content (see
+      // 0008_slice9.sql's header comment), so `availability.set` already
+      // is its own source of truth with no publish step required.
       for (const page of pages) {
         for (const block of page.blocks) {
-          if (block.type !== FORM_BLOCK_TYPE) continue;
-          const props = block.props as FormProps;
-          await upsertPublishedForm(client, {
-            id: block.id,
-            siteId,
-            heading: props.heading,
-            fields: props.fields,
-            submitLabel: props.submitLabel,
-            turnstileEnabled: props.turnstileEnabled,
-          });
+          if (block.type === FORM_BLOCK_TYPE) {
+            const props = block.props as FormProps;
+            await upsertPublishedForm(client, {
+              id: block.id,
+              siteId,
+              heading: props.heading,
+              fields: props.fields,
+              submitLabel: props.submitLabel,
+              turnstileEnabled: props.turnstileEnabled,
+            });
+          } else if (block.type === BOOKING_BLOCK_TYPE) {
+            const props = block.props as BookingProps;
+            await upsertPublishedBookingWidget(client, {
+              id: block.id,
+              siteId,
+              heading: props.heading,
+              description: props.description,
+              confirmLabel: props.confirmLabel,
+              successMessage: props.successMessage,
+            });
+          }
         }
       }
 
-      return { manifest: await siteManifestFor(client, site), theme, pages, posts };
+      const rule = await getAvailabilityRule(client, siteId);
+      const availabilityRule = rule
+        ? {
+            siteId: rule.siteId,
+            timezone: rule.timezone,
+            weeklyWindows: rule.weeklyWindows,
+            dateOverrides: rule.dateOverrides,
+            slotDurationMinutes: rule.slotDurationMinutes,
+            bufferBeforeMinutes: rule.bufferBeforeMinutes,
+            bufferAfterMinutes: rule.bufferAfterMinutes,
+            minNoticeMinutes: rule.minNoticeMinutes,
+            maxHorizonDays: rule.maxHorizonDays,
+          }
+        : null;
+      return { manifest: await siteManifestFor(client, site), theme, pages, posts, availabilityRule };
     });
 
     // Astro build runs outside the DB transaction — it's slow (real
@@ -1313,6 +1515,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
       baseUrl: publicSiteUrl(manifest.slug),
       runtimeApiUrl,
       turnstileSiteKey,
+      availabilityRule,
       bundleStoreDir,
     });
 
@@ -1450,6 +1653,182 @@ export function buildApp(deps: AppDeps): FastifyInstance {
         throw rateLimited("too many submissions — try again shortly");
       case "turnstile_failed":
         throw forbidden("spam verification failed");
+    }
+  });
+
+  // ---- The runtime API (Slice 9, ADR-0007/ADR-0009/ADR-0010): scheduling
+  // and bookings' own visitor-facing surface, the same shape as the Form
+  // routes immediately above — no principal, CORS opened explicitly since a
+  // published site's own origin is never known in advance. Every storage
+  // and calendar-sync decision lives in @prefab/runtime's
+  // listAvailableSlots/createBooking/cancelBookingByToken/
+  // rescheduleBookingByToken; these routes are just the HTTP-and-CORS shell
+  // around them, exactly what apps/self-host reimplements in its own shell
+  // for R10 (local availability/bookings only — see self-host's own
+  // runtime-adapters.ts for why calendar sync itself isn't offered there). ----
+  app.options("/v1/runtime/booking-widgets/:widgetId/slots", async (_request, reply) => {
+    reply.header("access-control-allow-origin", "*").header("access-control-allow-methods", "GET, OPTIONS").status(204).send();
+  });
+  app.options("/v1/runtime/booking-widgets/:widgetId/bookings", async (_request, reply) => {
+    reply
+      .header("access-control-allow-origin", "*")
+      .header("access-control-allow-methods", "POST, OPTIONS")
+      .header("access-control-allow-headers", "content-type")
+      .status(204)
+      .send();
+  });
+
+  app.get<{ Params: { widgetId: string } }>("/v1/runtime/booking-widgets/:widgetId/slots", async (request, reply) => {
+    reply.header("access-control-allow-origin", "*");
+    const query = parseQuery(ListSlotsQuerySchema, request.query);
+    const result = await listAvailableSlots(
+      { widgetId: request.params.widgetId, rangeStartMs: query.rangeStart.getTime(), rangeEndMs: query.rangeEnd.getTime() },
+      bookingRuntimeDeps,
+    );
+    if (result.status !== "ok") throw notFound("booking widget not found");
+    return {
+      slots: result.slots.map((s) => ({ startMs: s.startMs, endMs: s.endMs })),
+      slotDurationMinutes: result.rule.slotDurationMinutes,
+      calendarSyncOk: result.calendarSyncOk,
+    };
+  });
+
+  app.post<{ Params: { widgetId: string } }>("/v1/runtime/booking-widgets/:widgetId/bookings", async (request, reply) => {
+    reply.header("access-control-allow-origin", "*");
+    const body = parseBody(CreateBookingBodySchema, request.body);
+
+    const widget = await bookingWidgetStore.getWidget(request.params.widgetId);
+    if (!widget) throw notFound("booking widget not found");
+    const site = await withTenantContext(pool, { siteId: widget.siteId }, (client) => getSite(client, widget.siteId));
+    const owner = site ? await withTenantContext(pool, {}, (client) => getAccount(client, site.ownerId)) : null;
+
+    const result = await createBooking(
+      {
+        id: newUlid(),
+        widgetId: request.params.widgetId,
+        startsAtMs: body.startsAt.getTime(),
+        visitorName: body.visitorName,
+        visitorEmail: body.visitorEmail,
+        visitorTimezone: body.visitorTimezone,
+        notes: body.notes,
+        manageToken: generateRawToken(),
+        manageBaseUrl: runtimeApiUrl,
+        ownerEmail: owner?.email ?? null,
+      },
+      { ...bookingRuntimeDeps, notifier: bookingNotifier, rateLimiter: bookingRateLimiter },
+    );
+
+    switch (result.status) {
+      case "created":
+        reply.status(201);
+        return { id: result.booking.id, startsAt: result.booking.startsAt, endsAt: result.booking.endsAt, calendarSyncOk: result.calendarSyncOk };
+      case "widget_not_found":
+      case "rule_not_found":
+        throw notFound("booking widget not found");
+      case "invalid":
+        throw validationError("booking failed validation", result.issues);
+      case "slot_taken":
+        throw conflict("that slot is no longer available");
+      case "rate_limited":
+        reply.header("retry-after", String(Math.ceil(result.retryAfterMs / 1000)));
+        throw rateLimited("too many booking requests — try again shortly");
+    }
+  });
+
+  // ---- The visitor's own manage link (cancel/reschedule) — siteId is
+  // already known from the link's own URL (see booking-notifier.ts), so
+  // every lookup below resolves tenant context explicitly rather than
+  // relying on any public read policy on `bookings` (0008_slice9.sql: R20,
+  // bookings carry visitor PII and have none). ----
+  app.options("/v1/runtime/bookings/:siteId/:bookingId/cancel", async (_request, reply) => {
+    reply
+      .header("access-control-allow-origin", "*")
+      .header("access-control-allow-methods", "POST, OPTIONS")
+      .header("access-control-allow-headers", "content-type")
+      .status(204)
+      .send();
+  });
+  app.options("/v1/runtime/bookings/:siteId/:bookingId/reschedule", async (_request, reply) => {
+    reply
+      .header("access-control-allow-origin", "*")
+      .header("access-control-allow-methods", "POST, OPTIONS")
+      .header("access-control-allow-headers", "content-type")
+      .status(204)
+      .send();
+  });
+
+  app.get<{ Params: { siteId: string; bookingId: string }; Querystring: { token?: string } }>(
+    "/v1/runtime/bookings/:siteId/:bookingId",
+    async (request, reply) => {
+      reply.header("access-control-allow-origin", "*");
+      const token = request.query.token;
+      if (!token) throw validationError("a manage token is required");
+      const booking = await bookingStore.getByManageToken(request.params.siteId, request.params.bookingId, token);
+      if (!booking) throw notFound("booking not found");
+      return { id: booking.id, startsAt: booking.startsAt, endsAt: booking.endsAt, visitorName: booking.visitorName, visitorTimezone: booking.visitorTimezone };
+    },
+  );
+
+  app.get<{ Params: { siteId: string; bookingId: string }; Querystring: { token?: string } }>(
+    "/v1/runtime/bookings/:siteId/:bookingId/manage",
+    async (request, reply) => {
+      reply.type("text/html; charset=utf-8");
+      return reply.send(renderManageBookingPage({ runtimeApiUrl, siteId: request.params.siteId, bookingId: request.params.bookingId, token: request.query.token ?? "" }));
+    },
+  );
+
+  app.post<{ Params: { siteId: string; bookingId: string } }>("/v1/runtime/bookings/:siteId/:bookingId/cancel", async (request, reply) => {
+    reply.header("access-control-allow-origin", "*");
+    const body = parseBody(ManageBookingBodySchema, request.body);
+    const { siteId, bookingId } = request.params;
+    const [site, rule] = await Promise.all([
+      withTenantContext(pool, { siteId }, (client) => getSite(client, siteId)),
+      withTenantContext(pool, { siteId }, (client) => getAvailabilityRule(client, siteId)),
+    ]);
+    if (!site) throw notFound("booking not found");
+    const owner = await withTenantContext(pool, {}, (client) => getAccount(client, site.ownerId));
+
+    const result = await cancelBookingByToken(
+      { siteId, bookingId, manageToken: body.token, ownerEmail: owner?.email ?? null, ownerTimezone: rule?.timezone ?? "UTC" },
+      { bookings: bookingStore, calendarSync: calendarSyncPort, notifier: bookingNotifier },
+    );
+    if (result.status === "not_found") throw notFound("booking not found");
+    return { status: "canceled" as const };
+  });
+
+  app.post<{ Params: { siteId: string; bookingId: string } }>("/v1/runtime/bookings/:siteId/:bookingId/reschedule", async (request, reply) => {
+    reply.header("access-control-allow-origin", "*");
+    const body = parseBody(RescheduleBookingBodySchema, request.body);
+    const { siteId, bookingId } = request.params;
+    const [site, rule] = await Promise.all([
+      withTenantContext(pool, { siteId }, (client) => getSite(client, siteId)),
+      withTenantContext(pool, { siteId }, (client) => getAvailabilityRule(client, siteId)),
+    ]);
+    if (!site) throw notFound("booking not found");
+    const owner = await withTenantContext(pool, {}, (client) => getAccount(client, site.ownerId));
+
+    const result = await rescheduleBookingByToken(
+      {
+        siteId,
+        bookingId,
+        manageToken: body.token,
+        newStartsAtMs: body.startsAt.getTime(),
+        ownerEmail: owner?.email ?? null,
+        ownerTimezone: rule?.timezone ?? "UTC",
+        manageBaseUrl: runtimeApiUrl,
+      },
+      { ...bookingRuntimeDeps, notifier: bookingNotifier, rateLimiter: bookingRateLimiter },
+    );
+
+    switch (result.status) {
+      case "rescheduled":
+        return { id: result.booking.id, startsAt: result.booking.startsAt, endsAt: result.booking.endsAt, calendarSyncOk: result.calendarSyncOk };
+      case "not_found":
+        throw notFound("booking not found");
+      case "slot_taken":
+        throw conflict("that slot is no longer available");
+      case "invalid":
+        throw validationError("invalid reschedule request", result.issues);
     }
   });
 

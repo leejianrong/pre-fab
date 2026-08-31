@@ -4,14 +4,16 @@ A no-code website builder where the site is a portable, diffable artifact the
 customer owns. Competes with Wix and Squarespace on the thing neither can do:
 hand over a working site.
 
-**Status: Slices 1–8 built.** One write path, the block library and theme tokens,
-templates/onboarding, custom domains/TLS, blog/collections, forms/submissions,
-self-host runtime/eject, and accounts/plans/billing are done — see `README.md`
-for what each shipped. Slice 4 runs against a fake Cloudflare adapter, and
-Slice 6's email/Turnstile/webhook and Slice 8's Stripe adapters are likewise
-unverified against real providers (no real accounts exist in this environment).
-Slice 9 (scheduling and bookings) is the next work — the largest self-contained
-build, and it depends on Slice 6's runtime API already existing and being stable.
+**Status: Slices 1–9 built — milestone 1 complete.** One write path, the block
+library and theme tokens, templates/onboarding, custom domains/TLS,
+blog/collections, forms/submissions, self-host runtime/eject, accounts/plans/
+billing, and scheduling/bookings are done — see `README.md` for what each
+shipped. Slice 4 runs against a fake Cloudflare adapter, Slice 6's
+email/Turnstile/webhook and Slice 8's Stripe adapters are likewise unverified
+against real providers, and Slice 9's Google Calendar/Microsoft 365 adapters
+are the same: structurally complete, written from each provider's public
+docs, never exercised against a live account (no real accounts exist in this
+environment).
 
 ## Read before changing anything
 

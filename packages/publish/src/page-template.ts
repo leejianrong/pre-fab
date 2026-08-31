@@ -8,21 +8,22 @@
  * Blocks render through the exact same @prefab/blocks components the Puck
  * canvas uses (via @prefab/puck-adapter) — no `client:*` directive for
  * almost every block, since a static block ships 0 KB (ADR-0007). The Form
- * block (Slice 6) is the one exception: it's the runtime API's first
- * caller, so it alone renders with `client:load`. That hydration needs a
- * *statically* importable component — Astro's compiler resolves a client
- * directive's island by generating a client-side import for whatever
- * identifier the JSX tag names, and `blockComponents[block.type]` (a
- * runtime lookup into a plain object) has no such static import to point
- * at, so it fails with "No matching import has been found" for any
- * dynamically-resolved component. `Form` is imported directly below for
- * exactly this reason, and rendered on its own branch rather than through
- * `blockComponents`. This file, plus @prefab/publish, is the only place in
- * the repo allowed to import Astro (enforced by tools/checks).
+ * block (Slice 6) and the Booking block (Slice 9) are the exceptions:
+ * they're the runtime API's callers, so they alone render with
+ * `client:load`. That hydration needs a *statically* importable component —
+ * Astro's compiler resolves a client directive's island by generating a
+ * client-side import for whatever identifier the JSX tag names, and
+ * `blockComponents[block.type]` (a runtime lookup into a plain object) has
+ * no such static import to point at, so it fails with "No matching import
+ * has been found" for any dynamically-resolved component. `Form` and
+ * `Booking` are imported directly below for exactly this reason, and
+ * rendered on their own branch rather than through `blockComponents`. This
+ * file, plus @prefab/publish, is the only place in the repo allowed to
+ * import Astro (enforced by tools/checks).
  */
 export const SITE_PAGE_ASTRO = `---
 import data from "../data.json";
-import { blockComponents, resolveThemeTokens, themeRootStyle, Form } from "@prefab/blocks";
+import { blockComponents, resolveThemeTokens, themeRootStyle, Form, Booking } from "@prefab/blocks";
 
 // SLICES.md Slice 5: "list and detail block types with pagination." A page
 // carrying a postdetail block is a *template* for one route per post
@@ -136,6 +137,18 @@ const themeVars = themeRootStyle(resolveThemeTokens(theme.tokens));
             responsive={block.responsive}
             runtimeApiUrl={data.runtimeApiUrl}
             turnstileSiteKey={data.turnstileSiteKey}
+          />
+        );
+      }
+
+      if (block.type === "booking") {
+        return (
+          <Booking
+            client:load
+            {...block.props}
+            blockId={block.id}
+            responsive={block.responsive}
+            runtimeApiUrl={data.runtimeApiUrl}
           />
         );
       }

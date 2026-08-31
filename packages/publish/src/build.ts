@@ -20,7 +20,22 @@ export interface BuildSiteBundleInput {
   runtimeApiUrl?: string;
   /** Cloudflare Turnstile's public site key, not a secret — omitted forms render with no widget even if a form has Turnstile enabled. */
   turnstileSiteKey?: string;
+  /** Slice 9 (ADR-0010, R10): the site's current availability rule, written into the bundle as `prefab-availability.json` so the self-host runtime can seed local slot computation with no control plane to snapshot it from at all — see build-worker.ts's own comment. Not page-document content (0008_slice9.sql), so unlike pages/posts this is handed in directly rather than derived from anything else in this input. Omitted or null when the site has never called `availability.set`. */
+  availabilityRule?: PublishableAvailabilityRule | null;
   bundleStoreDir: string;
+}
+
+/** The same shape as @prefab/runtime's AvailabilityRuleManifest — duplicated, not imported, for the identical reason form-manifest.ts's PublishSafeFormManifest is (see that file's own comment). `siteId` travels with it because, unlike forms/booking widgets, self-host has no other bundle-carried record of which site it's hosting to seed this single-row table against. */
+export interface PublishableAvailabilityRule {
+  siteId: string;
+  timezone: string;
+  weeklyWindows: Array<{ dayOfWeek: number; startMinute: number; endMinute: number }>;
+  dateOverrides: Array<{ date: string; closed: boolean; windows: Array<{ startMinute: number; endMinute: number }> }>;
+  slotDurationMinutes: number;
+  bufferBeforeMinutes: number;
+  bufferAfterMinutes: number;
+  minNoticeMinutes: number;
+  maxHorizonDays: number;
 }
 
 export interface BuildSiteBundleResult {
@@ -47,6 +62,7 @@ export async function buildSiteBundle(input: BuildSiteBundleInput): Promise<Buil
     baseUrl: input.baseUrl ?? `https://${input.site.slug}.prefab.invalid`,
     runtimeApiUrl: input.runtimeApiUrl ?? "",
     turnstileSiteKey: input.turnstileSiteKey ?? "",
+    availabilityRule: input.availabilityRule ?? null,
   };
   await writeFile(inputPath, JSON.stringify(resolvedInput), "utf8");
 
