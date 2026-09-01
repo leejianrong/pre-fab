@@ -22,9 +22,9 @@
     "@prefab/api": "workspace:*",
     "@prefab/db": "workspace:*",
     "@types/pg": "8.11.10",
-    "dotenv": "16.4.7",
+    "dotenv": "17.4.2",
     "pg": "8.13.1",
-    "typescript": "5.7.3",
-    "vitest": "3.0.4"
+    "typescript": "7.0.2",
+    "vitest": "4.1.11"
   }
 }
