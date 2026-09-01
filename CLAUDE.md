@@ -97,4 +97,6 @@ satisfying both `@puckeditor/core` and `@astrojs/react` v6.
 - End-to-end tests in `SLICES.md` are the acceptance criteria for a slice. A
   slice is done when they pass, not when the code looks finished.
 
-Build and test commands land with slice 1; there is no package.json yet.
+Exact build/test/dev commands are in `README.md`'s Local setup, Tests and CI
+sections — trust those (and the actual `package.json` scripts) over any
+paraphrase here if they ever disagree.

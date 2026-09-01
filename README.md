@@ -370,10 +370,28 @@ nothing here is mocked at the boundary CI actually cares about.
 
 ## CI
 
-`.github/workflows/ci.yml` runs seven jobs on every push/PR: `lint-typecheck`,
-`containment-and-parity` (the enforced invariants above), `unit-tests`,
-`integration-tests` (Postgres 16 service container), `template-budgets`
-(Lighthouse + axe-core per template, no database needed), `fidelity` (Slice
-7's hosted-vs-ejected screenshot diff, R9 — its own job because it needs a
-real `npm install` of the ejected project's dependency tree), and `e2e`
-(Postgres 16 + `playwright install --with-deps chromium`).
+`.github/workflows/ci.yml` runs eight jobs on every push/PR: `secret-scan`
+(gitleaks, full history), `lint-typecheck`, `containment-and-parity` (the
+enforced invariants above), `unit-tests`, `integration-tests` (Postgres 16
+service container), `template-budgets` (Lighthouse + axe-core per template,
+no database needed), `fidelity` (Slice 7's hosted-vs-ejected screenshot
+diff, R9 — its own job because it needs a real `npm install` of the ejected
+project's dependency tree), and `e2e` (Postgres 16 +
+`playwright install --with-deps chromium`).
+
+A pre-push git hook (`simple-git-hooks`, installed automatically by
+`pnpm install` via the root `prepare` script) mirrors `lint-typecheck` and
+`unit-tests` locally before every push — `SKIP_SIMPLE_GIT_HOOKS=1 git push`
+bypasses it for the rare scoped exception. Dependency updates (npm and
+GitHub Actions) are proposed weekly by Dependabot
+(`.github/dependabot.yml`).
+
+## Contributing
+
+Work on a branch off `main` and open a PR once `pnpm run ci` is green; see
+`CLAUDE.md` for the full conventions (requirement/ADR citation, the
+subagent worktree rules, the invariants CI enforces).
+
+## License
+
+Apache License 2.0 — see `LICENSE`.
