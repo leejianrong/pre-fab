@@ -16,7 +16,7 @@
     "test:integration": "vitest run test/*.integration.test.ts --testTimeout=60000 --no-file-parallelism"
   },
   "dependencies": {
-    "@fastify/cookie": "11.0.2",
+    "@fastify/cookie": "11.1.2",
     "@fastify/cors": "10.0.2",
     "@prefab/blocks": "workspace:*",
     "@prefab/db": "workspace:*",
