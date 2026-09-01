@@ -20,10 +20,14 @@
     "ci:parity": "pnpm --filter @prefab/ci-checks run parity",
     "ci:budgets": "pnpm --filter @prefab/ci-checks run budgets",
     "ci:fidelity": "pnpm --filter @prefab/ci-checks run fidelity",
-    "ci": "pnpm run lint && pnpm run typecheck && pnpm run ci:containment && pnpm run test:unit && pnpm run ci:parity"
+    "ci": "pnpm run lint && pnpm run typecheck && pnpm run ci:containment && pnpm run test:unit && pnpm run ci:parity",
+    "prepare": "simple-git-hooks"
   },
   "pnpm": {
     "onlyBuiltDependencies": ["esbuild", "better-sqlite3"]
+  },
+  "simple-git-hooks": {
+    "pre-push": "pnpm run lint && pnpm run typecheck && pnpm run test:unit"
   },
   "devDependencies": {
     "@types/node": "22.20.1",
@@ -33,6 +37,7 @@
     "typescript-eslint": "8.20.0",
     "eslint-plugin-react-hooks": "5.1.0",
     "tsx": "4.19.2",
-    "vitest": "3.0.4"
+    "vitest": "3.0.4",
+    "simple-git-hooks": "2.14.0"
   }
 }
