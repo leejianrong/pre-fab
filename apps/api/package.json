@@ -17,7 +17,7 @@
   },
   "dependencies": {
     "@fastify/cookie": "11.0.2",
-    "@fastify/cors": "10.0.2",
+    "@fastify/cors": "11.3.0",
     "@prefab/blocks": "workspace:*",
     "@prefab/db": "workspace:*",
     "@prefab/publish": "workspace:*",
