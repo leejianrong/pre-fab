@@ -8,6 +8,7 @@ import { themeGet, themeSet } from "./theme.js";
 import { pageCreate, pageGet, pageList, pageWrite } from "./page.js";
 import { postCreate, postGet, postList, postWrite } from "./post.js";
 import { formConfigure, formGet, submissionList, submissionExport, submissionDelete } from "./form.js";
+import { eventSignupWidgetGet, eventSignupList, eventSignupExport, eventSignupDelete } from "./event-signup.js";
 import { assetUpload, assetList } from "./asset.js";
 import { tokenCreate } from "./token.js";
 import { siteOutline } from "./outline.js";
@@ -58,6 +59,10 @@ export const commandRegistry = defineRegistry([
   submissionList,
   submissionExport,
   submissionDelete,
+  eventSignupWidgetGet,
+  eventSignupList,
+  eventSignupExport,
+  eventSignupDelete,
   assetUpload,
   assetList,
   tokenCreate,
@@ -118,6 +123,10 @@ export {
   submissionList,
   submissionExport,
   submissionDelete,
+  eventSignupWidgetGet,
+  eventSignupList,
+  eventSignupExport,
+  eventSignupDelete,
   assetUpload,
   assetList,
   tokenCreate,

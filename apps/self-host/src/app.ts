@@ -7,6 +7,7 @@ import {
   createBooking,
   cancelBookingByToken,
   rescheduleBookingByToken,
+  signUpForEvent,
   type TurnstileVerifier,
 } from "@prefab/runtime";
 import { newUlid } from "@prefab/schema";
@@ -17,8 +18,10 @@ import { createTurnstileVerifier } from "./lib/turnstile.js";
 import { createEmailSender, type EmailSender } from "./lib/email.js";
 import { EmailFormNotifier } from "./lib/form-notifier.js";
 import { EmailBookingNotifier } from "./lib/booking-notifier.js";
+import { EmailEventSignupNotifier } from "./lib/event-signup-notifier.js";
 import { serveBundleFile } from "./static-bundle.js";
 import { createNullCalendarSyncPort, createSqliteAvailabilityStore, createSqliteBookingStore, createSqliteBookingWidgetStore } from "./booking-adapters.js";
+import { createSqliteEventSignupWidgetStore, createSqliteEventSignupStore } from "./event-signup-adapters.js";
 import { renderManageBookingPage } from "./booking-manage-page.js";
 
 const SubmitFormBodySchema = z.object({
@@ -36,6 +39,7 @@ const CreateBookingBodySchema = z.object({
 });
 const ManageBookingBodySchema = z.object({ token: z.string().min(1) });
 const RescheduleBookingBodySchema = z.object({ token: z.string().min(1), startsAt: z.coerce.date() });
+const SignUpForEventBodySchema = z.object({ values: z.record(z.string(), z.union([z.string(), z.boolean()])).default({}) });
 
 export interface AppDeps {
   /** The already-exported static bundle this instance serves (R10) — a self-hosted instance is one site, not a multi-tenant store. */
@@ -83,6 +87,21 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   const bookingNotifier = new EmailBookingNotifier(emailSender, runtimeApiUrl);
   const bookingRuntimeDeps = { widgets: bookingWidgetStore, availability: availabilityStore, bookings: bookingStore, calendarSync: calendarSyncPort };
   const bookingRateLimiter = createInMemoryRateLimiter({ limit: 20, windowMs: 60_000 });
+
+  // KAN-1138 (R10) — the same SQLite-backed, no-control-plane wiring as
+  // forms/bookings above. `ownerEmail` is the exact same operator-configured
+  // address bookings already notify (there is no separate per-widget
+  // setting here either, mirroring 0009_slice10_events.sql's own reasoning).
+  const eventSignupWidgetStore = createSqliteEventSignupWidgetStore(db);
+  const eventSignupStore = createSqliteEventSignupStore(db);
+  const eventSignupNotifier = new EmailEventSignupNotifier(emailSender);
+  const eventSignupSiteRateLimiter = createInMemoryRateLimiter({ limit: 20, windowMs: 60_000 });
+  const eventSignupIpRateLimiter = createInMemoryRateLimiter({ limit: 5, windowMs: 60_000 });
+  const eventSignupRateLimiter = {
+    consume(key: string) {
+      return key.startsWith("site:") ? eventSignupSiteRateLimiter.consume(key) : eventSignupIpRateLimiter.consume(key);
+    },
+  };
 
   // Same limits as apps/api's own runtime route (app.ts): 20/min per site,
   // 5/min per visitor IP — a self-hosted instance is one site, so "per
@@ -317,6 +336,54 @@ export function buildApp(deps: AppDeps): FastifyInstance {
       case "invalid":
         reply.status(400);
         return { error: { code: "validation_error", message: "invalid reschedule request", details: result.issues } };
+    }
+  });
+
+  // ---- KAN-1138's runtime API — same shape as apps/api's equivalent
+  // route, calling the exact same @prefab/runtime function unchanged; only
+  // what's behind EventSignupWidgetStore/EventSignupStore differs (SQLite,
+  // no concurrency lock needed at all — see event-signup-adapters.ts). ----
+  app.options("/v1/runtime/event-signups/:widgetId/signups", async (_request, reply) => {
+    reply
+      .header("access-control-allow-origin", "*")
+      .header("access-control-allow-methods", "POST, OPTIONS")
+      .header("access-control-allow-headers", "content-type")
+      .status(204)
+      .send();
+  });
+
+  app.post<{ Params: { widgetId: string } }>("/v1/runtime/event-signups/:widgetId/signups", async (request, reply) => {
+    reply.header("access-control-allow-origin", "*");
+    const parsed = SignUpForEventBodySchema.safeParse(request.body);
+    if (!parsed.success) {
+      reply.status(400);
+      return { error: { code: "validation_error", message: "invalid request body", details: parsed.error.issues } };
+    }
+
+    const result = await signUpForEvent(
+      { id: newUlid(), widgetId: request.params.widgetId, values: parsed.data.values, ip: request.ip, ownerEmail },
+      { widgets: eventSignupWidgetStore, signups: eventSignupStore, rateLimiter: eventSignupRateLimiter, notifier: eventSignupNotifier },
+    );
+
+    switch (result.status) {
+      case "confirmed":
+        reply.status(201);
+        return { status: "confirmed", id: result.signupId };
+      case "waitlisted":
+        reply.status(201);
+        return { status: "waitlisted", id: result.signupId, position: result.position };
+      case "full":
+        reply.status(409);
+        return { error: { code: "conflict", message: "this event is full" } };
+      case "not_found":
+        reply.status(404);
+        return { error: { code: "not_found", message: "event sign-up widget not found" } };
+      case "invalid":
+        reply.status(400);
+        return { error: { code: "validation_error", message: "sign-up failed validation", details: result.issues } };
+      case "rate_limited":
+        reply.status(429).header("retry-after", String(Math.ceil(result.retryAfterMs / 1000)));
+        return { error: { code: "rate_limited", message: "too many sign-up requests — try again shortly" } };
     }
   });
 

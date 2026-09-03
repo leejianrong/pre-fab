@@ -71,6 +71,12 @@ import {
   getCalendarConnection,
   upsertCalendarConnection,
   deleteCalendarConnection,
+  upsertPublishedEventSignupWidget,
+  getEventSignupWidget,
+  listEventSignups,
+  listAllEventSignupsForExport,
+  getEventSignup,
+  deleteEventSignup,
   type Pool,
   type PoolClient,
   type SiteRow,
@@ -90,7 +96,17 @@ import {
   type PostDocument,
   type SiteManifest,
 } from "@prefab/schema";
-import { blockSchemaRegistry, HERO_BLOCK_TYPE, heroDefaultProps, FORM_BLOCK_TYPE, BOOKING_BLOCK_TYPE, type FormProps, type BookingProps } from "@prefab/blocks";
+import {
+  blockSchemaRegistry,
+  HERO_BLOCK_TYPE,
+  heroDefaultProps,
+  FORM_BLOCK_TYPE,
+  BOOKING_BLOCK_TYPE,
+  EVENTSIGNUP_BLOCK_TYPE,
+  type FormProps,
+  type BookingProps,
+  type EventSignupProps,
+} from "@prefab/blocks";
 import { buildSiteBundle } from "@prefab/publish";
 import { TEMPLATE_MANIFESTS, loadTemplateCheckout } from "@prefab/templates/server";
 import {
@@ -102,6 +118,7 @@ import {
   cancelBookingAsOwner,
   cancelBookingByToken,
   rescheduleBookingByToken,
+  signUpForEvent,
   type TurnstileVerifier,
 } from "@prefab/runtime";
 import { ApiError, conflict, forbidden, notFound, planRequired, rateLimited, unauthorized, validationError } from "./errors.js";
@@ -129,7 +146,9 @@ import {
 } from "./lib/domain-provider.js";
 import { createTurnstileVerifier } from "./lib/turnstile.js";
 import { EmailFormNotifier } from "./lib/form-notifier.js";
+import { EmailEventSignupNotifier } from "./lib/event-signup-notifier.js";
 import { createPostgresFormManifestStore, createPostgresFormSettingsStore, createPostgresSubmissionStore } from "./lib/runtime-adapters.js";
+import { createPostgresEventSignupWidgetStore, createPostgresEventSignupStore } from "./lib/event-signup-adapters.js";
 import { createPostgresWebhookQueue, retryDueWebhookDeliveries } from "./lib/webhooks.js";
 import { createCalendarProvider, FakeCalendarProvider, type CalendarProvider } from "./lib/calendar-provider.js";
 import {
@@ -172,6 +191,9 @@ import {
   RescheduleBookingBodySchema,
   ConnectCalendarBodySchema,
   AdvanceFakeCalendarBodySchema,
+  ListEventSignupsQuerySchema,
+  ExportEventSignupsQuerySchema,
+  SignUpForEventBodySchema,
 } from "./schemas.js";
 
 export interface AppDeps {
@@ -199,6 +221,8 @@ export interface AppDeps {
   calendarProviders?: Record<"google" | "microsoft", CalendarProvider>;
   /** Slice 9 — the sender used for booking confirmation/cancellation/reschedule emails specifically, same reasoning as formEmailSender. Defaults to createEmailSender()'s env-based choice. */
   bookingEmailSender?: EmailSender;
+  /** KAN-1138 — the sender used for event sign-up owner-notification emails specifically, same reasoning as formEmailSender/bookingEmailSender. Defaults to createEmailSender()'s env-based choice. */
+  eventSignupEmailSender?: EmailSender;
 }
 
 function parseBody<T>(schema: z.ZodType<T>, body: unknown): T {
@@ -333,6 +357,18 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   const calendarSyncPort = createPostgresCalendarSyncPort(pool, calendarProviders);
   const bookingRateLimiter = createInMemoryRateLimiter({ limit: 20, windowMs: 60_000 });
   const bookingRuntimeDeps = { widgets: bookingWidgetStore, availability: availabilityStore, bookings: bookingStore, calendarSync: calendarSyncPort };
+  // KAN-1138's runtime API (ADR-0007/ADR-0010) — same "apps/api is the one
+  // place allowed to wire @prefab/runtime's storage interfaces to
+  // Postgres" discipline as forms/bookings.
+  const eventSignupWidgetStore = createPostgresEventSignupWidgetStore(pool);
+  const eventSignupStore = createPostgresEventSignupStore(pool);
+  const eventSignupSiteRateLimiter = createInMemoryRateLimiter({ limit: 20, windowMs: 60_000 });
+  const eventSignupIpRateLimiter = createInMemoryRateLimiter({ limit: 5, windowMs: 60_000 });
+  const eventSignupRateLimiter = {
+    consume(key: string) {
+      return key.startsWith("site:") ? eventSignupSiteRateLimiter.consume(key) : eventSignupIpRateLimiter.consume(key);
+    },
+  };
   // Default is 1 MiB — too small for asset.upload's JSON+base64 body (up
   // to ~10.9 MiB for an 8 MiB file at base64's ~4/3 expansion). Comfortably
   // above that so a legitimately-sized upload never hits Fastify's own
@@ -344,6 +380,8 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   const formNotifier = new EmailFormNotifier(formEmailSender);
   const bookingEmailSender = deps.bookingEmailSender ?? createEmailSender(email);
   const bookingNotifier = new EmailBookingNotifier(bookingEmailSender);
+  const eventSignupEmailSender = deps.eventSignupEmailSender ?? createEmailSender(email);
+  const eventSignupNotifier = new EmailEventSignupNotifier(eventSignupEmailSender);
 
   // Stripe webhook signature verification needs the exact raw request
   // bytes (Stripe-Signature is an HMAC over the literal body, not the
@@ -1416,6 +1454,75 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     return { ok: true };
   });
 
+  // ---- KAN-1138: event sign-ups — owner-authenticated, dashboard-facing
+  // reads/mutation. The visitor-facing runtime API (sign-up create) lives
+  // further below, alongside the runtime form/booking routes it mirrors. ----
+
+  // ---- eventSignupWidget.get: the published widget's own manifest (heading/fields/capacity/waitlistEnabled), for the dashboard — mirrors form.get, minus a separate settings row (there is none: see 0009_slice10_events.sql's own header comment). ----
+  app.get<{ Params: { siteId: string; widgetId: string } }>("/v1/sites/:siteId/event-signups/:widgetId", async (request) => {
+    const principal = await requirePrincipal(request);
+    const { siteId } = await authorizeSite(pool, principal, request.params.siteId);
+    const widget = await withTenantContext(pool, { siteId }, (client) => getEventSignupWidget(client, siteId, request.params.widgetId));
+    if (!widget) throw notFound("event sign-up widget not found");
+    return widget;
+  });
+
+  // ---- eventSignup.list ----
+  app.get<{ Params: { siteId: string; widgetId: string } }>("/v1/sites/:siteId/event-signups/:widgetId/signups", async (request) => {
+    const principal = await requirePrincipal(request);
+    const { siteId } = await authorizeSite(pool, principal, request.params.siteId);
+    const query = parseQuery(ListEventSignupsQuerySchema, request.query);
+    return withTenantContext(pool, { siteId }, (client) => listEventSignups(client, siteId, request.params.widgetId, query));
+  });
+
+  // ---- eventSignup.export: CSV/JSON, one column per declared field plus status/position/submitted-at (mirrors submission.export) ----
+  app.get<{ Params: { siteId: string; widgetId: string } }>(
+    "/v1/sites/:siteId/event-signups/:widgetId/signups/export",
+    async (request, reply) => {
+      const principal = await requirePrincipal(request);
+      const { siteId } = await authorizeSite(pool, principal, request.params.siteId, { minRole: "editor" });
+      const { widgetId } = request.params;
+      const query = parseQuery(ExportEventSignupsQuerySchema, request.query);
+
+      const { widget, signups } = await withTenantContext(pool, { siteId }, async (client) => {
+        const widget = await getEventSignupWidget(client, siteId, widgetId);
+        const signups = await listAllEventSignupsForExport(client, siteId, widgetId);
+        return { widget, signups };
+      });
+      if (!widget) throw notFound("event sign-up widget not found");
+
+      if (query.format === "json") {
+        return signups.map((s) => ({ id: s.id, createdAt: s.createdAt, status: s.status, position: s.position, values: s.values }));
+      }
+
+      const columns = ["id", "createdAt", "status", "position", ...widget.fields.map((f) => f.name)];
+      const rows = signups.map((s) => ({
+        id: s.id,
+        createdAt: s.createdAt.toISOString(),
+        status: s.status,
+        position: s.position === null ? "" : String(s.position),
+        ...Object.fromEntries(Object.entries(s.values).map(([k, v]) => [k, String(v)])),
+      }));
+      reply.type("text/csv; charset=utf-8");
+      reply.header("content-disposition", `attachment; filename="${widgetId}-signups.csv"`);
+      return reply.send(toCsv(columns, rows));
+    },
+  );
+
+  // ---- eventSignup.delete: per-record deletion for PDPA/GDPR (mirrors submission.delete) ----
+  app.delete<{ Params: { siteId: string; widgetId: string; signupId: string } }>(
+    "/v1/sites/:siteId/event-signups/:widgetId/signups/:signupId",
+    async (request) => {
+      const principal = await requirePrincipal(request);
+      const { siteId } = await authorizeSite(pool, principal, request.params.siteId, { minRole: "editor" });
+      const { signupId } = request.params;
+      const existing = await withTenantContext(pool, { siteId }, (client) => getEventSignup(client, siteId, signupId));
+      if (!existing || existing.widgetId !== request.params.widgetId) throw notFound("event sign-up not found");
+      await withTenantContext(pool, { siteId }, (client) => deleteEventSignup(client, siteId, signupId));
+      return { removed: true };
+    },
+  );
+
   // ---- site.outline (R14) ----
   app.get<{ Params: { siteId: string } }>("/v1/sites/:siteId/outline", async (request) => {
     const principal = await requirePrincipal(request);
@@ -1481,6 +1588,22 @@ export function buildApp(deps: AppDeps): FastifyInstance {
               description: props.description,
               confirmLabel: props.confirmLabel,
               successMessage: props.successMessage,
+            });
+          } else if (block.type === EVENTSIGNUP_BLOCK_TYPE) {
+            // KAN-1138: snapshot every EventSignup block's field manifest
+            // and capacity into `event_signup_widgets` — mirrors the Form
+            // and Booking loops immediately above, and for the identical
+            // reason (the runtime resolves a widgetId with no tenant
+            // context at all).
+            const props = block.props as EventSignupProps;
+            await upsertPublishedEventSignupWidget(client, {
+              id: block.id,
+              siteId,
+              heading: props.heading,
+              fields: props.fields,
+              capacity: props.capacity,
+              waitlistEnabled: props.waitlistEnabled,
+              submitLabel: props.submitLabel,
             });
           }
         }
@@ -1829,6 +1952,54 @@ export function buildApp(deps: AppDeps): FastifyInstance {
         throw conflict("that slot is no longer available");
       case "invalid":
         throw validationError("invalid reschedule request", result.issues);
+    }
+  });
+
+  // ---- The runtime API (KAN-1138, ADR-0007/ADR-0010): event sign-ups' own
+  // visitor-facing surface, the same shape as the Form/Booking routes above
+  // — no principal, CORS opened explicitly since a published site's own
+  // origin is never known in advance. Every storage decision lives in
+  // @prefab/runtime's signUpForEvent; this route is just the HTTP-and-CORS
+  // shell around it, exactly what apps/self-host reimplements in its own
+  // shell for R10. ----
+  app.options("/v1/runtime/event-signups/:widgetId/signups", async (_request, reply) => {
+    reply
+      .header("access-control-allow-origin", "*")
+      .header("access-control-allow-methods", "POST, OPTIONS")
+      .header("access-control-allow-headers", "content-type")
+      .status(204)
+      .send();
+  });
+
+  app.post<{ Params: { widgetId: string } }>("/v1/runtime/event-signups/:widgetId/signups", async (request, reply) => {
+    reply.header("access-control-allow-origin", "*");
+    const body = parseBody(SignUpForEventBodySchema, request.body);
+
+    const widget = await eventSignupWidgetStore.getWidget(request.params.widgetId);
+    const site = widget ? await withTenantContext(pool, { siteId: widget.siteId }, (client) => getSite(client, widget.siteId)) : null;
+    const owner = site ? await withTenantContext(pool, {}, (client) => getAccount(client, site.ownerId)) : null;
+
+    const result = await signUpForEvent(
+      { id: newUlid(), widgetId: request.params.widgetId, values: body.values, ip: request.ip, ownerEmail: owner?.email ?? null },
+      { widgets: eventSignupWidgetStore, signups: eventSignupStore, rateLimiter: eventSignupRateLimiter, notifier: eventSignupNotifier },
+    );
+
+    switch (result.status) {
+      case "confirmed":
+        reply.status(201);
+        return { status: "confirmed", id: result.signupId };
+      case "waitlisted":
+        reply.status(201);
+        return { status: "waitlisted", id: result.signupId, position: result.position };
+      case "full":
+        throw conflict("this event is full");
+      case "not_found":
+        throw notFound("event sign-up widget not found");
+      case "invalid":
+        throw validationError("sign-up failed validation", result.issues);
+      case "rate_limited":
+        reply.header("retry-after", String(Math.ceil(result.retryAfterMs / 1000)));
+        throw rateLimited("too many sign-up requests — try again shortly");
     }
   });
 

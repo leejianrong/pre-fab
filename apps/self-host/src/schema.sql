@@ -108,3 +108,35 @@ CREATE TABLE IF NOT EXISTS bookings (
 -- row per (site_id, starts_at) toward the constraint.
 CREATE UNIQUE INDEX IF NOT EXISTS bookings_site_id_starts_at_confirmed_idx ON bookings (site_id, starts_at) WHERE status = 'confirmed';
 CREATE INDEX IF NOT EXISTS bookings_site_id_widget_id_starts_at_idx ON bookings (site_id, widget_id, starts_at);
+
+-- KAN-1138 (R10): mirrors the shape of packages/db/migrations/0009_slice10_events.sql
+-- minus RLS/ulid/jsonb, same reasoning as every other table above. A
+-- self-hosted instance's whole "publish" step for EventSignup blocks is
+-- event-signup-seed.ts, seeding from the bundle's own
+-- `prefab-event-signups.json` exactly the way forms-seed.ts/booking-seed.ts
+-- already do. Capacity concurrency here needs no special handling at all:
+-- better-sqlite3 is synchronous, so a single JS process can never interleave
+-- two sign-ups for the same widget mid-transaction the way two concurrent
+-- Postgres connections can (see event-signup-adapters.ts's own comment).
+CREATE TABLE IF NOT EXISTS event_signup_widgets (
+  id TEXT PRIMARY KEY,
+  site_id TEXT NOT NULL,
+  heading TEXT NOT NULL DEFAULT '',
+  fields TEXT NOT NULL DEFAULT '[]',
+  capacity INTEGER,
+  waitlist_enabled INTEGER NOT NULL DEFAULT 1,
+  submit_label TEXT NOT NULL DEFAULT 'Reserve my spot'
+);
+
+CREATE TABLE IF NOT EXISTS event_signups (
+  id TEXT PRIMARY KEY,
+  widget_id TEXT NOT NULL REFERENCES event_signup_widgets (id) ON DELETE CASCADE,
+  site_id TEXT NOT NULL,
+  values_json TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'confirmed' CHECK (status IN ('confirmed', 'waitlisted')),
+  position INTEGER,
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS event_signups_widget_id_status_idx ON event_signups (widget_id, status);
+CREATE INDEX IF NOT EXISTS event_signups_site_id_widget_id_created_at_idx ON event_signups (site_id, widget_id, created_at DESC, id);
