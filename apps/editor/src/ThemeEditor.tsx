@@ -78,6 +78,7 @@ export function ThemeEditor({
                 onChange={(v) => setField(group, name, v)}
                 className={group === "color" ? "pf-mono-field" : undefined}
                 style={{ flex: 1 }}
+                data-pf-token-input={`${group}.${name}`}
               />
               {group === "color" ? (
                 <span

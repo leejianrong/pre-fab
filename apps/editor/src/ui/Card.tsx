@@ -1,4 +1,4 @@
-import type { CSSProperties, MouseEventHandler, ReactNode } from "react";
+import type { CSSProperties, KeyboardEventHandler, MouseEventHandler, ReactNode } from "react";
 
 /**
  * Hand-rolled — @material/web ships no card component (components.md's
@@ -7,6 +7,12 @@ import type { CSSProperties, MouseEventHandler, ReactNode } from "react";
  * variants), matching this app's existing bordered-list convention; filled
  * (surface-container tint, no border) for callouts that sit inside a
  * panel that's already using the outlined convention for its list.
+ *
+ * `interactive` gets real button semantics (role, tabIndex, Enter/Space) —
+ * a clickable div with no role is invisible to both a keyboard/screen-
+ * reader user and a11y-tree-based automation (e.g. Playwright's
+ * getByRole), and every interactive Card in this app replaced what used to
+ * be a real `<button>`.
  */
 export function Card({
   children,
@@ -31,11 +37,23 @@ export function Card({
       : { border: "none", background: "var(--md-sys-color-surface-container)" }),
     ...style,
   };
+
+  const onKeyDown: KeyboardEventHandler<HTMLDivElement> | undefined = interactive
+    ? (event) => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        event.currentTarget.click();
+      }
+    : undefined;
+
   return (
     <div
       className={["pf-card", interactive && variant === "outlined" ? "pf-card-interactive" : "", className].filter(Boolean).join(" ")}
       style={base}
       onClick={onClick}
+      onKeyDown={onKeyDown}
+      role={interactive ? "button" : undefined}
+      tabIndex={interactive ? 0 : undefined}
     >
       {children}
     </div>

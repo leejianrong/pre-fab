@@ -228,15 +228,15 @@ export function SiteEditor({
       {blogPanelOpen ? <BlogPanel siteId={siteId} onClose={() => setBlogPanelOpen(false)} /> : null}
       {submissionsPanelOpen ? <SubmissionsPanel siteId={siteId} page={page} onClose={() => setSubmissionsPanelOpen(false)} /> : null}
       <Dialog open={celebration !== null} onClose={() => setCelebration(null)} ariaLabel="Site published">
-        <div slot="headline">🎉 Your site is live!</div>
-        <div slot="content" className="pf-supporting-text">
+        <h2 className="pf-dialog-headline">🎉 Your site is live!</h2>
+        <p className="pf-supporting-text">
           {celebration ? (
             <a href={celebration.liveUrl} target="_blank" rel="noreferrer">
               {celebration.liveUrl}
             </a>
           ) : null}
-        </div>
-        <div slot="actions">
+        </p>
+        <div className="pf-dialog-actions">
           <FilledButton onClick={() => setCelebration(null)}>Keep editing</FilledButton>
         </div>
       </Dialog>

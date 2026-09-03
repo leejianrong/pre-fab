@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { PostDocument, PostStatus } from "@prefab/api-client";
 import { api } from "./api.js";
-import { Card, DateField, FilledButton, Option, Select, SideSheet, StatusBadge, TextField } from "./ui/index.js";
+import { Card, DateField, FilledButton, SelectField, SideSheet, StatusBadge, TextField } from "./ui/index.js";
 
 interface DraftForm {
   postId: string | null;
@@ -153,10 +153,10 @@ export function BlogPanel({ siteId, onClose }: { siteId: string; onClose: () => 
         <TextField label="Author" value={form.author} onChange={(v) => setForm({ ...form, author: v })} />
         <TextField label="Tags (comma-separated)" value={form.tags} onChange={(v) => setForm({ ...form, tags: v })} />
         <TextField label="Body (Markdown)" type="textarea" rows={8} value={form.body} onChange={(v) => setForm({ ...form, body: v })} className="pf-mono-field" />
-        <Select label="Status" value={form.status} onChange={(v) => setForm({ ...form, status: v as PostStatus })}>
-          <Option value="draft">Draft</Option>
-          <Option value="published">Published</Option>
-        </Select>
+        <SelectField id="blog-post-status" label="Status" value={form.status} onChange={(v) => setForm({ ...form, status: v as PostStatus })}>
+          <option value="draft">Draft</option>
+          <option value="published">Published</option>
+        </SelectField>
         <FilledButton type="submit" disabled={saving || form.title.trim() === ""}>
           {saving ? "Saving…" : form.postId === null ? "Create post" : "Save post"}
         </FilledButton>

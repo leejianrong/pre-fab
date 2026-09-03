@@ -47,7 +47,7 @@ export async function loginInBrowser(page: Page): Promise<void> {
  */
 export async function openSiteByName(page: Page, siteName: string): Promise<void> {
   await page.getByText(siteName).first().click();
-  await page.waitForSelector('button:has-text("Publish")', { timeout: 15_000 });
+  await page.getByRole("button", { name: /^publish$/i }).waitFor({ timeout: 15_000 });
 }
 
 export function canvasFrame(page: Page) {

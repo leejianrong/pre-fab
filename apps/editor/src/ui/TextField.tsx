@@ -32,6 +32,8 @@ export interface TextFieldProps {
   id?: string;
   className?: string;
   style?: CSSProperties;
+  /** Plain data-* passthrough (e.g. ThemeEditor's per-token test hook) — always a literal attribute, no attribute/property ambiguity. */
+  "data-pf-token-input"?: string;
 }
 
 /**
@@ -63,6 +65,7 @@ export function TextField({
   id,
   className,
   style,
+  "data-pf-token-input": dataPfTokenInput,
 }: TextFieldProps) {
   const ref = useRef<MdTextFieldElement>(null);
 
@@ -91,5 +94,5 @@ export function TextField({
     return () => el.removeEventListener("input", handler);
   }, [onChange]);
 
-  return <md-outlined-text-field ref={ref} id={id} className={className} style={style} />;
+  return <md-outlined-text-field ref={ref} id={id} className={className} style={style} data-pf-token-input={dataPfTokenInput} />;
 }
