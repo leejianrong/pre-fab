@@ -8,6 +8,15 @@ export default defineConfig({
   plugins: [react()],
   server: {
     port: 5173,
+    // Reachable from outside the container in docker-compose.yml's `editor`
+    // service (Vite's default host binding, localhost-only, is invisible to
+    // a mapped port); harmless for native dev too.
+    host: true,
+    // docker-compose.yml's nginx service fronts this dev server at
+    // pre-fab.localhost, so requests arrive with that Host header rather
+    // than localhost — Vite blocks unrecognized hosts by default (DNS
+    // rebinding protection) and returns a bare "Blocked request" 403.
+    allowedHosts: ["pre-fab.localhost"],
     // Proxied rather than called cross-origin: browsers do not reliably
     // treat different ports on `localhost` as the same site for cookie
     // storage (no registrable domain to compare), so a session cookie set

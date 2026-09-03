@@ -1,0 +1,103 @@
+# migrate/api/editor all bind-mount the whole repo, so `pnpm install` runs
+# against whatever node_modules already exists on the host tree (populated
+# by a prior native `pnpm install`, or not). `--config.confirmModulesPurge=false`
+# is required so pnpm doesn't abort waiting for an interactive confirmation it
+# can never get in a container. `--store-dir=/pnpm-store` pins the content-
+# addressable store to the named volume below explicitly — left to its
+# default, pnpm (running as root, no real $HOME in this image) wrote a
+# `.pnpm-store` directory straight into the bind-mounted repo root instead.
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # docker-entrypoint-initdb.d scripts run in filename order, once,
+      # only on first boot against an empty data dir.
+      - ./scripts/db-init.sql:/docker-entrypoint-initdb.d/01-roles.sql:ro
+      - ./scripts/db-init-databases.sql:/docker-entrypoint-initdb.d/02-databases.sql:ro
+    ports:
+      - "${PREFAB_POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  migrate:
+    build:
+      context: .
+      dockerfile: docker/dev.Dockerfile
+    working_dir: /repo
+    volumes:
+      - .:/repo
+      - pnpm-store:/pnpm-store
+    environment:
+      MIGRATE_DATABASE_URL: postgres://prefab:prefab@postgres:5432/prefab_dev
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: sh -c "pnpm install --frozen-lockfile --config.confirmModulesPurge=false --store-dir=/pnpm-store && pnpm --filter @prefab/db run migrate"
+    restart: "no"
+
+  api:
+    build:
+      context: .
+      dockerfile: docker/dev.Dockerfile
+    working_dir: /repo
+    volumes:
+      - .:/repo
+      - pnpm-store:/pnpm-store
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgres://prefab_app:prefab_app@postgres:5432/prefab_dev
+      DATABASE_URL_TEST: postgres://prefab_app:prefab_app@postgres:5432/prefab_test
+      # Host-facing origin: the browser reaches the editor through nginx's
+      # pre-fab.localhost, not a bare localhost:port, so CORS must allow that.
+      EDITOR_ORIGIN: http://pre-fab.localhost:${PREFAB_PROXY_PORT:-5170}
+      API_PORT: "8787"
+    ports:
+      - "${PREFAB_API_HOST_PORT:-8787}:8787"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    command: sh -c "pnpm install --frozen-lockfile --config.confirmModulesPurge=false --store-dir=/pnpm-store && pnpm --filter @prefab/api run dev"
+
+  editor:
+    build:
+      context: .
+      dockerfile: docker/dev.Dockerfile
+    working_dir: /repo
+    volumes:
+      - .:/repo
+      - pnpm-store:/pnpm-store
+    environment:
+      # Container-network hostname: Vite's dev-server proxy runs server-side
+      # (in this container), so it reaches `api` by service name, while the
+      # browser on the host talks to it only through the nginx service below.
+      PREFAB_API_PROXY_TARGET: http://api:8787
+    # No host port published here on purpose — reachable only via nginx's
+    # pre-fab.localhost, so editor's port (5173, a very common Vite default)
+    # can never collide with another project's dev server on this laptop.
+    depends_on:
+      - api
+    command: sh -c "pnpm install --frozen-lockfile --config.confirmModulesPurge=false --store-dir=/pnpm-store && pnpm --filter @prefab/editor run dev"
+
+  # The only service that publishes a host port for the browser-facing UI —
+  # fronts editor at a stable hostname (docker/nginx.conf) so a laptop
+  # running several projects' dev stacks only needs nginx's own port free,
+  # not editor's.
+  nginx:
+    image: nginx:1.27-alpine
+    volumes:
+      - ./docker/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    ports:
+      - "${PREFAB_PROXY_PORT:-5170}:80"
+    depends_on:
+      - editor
+
+volumes:
+  pgdata:
+  pnpm-store:
