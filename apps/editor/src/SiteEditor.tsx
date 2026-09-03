@@ -15,6 +15,7 @@ import { DomainsPanel } from "./DomainsPanel.js";
 import { BlogPanel } from "./BlogPanel.js";
 import { SubmissionsPanel } from "./SubmissionsPanel.js";
 import { api } from "./api.js";
+import { Dialog, FilledButton, IconButton, LoadingIndicator, OutlinedButton, StatusBadge, TextButton, TopAppBar } from "./ui/index.js";
 
 type Status = "idle" | "saving" | "saved" | "publishing" | "published";
 
@@ -152,59 +153,41 @@ export function SiteEditor({
 
   if (error) {
     return (
-      <div style={{ padding: "2rem", fontFamily: "system-ui, sans-serif" }}>
-        <p style={{ color: "#dc2626" }}>{error}</p>
-        <button onClick={onBack}>← Back</button>
+      <div style={{ padding: "2rem" }}>
+        <p className="pf-error-text">{error}</p>
+        <TextButton onClick={onBack}>← Back</TextButton>
       </div>
     );
   }
 
   if (!site || !theme || !page || !config || !initialPuckData) {
-    return <div style={{ padding: "2rem", fontFamily: "system-ui, sans-serif" }}>Loading…</div>;
+    return <LoadingIndicator label="Loading…" />;
   }
 
   return (
-    <div style={{ height: "100vh", display: "flex", flexDirection: "column", fontFamily: "system-ui, sans-serif" }}>
-      <header
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: "1rem",
-          padding: "0.5rem 1rem",
-          borderBottom: "1px solid #e2e8f0",
-          background: "white",
-        }}
-      >
-        <button onClick={onBack} style={{ border: "none", background: "none", cursor: "pointer" }}>
-          ← Sites
-        </button>
-        <strong>{site.name}</strong>
-        <div style={{ flex: 1 }} />
-        <button onClick={() => setThemeEditorOpen(true)} style={{ padding: "0.4rem 0.8rem" }}>
-          Theme
-        </button>
-        <button onClick={() => setDomainsPanelOpen(true)} style={{ padding: "0.4rem 0.8rem" }}>
-          Domains
-        </button>
-        <button onClick={() => setBlogPanelOpen(true)} style={{ padding: "0.4rem 0.8rem" }}>
-          Blog
-        </button>
-        <button onClick={() => setSubmissionsPanelOpen(true)} style={{ padding: "0.4rem 0.8rem" }}>
-          Submissions
-        </button>
-        <button onClick={handleSave} disabled={status === "saving"} style={{ padding: "0.4rem 0.8rem" }}>
-          {status === "saving" ? "Saving…" : "Save"}
-        </button>
-        <button
-          onClick={handlePublish}
-          disabled={status === "publishing"}
-          style={{ padding: "0.4rem 0.8rem", background: "#4f46e5", color: "white", border: "none", borderRadius: "0.25rem" }}
-        >
-          {status === "publishing" ? "Publishing…" : "Publish"}
-        </button>
-        {status === "saved" ? <span style={{ color: "#16a34a", fontSize: "0.875rem" }}>Saved</span> : null}
-        {status === "published" ? <span style={{ color: "#16a34a", fontSize: "0.875rem" }}>Live</span> : null}
-      </header>
+    <div style={{ height: "100vh", display: "flex", flexDirection: "column" }}>
+      <TopAppBar
+        leading={
+          <TextButton onClick={onBack}>← Sites</TextButton>
+        }
+        title={<strong>{site.name}</strong>}
+        actions={
+          <>
+            <OutlinedButton onClick={() => setThemeEditorOpen(true)}>Theme</OutlinedButton>
+            <OutlinedButton onClick={() => setDomainsPanelOpen(true)}>Domains</OutlinedButton>
+            <OutlinedButton onClick={() => setBlogPanelOpen(true)}>Blog</OutlinedButton>
+            <OutlinedButton onClick={() => setSubmissionsPanelOpen(true)}>Submissions</OutlinedButton>
+            <OutlinedButton onClick={handleSave} disabled={status === "saving"}>
+              {status === "saving" ? "Saving…" : "Save"}
+            </OutlinedButton>
+            <FilledButton onClick={handlePublish} disabled={status === "publishing"}>
+              {status === "publishing" ? "Publishing…" : "Publish"}
+            </FilledButton>
+            {status === "saved" ? <StatusBadge tone="positive">Saved</StatusBadge> : null}
+            {status === "published" ? <StatusBadge tone="positive">Live</StatusBadge> : null}
+          </>
+        }
+      />
       {showFirstRunBanner ? (
         <div
           style={{
@@ -212,22 +195,19 @@ export function SiteEditor({
             alignItems: "center",
             gap: "0.75rem",
             padding: "0.5rem 1rem",
-            background: "#eef2ff",
-            borderBottom: "1px solid #c7d2fe",
-            fontSize: "0.875rem",
-            color: "#3730a3",
+            background: "var(--md-sys-color-tertiary-container)",
+            color: "var(--md-sys-color-on-tertiary-container)",
+            borderBottom: "1px solid var(--md-sys-color-outline-variant)",
+            fontFamily: "var(--md-ref-typeface-plain)",
+            fontSize: "var(--md-sys-typescale-body-medium-size)",
           }}
         >
           <span style={{ flex: 1 }}>
             👋 Try editing the heading below, then hit <strong>Publish</strong> to make your site live.
           </span>
-          <button
-            onClick={() => setShowFirstRunBanner(false)}
-            aria-label="Dismiss"
-            style={{ border: "none", background: "none", cursor: "pointer", color: "#3730a3" }}
-          >
+          <IconButton aria-label="Dismiss" onClick={() => setShowFirstRunBanner(false)}>
             ✕
-          </button>
+          </IconButton>
         </div>
       ) : null}
       <UnknownBlockList blocks={unknownBlocks} />
@@ -247,36 +227,19 @@ export function SiteEditor({
       {domainsPanelOpen ? <DomainsPanel siteId={siteId} onClose={() => setDomainsPanelOpen(false)} /> : null}
       {blogPanelOpen ? <BlogPanel siteId={siteId} onClose={() => setBlogPanelOpen(false)} /> : null}
       {submissionsPanelOpen ? <SubmissionsPanel siteId={siteId} page={page} onClose={() => setSubmissionsPanelOpen(false)} /> : null}
-      {celebration ? (
-        <div
-          role="dialog"
-          aria-label="Site published"
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(15, 23, 42, 0.5)",
-            display: "grid",
-            placeItems: "center",
-            zIndex: 60,
-          }}
-        >
-          <div style={{ background: "white", borderRadius: "0.75rem", padding: "2rem", maxWidth: 420, textAlign: "center", display: "grid", gap: "0.75rem" }}>
-            <div style={{ fontSize: "2.5rem" }}>🎉</div>
-            <h2 style={{ margin: 0, fontSize: "1.25rem" }}>Your site is live!</h2>
-            <p style={{ margin: 0, color: "#64748b", fontSize: "0.9375rem" }}>
-              <a href={celebration.liveUrl} target="_blank" rel="noreferrer">
-                {celebration.liveUrl}
-              </a>
-            </p>
-            <button
-              onClick={() => setCelebration(null)}
-              style={{ padding: "0.5rem 1.5rem", background: "#4f46e5", color: "white", border: "none", borderRadius: "0.375rem", justifySelf: "center", cursor: "pointer" }}
-            >
-              Keep editing
-            </button>
-          </div>
+      <Dialog open={celebration !== null} onClose={() => setCelebration(null)} ariaLabel="Site published">
+        <div slot="headline">🎉 Your site is live!</div>
+        <div slot="content" className="pf-supporting-text">
+          {celebration ? (
+            <a href={celebration.liveUrl} target="_blank" rel="noreferrer">
+              {celebration.liveUrl}
+            </a>
+          ) : null}
         </div>
-      ) : null}
+        <div slot="actions">
+          <FilledButton onClick={() => setCelebration(null)}>Keep editing</FilledButton>
+        </div>
+      </Dialog>
     </div>
   );
 }

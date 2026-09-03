@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { ThemeTokens } from "@prefab/api-client";
+import { FilledButton, SideSheet, TextField } from "./ui/index.js";
 
 const GROUP_LABELS: Record<keyof ThemeTokens, string> = {
   color: "Colors",
@@ -27,6 +28,10 @@ function cloneTokens(tokens: ThemeTokens): ThemeTokens {
  * every block with no document mutation") — SiteEditor.tsx's Puck `config`
  * is recomputed from the *theme*, not from `data`, so saving new tokens
  * re-renders every existing block through the same document, unchanged.
+ *
+ * These are the SITE's own theme tokens (ADR-0002) — a different color
+ * system entirely from the editor chrome's own MD3 tokens this panel is
+ * rendered with. The two are deliberately unrelated.
  */
 export function ThemeEditor({
   tokens,
@@ -59,102 +64,44 @@ export function ThemeEditor({
   }
 
   return (
-    <div
-      role="dialog"
-      aria-label="Theme editor"
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(15, 23, 42, 0.4)",
-        display: "flex",
-        justifyContent: "flex-end",
-        zIndex: 50,
-      }}
-    >
-      <div
-        style={{
-          width: "360px",
-          maxWidth: "100%",
-          height: "100%",
-          background: "white",
-          overflowY: "auto",
-          padding: "1rem",
-          fontFamily: "system-ui, sans-serif",
-          boxShadow: "-2px 0 12px rgba(0,0,0,0.1)",
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", marginBottom: "1rem" }}>
-          <h2 style={{ fontSize: "1.125rem", margin: 0, flex: 1 }}>Theme</h2>
-          <button onClick={onClose} aria-label="Close theme editor" style={{ border: "none", background: "none", cursor: "pointer" }}>
-            ✕
-          </button>
-        </div>
+    <SideSheet title="Theme" ariaLabel="Theme editor" closeLabel="Close theme editor" onClose={onClose} width={360}>
+      {GROUPS.map((group) => (
+        <fieldset key={group} style={{ border: "none", padding: 0, margin: 0, display: "grid", gap: "0.75rem" }}>
+          <legend className="pf-subsection-title" style={{ padding: 0, marginBottom: "0.25rem" }}>
+            {GROUP_LABELS[group]}
+          </legend>
+          {Object.entries(draft[group]).map(([name, value]) => (
+            <div key={name} style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+              <TextField
+                label={name}
+                value={value}
+                onChange={(v) => setField(group, name, v)}
+                className={group === "color" ? "pf-mono-field" : undefined}
+                style={{ flex: 1 }}
+              />
+              {group === "color" ? (
+                <span
+                  aria-hidden="true"
+                  style={{
+                    width: "1.5rem",
+                    height: "1.5rem",
+                    borderRadius: "var(--md-sys-shape-corner-extra-small)",
+                    border: "1px solid var(--md-sys-color-outline-variant)",
+                    background: value,
+                    flexShrink: 0,
+                  }}
+                />
+              ) : null}
+            </div>
+          ))}
+        </fieldset>
+      ))}
 
-        {GROUPS.map((group) => (
-          <fieldset key={group} style={{ border: "none", padding: 0, marginBottom: "1.25rem" }}>
-            <legend style={{ fontWeight: 600, fontSize: "0.875rem", marginBottom: "0.5rem" }}>{GROUP_LABELS[group]}</legend>
-            {Object.entries(draft[group]).map(([name, value]) => (
-              <label key={name} style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.4rem" }}>
-                <span style={{ flex: "0 0 40%", fontSize: "0.8125rem", color: "#475569" }}>{name}</span>
-                {group === "color" ? (
-                  <input
-                    type="text"
-                    value={value}
-                    onChange={(e) => setField(group, name, e.target.value)}
-                    data-pf-token-input={`${group}.${name}`}
-                    style={{
-                      flex: 1,
-                      padding: "0.25rem 0.4rem",
-                      border: "1px solid #e2e8f0",
-                      borderRadius: "0.25rem",
-                      fontFamily: "monospace",
-                    }}
-                  />
-                ) : (
-                  <input
-                    type="text"
-                    value={value}
-                    onChange={(e) => setField(group, name, e.target.value)}
-                    data-pf-token-input={`${group}.${name}`}
-                    style={{ flex: 1, padding: "0.25rem 0.4rem", border: "1px solid #e2e8f0", borderRadius: "0.25rem" }}
-                  />
-                )}
-                {group === "color" ? (
-                  <span
-                    aria-hidden="true"
-                    style={{
-                      width: "1.25rem",
-                      height: "1.25rem",
-                      borderRadius: "0.25rem",
-                      border: "1px solid #e2e8f0",
-                      background: value,
-                      flexShrink: 0,
-                    }}
-                  />
-                ) : null}
-              </label>
-            ))}
-          </fieldset>
-        ))}
+      {error ? <p className="pf-error-text">{error}</p> : null}
 
-        {error ? <p style={{ color: "#dc2626", fontSize: "0.8125rem" }}>{error}</p> : null}
-
-        <button
-          onClick={handleSave}
-          disabled={saving}
-          style={{
-            width: "100%",
-            padding: "0.5rem",
-            background: "#4f46e5",
-            color: "white",
-            border: "none",
-            borderRadius: "0.25rem",
-            cursor: "pointer",
-          }}
-        >
-          {saving ? "Saving…" : "Save theme"}
-        </button>
-      </div>
-    </div>
+      <FilledButton onClick={handleSave} disabled={saving} style={{ width: "100%" }}>
+        {saving ? "Saving…" : "Save theme"}
+      </FilledButton>
+    </SideSheet>
   );
 }

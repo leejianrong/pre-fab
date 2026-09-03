@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { PostDocument, PostStatus } from "@prefab/api-client";
 import { api } from "./api.js";
+import { Card, DateField, FilledButton, Option, Select, SideSheet, StatusBadge, TextField } from "./ui/index.js";
 
 interface DraftForm {
   postId: string | null;
@@ -115,129 +116,52 @@ export function BlogPanel({ siteId, onClose }: { siteId: string; onClose: () => 
   }
 
   return (
-    <div
-      role="dialog"
-      aria-label="Blog posts"
-      style={{ position: "fixed", inset: 0, background: "rgba(15, 23, 42, 0.4)", display: "flex", justifyContent: "flex-end", zIndex: 50 }}
-    >
-      <div
-        style={{
-          width: "480px",
-          maxWidth: "100%",
-          height: "100%",
-          background: "white",
-          overflowY: "auto",
-          padding: "1rem",
-          fontFamily: "system-ui, sans-serif",
-          boxShadow: "-2px 0 12px rgba(0,0,0,0.1)",
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", marginBottom: "1rem" }}>
-          <h2 style={{ fontSize: "1.125rem", margin: 0, flex: 1 }}>Blog</h2>
-          <button onClick={onClose} aria-label="Close blog panel" style={{ border: "none", background: "none", cursor: "pointer" }}>
-            ✕
-          </button>
-        </div>
+    <SideSheet title="Blog" ariaLabel="Blog posts" closeLabel="Close blog panel" onClose={onClose} width={480}>
+      {posts === null ? (
+        <p className="pf-supporting-text">Loading…</p>
+      ) : (
+        <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "grid", gap: "0.4rem" }}>
+          {posts.map((post) => (
+            <li key={post.id}>
+              <Card
+                interactive
+                variant={form.postId === post.id ? "filled" : "outlined"}
+                onClick={() => selectPost(post)}
+                style={{ padding: "0.6rem", display: "flex", alignItems: "center", gap: "0.5rem" }}
+              >
+                <strong style={{ flex: 1 }}>{post.title}</strong>
+                <StatusBadge tone={post.status === "published" ? "positive" : "neutral"}>{post.status}</StatusBadge>
+              </Card>
+            </li>
+          ))}
+        </ul>
+      )}
 
-        {posts === null ? (
-          <p>Loading…</p>
-        ) : (
-          <ul style={{ listStyle: "none", padding: 0, margin: "0 0 1rem 0", display: "grid", gap: "0.4rem" }}>
-            {posts.map((post) => (
-              <li key={post.id}>
-                <button
-                  onClick={() => selectPost(post)}
-                  style={{
-                    width: "100%",
-                    textAlign: "left",
-                    padding: "0.5rem",
-                    border: "1px solid #e2e8f0",
-                    borderRadius: "0.375rem",
-                    background: form.postId === post.id ? "#eef2ff" : "white",
-                    cursor: "pointer",
-                  }}
-                >
-                  <strong>{post.title}</strong>{" "}
-                  <span style={{ fontSize: "0.75rem", color: post.status === "published" ? "#16a34a" : "#b45309" }}>
-                    ({post.status})
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
+      <FilledButton type="button" onClick={startNewPost}>
+        + New post
+      </FilledButton>
 
-        <button onClick={startNewPost} style={{ marginBottom: "0.75rem", padding: "0.3rem 0.6rem" }}>
-          + New post
-        </button>
-
-        <form onSubmit={save} style={{ display: "grid", gap: "0.5rem" }}>
-          <label htmlFor="blog-post-title">Title</label>
-          <input
-            id="blog-post-title"
-            value={form.title}
-            onChange={(e) => setForm({ ...form, title: e.target.value })}
-            required
-            style={{ width: "100%", padding: "0.4rem", border: "1px solid #e2e8f0", borderRadius: "0.375rem" }}
-          />
-          <label htmlFor="blog-post-slug">Slug (optional — generated from title if left blank)</label>
-          <input
-            id="blog-post-slug"
-            value={form.slug}
-            onChange={(e) => setForm({ ...form, slug: e.target.value })}
-            placeholder="auto"
-            style={{ width: "100%", padding: "0.4rem", border: "1px solid #e2e8f0", borderRadius: "0.375rem" }}
-          />
-          <label htmlFor="blog-post-date">Date</label>
-          <input
-            id="blog-post-date"
-            type="date"
-            value={form.date}
-            onChange={(e) => setForm({ ...form, date: e.target.value })}
-            style={{ width: "100%", padding: "0.4rem", border: "1px solid #e2e8f0", borderRadius: "0.375rem" }}
-          />
-          <label htmlFor="blog-post-author">Author</label>
-          <input
-            id="blog-post-author"
-            value={form.author}
-            onChange={(e) => setForm({ ...form, author: e.target.value })}
-            style={{ width: "100%", padding: "0.4rem", border: "1px solid #e2e8f0", borderRadius: "0.375rem" }}
-          />
-          <label htmlFor="blog-post-tags">Tags (comma-separated)</label>
-          <input
-            id="blog-post-tags"
-            value={form.tags}
-            onChange={(e) => setForm({ ...form, tags: e.target.value })}
-            style={{ width: "100%", padding: "0.4rem", border: "1px solid #e2e8f0", borderRadius: "0.375rem" }}
-          />
-          <label htmlFor="blog-post-body">Body (Markdown)</label>
-          <textarea
-            id="blog-post-body"
-            value={form.body}
-            onChange={(e) => setForm({ ...form, body: e.target.value })}
-            rows={8}
-            style={{ width: "100%", padding: "0.4rem", border: "1px solid #e2e8f0", borderRadius: "0.375rem", fontFamily: "monospace" }}
-          />
-          <label htmlFor="blog-post-status">Status</label>
-          <select
-            id="blog-post-status"
-            value={form.status}
-            onChange={(e) => setForm({ ...form, status: e.target.value as PostStatus })}
-            style={{ width: "100%", padding: "0.4rem", border: "1px solid #e2e8f0", borderRadius: "0.375rem" }}
-          >
-            <option value="draft">Draft</option>
-            <option value="published">Published</option>
-          </select>
-          <button
-            type="submit"
-            disabled={saving || form.title.trim() === ""}
-            style={{ padding: "0.5rem", background: "#4f46e5", color: "white", border: "none", borderRadius: "0.375rem" }}
-          >
-            {saving ? "Saving…" : form.postId === null ? "Create post" : "Save post"}
-          </button>
-          {error ? <p style={{ color: "#dc2626", fontSize: "0.8125rem" }}>{error}</p> : null}
-        </form>
-      </div>
-    </div>
+      <form onSubmit={save} style={{ display: "grid", gap: "0.75rem" }}>
+        <TextField label="Title" value={form.title} onChange={(v) => setForm({ ...form, title: v })} required />
+        <TextField
+          label="Slug"
+          value={form.slug}
+          onChange={(v) => setForm({ ...form, slug: v })}
+          supportingText="Optional — generated from title if left blank"
+        />
+        <DateField id="blog-post-date" label="Date" value={form.date} onChange={(v) => setForm({ ...form, date: v })} />
+        <TextField label="Author" value={form.author} onChange={(v) => setForm({ ...form, author: v })} />
+        <TextField label="Tags (comma-separated)" value={form.tags} onChange={(v) => setForm({ ...form, tags: v })} />
+        <TextField label="Body (Markdown)" type="textarea" rows={8} value={form.body} onChange={(v) => setForm({ ...form, body: v })} className="pf-mono-field" />
+        <Select label="Status" value={form.status} onChange={(v) => setForm({ ...form, status: v as PostStatus })}>
+          <Option value="draft">Draft</Option>
+          <Option value="published">Published</Option>
+        </Select>
+        <FilledButton type="submit" disabled={saving || form.title.trim() === ""}>
+          {saving ? "Saving…" : form.postId === null ? "Create post" : "Save post"}
+        </FilledButton>
+        {error ? <p className="pf-error-text">{error}</p> : null}
+      </form>
+    </SideSheet>
   );
 }
