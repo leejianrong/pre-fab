@@ -85,6 +85,17 @@ services:
       migrate:
         condition: service_completed_successfully
     command: sh -c "pnpm install --filter '!@prefab/self-host' --frozen-lockfile --config.confirmModulesPurge=false --store-dir=/pnpm-store && pnpm --filter @prefab/api run dev"
+    # editor's own `pnpm install` shares every node_modules_* volume above
+    # with this container's: with no healthcheck, editor's `depends_on: api`
+    # only waits for this container to *start*, so on a slow/cold host both
+    # installs can run at once and corrupt each other's pnpm temp files
+    # (`ENOENT ... node_modules/.pnpm/lock.yaml.<random>`). Node 22 ships a
+    # native `fetch`, so this needs nothing beyond the base image.
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:8787/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
 
   editor:
     <<: *dev-service
@@ -96,8 +107,13 @@ services:
     # No host port published here on purpose — reachable only via nginx's
     # pre-fab.localhost, so editor's port (5173, a very common Vite default)
     # can never collide with another project's dev server on this laptop.
+    # condition: service_healthy, not the default service_started — api's
+    # healthcheck above only turns healthy once its own `pnpm install` has
+    # finished, which is what actually serializes the two installs (see the
+    # comment on api's healthcheck).
     depends_on:
-      - api
+      api:
+        condition: service_healthy
     command: sh -c "pnpm install --filter '!@prefab/self-host' --frozen-lockfile --config.confirmModulesPurge=false --store-dir=/pnpm-store && pnpm --filter @prefab/editor run dev"
 
   # The only service that publishes a host port for the browser-facing UI —
