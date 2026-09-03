@@ -77,6 +77,12 @@ import {
   listAllEventSignupsForExport,
   getEventSignup,
   deleteEventSignup,
+  upsertPublishedPaymentBlock,
+  getStripeConnection,
+  createStripeConnection,
+  deleteStripeConnection,
+  updatePaymentRecordStatus,
+  listPaymentRecordsForSite,
   type Pool,
   type PoolClient,
   type SiteRow,
@@ -103,9 +109,11 @@ import {
   FORM_BLOCK_TYPE,
   BOOKING_BLOCK_TYPE,
   EVENTSIGNUP_BLOCK_TYPE,
+  PAYMENT_BLOCK_TYPE,
   type FormProps,
   type BookingProps,
   type EventSignupProps,
+  type PaymentProps,
 } from "@prefab/blocks";
 import { buildSiteBundle } from "@prefab/publish";
 import { TEMPLATE_MANIFESTS, loadTemplateCheckout } from "@prefab/templates/server";
@@ -119,6 +127,7 @@ import {
   cancelBookingByToken,
   rescheduleBookingByToken,
   signUpForEvent,
+  createPaymentCheckout,
   type TurnstileVerifier,
 } from "@prefab/runtime";
 import { ApiError, conflict, forbidden, notFound, planRequired, rateLimited, unauthorized, validationError } from "./errors.js";
@@ -159,6 +168,13 @@ import {
 } from "./lib/booking-adapters.js";
 import { EmailBookingNotifier } from "./lib/booking-notifier.js";
 import { renderManageBookingPage } from "./lib/booking-manage-page.js";
+import { createTenantStripeProvider, FakeTenantStripeProvider, type TenantStripeProvider } from "./lib/tenant-stripe-provider.js";
+import {
+  createPostgresPaymentBlockStore,
+  createPostgresStripeConnectionStore,
+  createPostgresPaymentRecordStore,
+} from "./lib/payment-adapters.js";
+import { EmailPaymentNotifier } from "./lib/payment-notifier.js";
 import {
   CreatePageBodySchema,
   CreatePostBodySchema,
@@ -194,6 +210,9 @@ import {
   ListEventSignupsQuerySchema,
   ExportEventSignupsQuerySchema,
   SignUpForEventBodySchema,
+  ConnectStripeBodySchema,
+  AdvanceFakeStripeConnectBodySchema,
+  ListPaymentsQuerySchema,
 } from "./schemas.js";
 
 export interface AppDeps {
@@ -223,6 +242,12 @@ export interface AppDeps {
   bookingEmailSender?: EmailSender;
   /** KAN-1138 — the sender used for event sign-up owner-notification emails specifically, same reasoning as formEmailSender/bookingEmailSender. Defaults to createEmailSender()'s env-based choice. */
   eventSignupEmailSender?: EmailSender;
+  /** Slice 10 / KAN-1137 (ADR-0005) — a tenant's OWN Stripe, never the platform's (see stripeProvider above, a completely different integration). Defaults to createTenantStripeProvider()'s env-based choice (the fake unless STRIPE_CONNECT_CLIENT_ID and STRIPE_SECRET_KEY are both configured). Injectable so a test (or the dev-only advance endpoint) can reach the exact same fake instance the routes use. */
+  tenantStripeProvider?: TenantStripeProvider;
+  /** Stripe Connect's own webhook signing secret — a separate registration/secret from stripeWebhookSecret above. Defaults to STRIPE_CONNECT_WEBHOOK_SECRET. */
+  stripeConnectWebhookSecret?: string;
+  /** Slice 10 — the sender used for "you've been paid" owner notifications specifically, same reasoning as formEmailSender/bookingEmailSender. Defaults to createEmailSender()'s env-based choice. */
+  paymentEmailSender?: EmailSender;
 }
 
 function parseBody<T>(schema: z.ZodType<T>, body: unknown): T {
@@ -369,6 +394,16 @@ export function buildApp(deps: AppDeps): FastifyInstance {
       return key.startsWith("site:") ? eventSignupSiteRateLimiter.consume(key) : eventSignupIpRateLimiter.consume(key);
     },
   };
+  // Slice 10 / KAN-1137's runtime API (ADR-0005/ADR-0007/ADR-0010) — the
+  // same "apps/api is the one place allowed to wire @prefab/runtime's
+  // storage interfaces to Postgres (and a real payment provider)"
+  // discipline as forms/bookings above.
+  const tenantStripeProvider = deps.tenantStripeProvider ?? createTenantStripeProvider();
+  const stripeConnectWebhookSecret = deps.stripeConnectWebhookSecret ?? process.env.STRIPE_CONNECT_WEBHOOK_SECRET ?? "";
+  const paymentBlockStore = createPostgresPaymentBlockStore(pool);
+  const stripeConnectionStore = createPostgresStripeConnectionStore(pool);
+  const paymentRecordStore = createPostgresPaymentRecordStore(pool);
+  const paymentCheckoutDeps = { paymentBlocks: paymentBlockStore, stripeConnections: stripeConnectionStore, paymentRecords: paymentRecordStore, tenantStripe: tenantStripeProvider };
   // Default is 1 MiB — too small for asset.upload's JSON+base64 body (up
   // to ~10.9 MiB for an 8 MiB file at base64's ~4/3 expansion). Comfortably
   // above that so a legitimately-sized upload never hits Fastify's own
@@ -382,6 +417,8 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   const bookingNotifier = new EmailBookingNotifier(bookingEmailSender);
   const eventSignupEmailSender = deps.eventSignupEmailSender ?? createEmailSender(email);
   const eventSignupNotifier = new EmailEventSignupNotifier(eventSignupEmailSender);
+  const paymentEmailSender = deps.paymentEmailSender ?? createEmailSender(email);
+  const paymentNotifier = new EmailPaymentNotifier(paymentEmailSender);
 
   // Stripe webhook signature verification needs the exact raw request
   // bytes (Stripe-Signature is an HMAC over the literal body, not the
@@ -1523,6 +1560,145 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     },
   );
 
+  // ---- stripe.connect / stripe.disconnect / stripe.status (Slice 10 /
+  // KAN-1137, ADR-0005) — owner-only (billing-adjacent credential
+  // management, same minRole as calendar.connect/token.create). This is
+  // the TENANT's own Stripe account (bring-your-own), never the platform's
+  // (Slice 8's stripeProvider above) — "connect" hands back a real access
+  // token only for a RealTenantStripeProvider (UNVERIFIED — see
+  // tenant-stripe-provider.ts's module comment); the fake always succeeds
+  // synchronously, no real OAuth consent screen required. ----
+  app.post<{ Params: { siteId: string } }>("/v1/sites/:siteId/stripe", async (request) => {
+    const principal = await requirePrincipal(request);
+    const { siteId } = await authorizeSite(pool, principal, request.params.siteId, { minRole: "owner" });
+    const body = parseBody(ConnectStripeBodySchema, request.body);
+    const tokens = await tenantStripeProvider.connect({ authorizationCode: body.authorizationCode });
+    const connection = await withTenantContext(pool, { siteId }, (client) =>
+      createStripeConnection(client, { id: newUlid(), siteId, stripeAccountId: tokens.stripeAccountId, accessToken: tokens.accessToken }),
+    );
+    return { id: connection.id, stripeAccountId: connection.stripeAccountId, status: connection.status };
+  });
+
+  app.delete<{ Params: { siteId: string } }>("/v1/sites/:siteId/stripe", async (request) => {
+    const principal = await requirePrincipal(request);
+    const { siteId } = await authorizeSite(pool, principal, request.params.siteId, { minRole: "owner" });
+    await withTenantContext(pool, { siteId }, (client) => deleteStripeConnection(client, siteId));
+    return { removed: true };
+  });
+
+  // Never returns the access token — the dashboard only needs
+  // stripeAccountId/status to render a connected/disconnected badge, same
+  // discipline as calendar.status.
+  app.get<{ Params: { siteId: string } }>("/v1/sites/:siteId/stripe", async (request) => {
+    const principal = await requirePrincipal(request);
+    const { siteId } = await authorizeSite(pool, principal, request.params.siteId);
+    const connection = await withTenantContext(pool, { siteId }, (client) => getStripeConnection(client, siteId));
+    if (!connection) return null;
+    return { id: connection.id, stripeAccountId: connection.stripeAccountId, status: connection.status };
+  });
+
+  // ---- payment.list: owner-facing read of a Payment block's own checkout
+  // history — mirrors submission.list exactly. ----
+  app.get<{ Params: { siteId: string; blockId: string } }>("/v1/sites/:siteId/payment-blocks/:blockId/payments", async (request) => {
+    const principal = await requirePrincipal(request);
+    const { siteId } = await authorizeSite(pool, principal, request.params.siteId);
+    const query = parseQuery(ListPaymentsQuerySchema, request.query);
+    return withTenantContext(pool, { siteId }, (client) => listPaymentRecordsForSite(client, siteId, request.params.blockId, query));
+  });
+
+  // ---- Dev-only: drive the fake tenant-Stripe provider's state, the same
+  // "dev-only bootstrap, not a product mutation" pattern as
+  // /v1/dev/calendar/:siteId/advance and the EXISTING (unrelated)
+  // /v1/dev/stripe/:accountId/advance — simulates a checkout.session.
+  // completed webhook arriving, with no real Stripe account in this
+  // environment. Keyed by siteId (not by session id) so a test already
+  // holding a siteId can drive this with no extra lookup, exactly like
+  // calendar's own advance route. ----
+  app.post<{ Params: { siteId: string } }>("/v1/dev/stripe-connect/:siteId/advance", async (request) => {
+    if (!(tenantStripeProvider instanceof FakeTenantStripeProvider)) {
+      throw notFound("the fake tenant-Stripe provider is not in use — nothing to advance");
+    }
+    const { siteId } = request.params;
+    const body = parseBody(AdvanceFakeStripeConnectBodySchema, request.body);
+
+    const updated = await withTenantContext(pool, { siteId }, (client) =>
+      updatePaymentRecordStatus(client, siteId, body.sessionId, {
+        status: "completed",
+        stripePaymentIntentId: `fake_pi_${newUlid()}`,
+        buyerEmail: body.buyerEmail ?? null,
+      }),
+    );
+    if (!updated) throw notFound("no payment record for that session id on this site");
+
+    const site = await withTenantContext(pool, { siteId }, (client) => getSite(client, siteId));
+    const owner = site ? await withTenantContext(pool, {}, (client) => getAccount(client, site.ownerId)) : null;
+    if (owner?.email) {
+      await paymentNotifier
+        .notifyCompleted({ ownerEmail: owner.email, amount: updated.amount, currency: updated.currency, buyerEmail: updated.buyerEmail })
+        .catch(() => {});
+    }
+
+    return { record: updated };
+  });
+
+  // ---- Real Stripe Connect webhooks (Slice 10 / KAN-1137): the real,
+  // signature-verified inbound path — UNVERIFIED against a live Stripe
+  // account (see tenant-stripe-provider.ts's module comment). Distinct
+  // registration/secret from Slice 8's own /v1/webhooks/stripe (a
+  // completely different Stripe integration — see that route's own
+  // comment). No tenant context and no siteId in this route's own URL at
+  // all (unlike the dev-advance route above), so this relies on
+  // `client_reference_id`/`metadata.siteId`, which
+  // RealTenantStripeProvider.createCheckoutSession threads through
+  // Checkout for exactly this reason (see CreateCheckoutSessionInput's own
+  // comment) — the same "carry an identifier through the event you'll
+  // need it back from" mechanism Slice 8's own webhook already uses for
+  // `accountId`. ----
+  app.post("/v1/webhooks/stripe-connect", async (request, reply) => {
+    const rawBody = (request as FastifyRequest & { rawBody?: Buffer }).rawBody ?? Buffer.from("");
+    const signature = request.headers["stripe-signature"] as string | undefined;
+
+    let event;
+    try {
+      event = tenantStripeProvider.constructEvent(rawBody, signature, stripeConnectWebhookSecret);
+    } catch (error) {
+      throw validationError(error instanceof Error ? error.message : "invalid webhook payload");
+    }
+
+    if (event.type === "checkout.session.completed") {
+      const object = event.data.object as {
+        id?: string;
+        payment_intent?: string;
+        customer_details?: { email?: string };
+        metadata?: { siteId?: string };
+      };
+      const siteId = object.metadata?.siteId;
+      if (siteId && object.id) {
+        const updated = await withTenantContext(pool, { siteId }, (client) =>
+          updatePaymentRecordStatus(client, siteId, object.id!, {
+            status: "completed",
+            stripePaymentIntentId: object.payment_intent ?? null,
+            buyerEmail: object.customer_details?.email ?? null,
+          }),
+        );
+        if (updated) {
+          const site = await withTenantContext(pool, { siteId }, (client) => getSite(client, siteId));
+          const owner = site ? await withTenantContext(pool, {}, (client) => getAccount(client, site.ownerId)) : null;
+          if (owner?.email) {
+            await paymentNotifier
+              .notifyCompleted({ ownerEmail: owner.email, amount: updated.amount, currency: updated.currency, buyerEmail: updated.buyerEmail })
+              .catch(() => {});
+          }
+        }
+      }
+      reply.status(200);
+      return { ok: true };
+    }
+
+    reply.status(200);
+    return { ok: true };
+  });
+
   // ---- site.outline (R14) ----
   app.get<{ Params: { siteId: string } }>("/v1/sites/:siteId/outline", async (request) => {
     const principal = await requirePrincipal(request);
@@ -1604,6 +1780,24 @@ export function buildApp(deps: AppDeps): FastifyInstance {
               capacity: props.capacity,
               waitlistEnabled: props.waitlistEnabled,
               submitLabel: props.submitLabel,
+            });
+          } else if (block.type === PAYMENT_BLOCK_TYPE) {
+            // Slice 10 / KAN-1137: snapshot every Payment block's own props
+            // into `payment_blocks` — mirrors the Form/Booking loops above,
+            // and for the identical reason (the runtime resolves a blockId
+            // with no tenant context at all, and must never trust a
+            // visitor-supplied amount — see 0009_slice10_payments.sql's
+            // header comment).
+            const props = block.props as PaymentProps;
+            await upsertPublishedPaymentBlock(client, {
+              id: block.id,
+              siteId,
+              heading: props.heading,
+              description: props.description,
+              buttonLabel: props.buttonLabel,
+              amount: props.amount,
+              currency: props.currency,
+              successMessage: props.successMessage,
             });
           }
         }
@@ -2000,6 +2194,59 @@ export function buildApp(deps: AppDeps): FastifyInstance {
       case "rate_limited":
         reply.header("retry-after", String(Math.ceil(result.retryAfterMs / 1000)));
         throw rateLimited("too many sign-up requests — try again shortly");
+    }
+  });
+
+  // ---- The runtime API (Slice 10 / KAN-1137, ADR-0005/ADR-0007/ADR-0010):
+  // the Payment block's own visitor-facing surface, the same shape as the
+  // Form/Booking routes above — no principal, CORS opened explicitly since
+  // a published site's own origin is never known in advance. No request
+  // body at all: amount/currency are resolved from the block's own
+  // publish-safe snapshot (`payment_blocks`), never from the visitor's own
+  // request, or a tampered request could pay whatever it wants. Every
+  // storage and provider decision lives in @prefab/runtime's
+  // createPaymentCheckout; this route is just the HTTP-and-CORS shell
+  // around it, exactly what apps/self-host reimplements in its own shell
+  // for R10. successUrl/cancelUrl are derived from the visitor's own
+  // Referer header (the page the checkout button was clicked from) rather
+  // than accepted as body input, for the same "never trust visitor input
+  // for anything this route acts on" reasoning as the missing amount. ----
+  app.options("/v1/runtime/payment-blocks/:blockId/checkout", async (_request, reply) => {
+    reply.header("access-control-allow-origin", "*").header("access-control-allow-methods", "POST, OPTIONS").status(204).send();
+  });
+
+  app.post<{ Params: { blockId: string } }>("/v1/runtime/payment-blocks/:blockId/checkout", async (request, reply) => {
+    reply.header("access-control-allow-origin", "*");
+    const { blockId } = request.params;
+    const referer = (request.headers.referer as string | undefined) ?? (request.headers.origin as string | undefined) ?? runtimeApiUrl ?? "http://localhost/";
+
+    function returnUrl(outcome: "success" | "cancel"): string {
+      let url: URL;
+      try {
+        url = new URL(referer);
+      } catch {
+        url = new URL("http://localhost/");
+      }
+      url.searchParams.set("pf_payment", outcome);
+      url.searchParams.set("pf_payment_block", blockId);
+      return url.toString();
+    }
+
+    const result = await createPaymentCheckout(
+      { id: newUlid(), blockId, successUrl: returnUrl("success"), cancelUrl: returnUrl("cancel") },
+      paymentCheckoutDeps,
+    );
+
+    switch (result.status) {
+      case "created":
+        reply.status(201);
+        return { url: result.url };
+      case "not_found":
+        throw notFound("payment block not found");
+      case "no_connection":
+        throw notFound("this site has not connected a Stripe account");
+      case "provider_error":
+        throw new ApiError("internal", "the payment provider could not create a checkout session");
     }
   });
 

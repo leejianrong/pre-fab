@@ -19,3 +19,6 @@ export * from "./bookings.js";
 export * from "./calendar-connections.js";
 export * from "./event-signup-widgets.js";
 export * from "./event-signups.js";
+export * from "./payment-blocks.js";
+export * from "./stripe-connections.js";
+export * from "./payment-records.js";

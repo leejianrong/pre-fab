@@ -25,6 +25,7 @@ import { subscriptionGet, planUpgrade, planCancel } from "./plan.js";
 import { availabilitySet, availabilityGet } from "./availability.js";
 import { bookingList, bookingCancel } from "./booking.js";
 import { calendarConnect, calendarDisconnect, calendarStatus } from "./calendar.js";
+import { stripeConnect, stripeDisconnect, stripeStatus } from "./stripe-connect.js";
 
 /**
  * Every command apps/cli and apps/mcp expose, in one place. Both wrap this
@@ -93,6 +94,9 @@ export const commandRegistry = defineRegistry([
   calendarConnect,
   calendarDisconnect,
   calendarStatus,
+  stripeConnect,
+  stripeDisconnect,
+  stripeStatus,
 ]);
 
 export {
@@ -157,4 +161,7 @@ export {
   calendarConnect,
   calendarDisconnect,
   calendarStatus,
+  stripeConnect,
+  stripeDisconnect,
+  stripeStatus,
 };

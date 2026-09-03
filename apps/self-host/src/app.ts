@@ -8,6 +8,7 @@ import {
   cancelBookingByToken,
   rescheduleBookingByToken,
   signUpForEvent,
+  createPaymentCheckout,
   type TurnstileVerifier,
 } from "@prefab/runtime";
 import { newUlid } from "@prefab/schema";
@@ -23,6 +24,8 @@ import { serveBundleFile } from "./static-bundle.js";
 import { createNullCalendarSyncPort, createSqliteAvailabilityStore, createSqliteBookingStore, createSqliteBookingWidgetStore } from "./booking-adapters.js";
 import { createSqliteEventSignupWidgetStore, createSqliteEventSignupStore } from "./event-signup-adapters.js";
 import { renderManageBookingPage } from "./booking-manage-page.js";
+import { createSqlitePaymentBlockStore, createSqliteStripeConnectionStore, createSqlitePaymentRecordStore } from "./payment-adapters.js";
+import { createTenantStripeProvider, FakeTenantStripeProvider, type TenantStripeProvider } from "./lib/tenant-stripe.js";
 
 const SubmitFormBodySchema = z.object({
   values: z.record(z.string(), z.unknown()),
@@ -41,6 +44,15 @@ const ManageBookingBodySchema = z.object({ token: z.string().min(1) });
 const RescheduleBookingBodySchema = z.object({ token: z.string().min(1), startsAt: z.coerce.date() });
 const SignUpForEventBodySchema = z.object({ values: z.record(z.string(), z.union([z.string(), z.boolean()])).default({}) });
 
+// Slice 10 / KAN-1137 (ADR-0005) — a self-hosted instance serves exactly
+// one site (R10), so unlike apps/api's own equivalent this takes `siteId`
+// explicitly in the body rather than resolving it from an authenticated
+// principal (self-host has none at all — see this file's own module
+// comment): the operator scripting this already knows their own site's id
+// from the bundle they exported.
+const ConnectStripeBodySchema = z.object({ siteId: z.string().min(1), authorizationCode: z.string().min(1) });
+const AdvanceFakeStripeConnectBodySchema = z.object({ sessionId: z.string().min(1), buyerEmail: z.string().email().optional() });
+
 export interface AppDeps {
   /** The already-exported static bundle this instance serves (R10) — a self-hosted instance is one site, not a multi-tenant store. */
   bundleDir: string;
@@ -53,6 +65,8 @@ export interface AppDeps {
   runtimeApiUrl?: string;
   /** No accounts/sessions exist in self-host — an owner-notification address is plain operator configuration (Slice 9's booking-side equivalent of form_settings.notify_email). Defaults to BOOKING_OWNER_EMAIL, unset means no owner-side copy is sent. */
   ownerEmail?: string | null;
+  /** Slice 10 / KAN-1137 (ADR-0005) — injectable so a test can reach the exact same fake instance the routes use. Defaults to createTenantStripeProvider()'s env-based choice. */
+  tenantStripeProvider?: TenantStripeProvider;
 }
 
 /**
@@ -102,6 +116,16 @@ export function buildApp(deps: AppDeps): FastifyInstance {
       return key.startsWith("site:") ? eventSignupSiteRateLimiter.consume(key) : eventSignupIpRateLimiter.consume(key);
     },
   };
+
+  // Slice 10 / KAN-1137 (ADR-0005, R10) — the tenant's own Stripe, no
+  // platform dependency needed beyond the connect step (unlike calendar
+  // sync, deliberately unavailable above — see booking-adapters.ts's own
+  // comment). Fake by default, same discipline as every other adapter.
+  const tenantStripeProvider = deps.tenantStripeProvider ?? createTenantStripeProvider();
+  const paymentBlockStore = createSqlitePaymentBlockStore(db);
+  const stripeConnectionStore = createSqliteStripeConnectionStore(db);
+  const paymentRecordStore = createSqlitePaymentRecordStore(db);
+  const paymentCheckoutDeps = { paymentBlocks: paymentBlockStore, stripeConnections: stripeConnectionStore, paymentRecords: paymentRecordStore, tenantStripe: tenantStripeProvider };
 
   // Same limits as apps/api's own runtime route (app.ts): 20/min per site,
   // 5/min per visitor IP — a self-hosted instance is one site, so "per
@@ -384,6 +408,121 @@ export function buildApp(deps: AppDeps): FastifyInstance {
       case "rate_limited":
         reply.status(429).header("retry-after", String(Math.ceil(result.retryAfterMs / 1000)));
         return { error: { code: "rate_limited", message: "too many sign-up requests — try again shortly" } };
+    }
+  });
+
+  // ---- Slice 10 / KAN-1137 (ADR-0005, R10): a self-hosted site's own
+  // Stripe connection — no accounts/sessions exist in self-host at all
+  // (this file's own module comment), so this is unauthenticated on
+  // purpose, same as every other route here: an operator's own local
+  // instance has no other principal to check against. Unlike calendar
+  // sync (deliberately unavailable — booking-adapters.ts's own comment),
+  // one-off payments need no ongoing platform dependency beyond this
+  // connect step, so this instance DOES get a connect/disconnect/status
+  // surface unlike calendar's. ----
+  app.post("/v1/stripe/connect", async (request, reply) => {
+    const parsed = ConnectStripeBodySchema.safeParse(request.body);
+    if (!parsed.success) {
+      reply.status(400);
+      return { error: { code: "validation_error", message: "invalid request body" } };
+    }
+    const tokens = await tenantStripeProvider.connect({ authorizationCode: parsed.data.authorizationCode });
+    db.prepare(
+      `INSERT INTO stripe_connections (site_id, stripe_account_id, access_token, status)
+       VALUES (@siteId, @stripeAccountId, @accessToken, 'connected')
+       ON CONFLICT (site_id) DO UPDATE SET stripe_account_id = excluded.stripe_account_id, access_token = excluded.access_token, status = 'connected'`,
+    ).run({ siteId: parsed.data.siteId, stripeAccountId: tokens.stripeAccountId, accessToken: tokens.accessToken });
+    return { siteId: parsed.data.siteId, stripeAccountId: tokens.stripeAccountId, status: "connected" };
+  });
+
+  app.delete<{ Querystring: { siteId?: string } }>("/v1/stripe/connect", async (request) => {
+    db.prepare("DELETE FROM stripe_connections WHERE site_id = ?").run(request.query.siteId ?? "");
+    return { removed: true };
+  });
+
+  app.get<{ Querystring: { siteId?: string } }>("/v1/stripe/connect", async (request, reply) => {
+    if (!request.query.siteId) {
+      reply.status(400);
+      return { error: { code: "validation_error", message: "siteId query parameter is required" } };
+    }
+    const row = db
+      .prepare<[string], { stripe_account_id: string; status: string }>("SELECT stripe_account_id, status FROM stripe_connections WHERE site_id = ?")
+      .get(request.query.siteId);
+    if (!row) return null;
+    return { stripeAccountId: row.stripe_account_id, status: row.status };
+  });
+
+  // ---- Dev-only: drive the fake tenant-Stripe provider forward, the same
+  // "dev-only bootstrap, not a product mutation" pattern as apps/api's own
+  // /v1/dev/stripe-connect/:siteId/advance — no siteId path segment needed
+  // here (a self-hosted instance is one site, so "this instance" already
+  // says which one). ----
+  app.post("/v1/dev/stripe-connect/advance", async (request, reply) => {
+    if (!(tenantStripeProvider instanceof FakeTenantStripeProvider)) {
+      reply.status(404);
+      return { error: { code: "not_found", message: "the fake tenant-Stripe provider is not in use — nothing to advance" } };
+    }
+    const parsed = AdvanceFakeStripeConnectBodySchema.safeParse(request.body);
+    if (!parsed.success) {
+      reply.status(400);
+      return { error: { code: "validation_error", message: "invalid request body" } };
+    }
+    db.prepare(
+      `UPDATE payment_records SET status = 'completed', stripe_payment_intent_id = @paymentIntentId, buyer_email = COALESCE(@buyerEmail, buyer_email)
+       WHERE stripe_session_id = @sessionId`,
+    ).run({ sessionId: parsed.data.sessionId, paymentIntentId: `fake_pi_${newUlid()}`, buyerEmail: parsed.data.buyerEmail ?? null });
+    const record = db.prepare("SELECT * FROM payment_records WHERE stripe_session_id = ?").get(parsed.data.sessionId);
+    if (!record) {
+      reply.status(404);
+      return { error: { code: "not_found", message: "no payment record for that session id" } };
+    }
+    return { record };
+  });
+
+  // ---- The runtime API (Slice 10 / KAN-1137) — same shape as apps/api's
+  // equivalent route, calling the exact same @prefab/runtime function
+  // unchanged; only what's behind PaymentBlockStore/StripeConnectionStore/
+  // PaymentRecordStore/TenantStripeProvider differs (SQLite, and this
+  // file's own trimmed tenant-stripe.ts). ----
+  app.options("/v1/runtime/payment-blocks/:blockId/checkout", async (_request, reply) => {
+    reply.header("access-control-allow-origin", "*").header("access-control-allow-methods", "POST, OPTIONS").status(204).send();
+  });
+
+  app.post<{ Params: { blockId: string } }>("/v1/runtime/payment-blocks/:blockId/checkout", async (request, reply) => {
+    reply.header("access-control-allow-origin", "*");
+    const { blockId } = request.params;
+    const referer = (request.headers.referer as string | undefined) ?? runtimeApiUrl;
+
+    function returnUrl(outcome: "success" | "cancel"): string {
+      let url: URL;
+      try {
+        url = new URL(referer);
+      } catch {
+        url = new URL(runtimeApiUrl);
+      }
+      url.searchParams.set("pf_payment", outcome);
+      url.searchParams.set("pf_payment_block", blockId);
+      return url.toString();
+    }
+
+    const result = await createPaymentCheckout(
+      { id: newUlid(), blockId, successUrl: returnUrl("success"), cancelUrl: returnUrl("cancel") },
+      paymentCheckoutDeps,
+    );
+
+    switch (result.status) {
+      case "created":
+        reply.status(201);
+        return { url: result.url };
+      case "not_found":
+        reply.status(404);
+        return { error: { code: "not_found", message: "payment block not found" } };
+      case "no_connection":
+        reply.status(404);
+        return { error: { code: "not_found", message: "this site has not connected a Stripe account" } };
+      case "provider_error":
+        reply.status(500);
+        return { error: { code: "internal", message: "the payment provider could not create a checkout session" } };
     }
   });
 
