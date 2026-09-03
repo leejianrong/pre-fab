@@ -14,10 +14,10 @@
   },
   "dependencies": {
     "@prefab/schema": "workspace:*",
-    "pg": "8.13.1"
+    "pg": "8.23.0"
   },
   "devDependencies": {
-    "@types/pg": "8.11.10",
+    "@types/pg": "8.23.1",
     "dotenv": "16.4.7",
     "tsx": "4.19.2",
     "typescript": "5.7.3",
