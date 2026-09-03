@@ -149,6 +149,10 @@ export const schemas = {
   "calendar.disconnect": { siteId: z.string() },
   "calendar.status": { siteId: z.string() },
 
+  "stripe.connect": { siteId: z.string(), authorizationCode: z.string() },
+  "stripe.disconnect": { siteId: z.string() },
+  "stripe.status": { siteId: z.string() },
+
   "export-bundle": {
     siteId: z.string(),
     outDir: z.string(),

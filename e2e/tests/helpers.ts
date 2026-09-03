@@ -156,6 +156,14 @@ export const ALL_BLOCK_TYPE_PROPS: Record<string, Record<string, unknown>> = {
     confirmLabel: "Confirm booking",
     successMessage: "You're booked — check your email for details.",
   },
+  payment: {
+    heading: "Buy now",
+    description: "One-time purchase.",
+    buttonLabel: "Pay now",
+    amount: 1000,
+    currency: "usd",
+    successMessage: "Thank you — your payment was received.",
+  },
 };
 
 export const ALL_BLOCK_TYPES = Object.keys(ALL_BLOCK_TYPE_PROPS);

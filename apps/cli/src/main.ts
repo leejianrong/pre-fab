@@ -56,6 +56,9 @@ import {
   siteGet,
   siteList,
   siteOutline,
+  stripeConnect,
+  stripeDisconnect,
+  stripeStatus,
   submissionDelete,
   submissionExport,
   submissionList,
@@ -471,6 +474,20 @@ calendar
   .command("status <siteId>")
   .description("Show a site's calendar connection status")
   .action((siteId) => runCommand(globalOptions(), async () => calendarStatus.run(await resolveContext(), { siteId })));
+
+const stripe = program.command("stripe").description("Manage a site's own bring-your-own Stripe account for one-off payment blocks (Slice 10 / KAN-1137, ADR-0005)");
+stripe
+  .command("connect <siteId> <authorizationCode>")
+  .description("Connect a site's own Stripe account — authorizationCode is a pre-obtained OAuth code (real providers only; the fake accepts any string)")
+  .action((siteId, authorizationCode) => runCommand(globalOptions(), async () => stripeConnect.run(await resolveContext(), { siteId, authorizationCode })));
+stripe
+  .command("disconnect <siteId>")
+  .description("Disconnect a site's own Stripe account")
+  .action((siteId) => runCommand(globalOptions(), async () => stripeDisconnect.run(await resolveContext(), { siteId })));
+stripe
+  .command("status <siteId>")
+  .description("Show a site's Stripe connection status")
+  .action((siteId) => runCommand(globalOptions(), async () => stripeStatus.run(await resolveContext(), { siteId })));
 
 program
   .command("token-create <siteId> <name>")

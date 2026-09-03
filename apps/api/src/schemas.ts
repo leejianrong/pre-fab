@@ -239,3 +239,19 @@ export const AdvanceFakeCalendarBodySchema = z.object({
   busy: z.array(z.object({ startMs: z.number(), endMs: z.number() })).optional(),
   unavailable: z.boolean().optional(),
 });
+
+// ---- Slice 10 / KAN-1137: one-off payment blocks, bring-your-own Stripe (ADR-0005) ----
+export const ConnectStripeBodySchema = z.object({
+  authorizationCode: z.string().min(1),
+});
+
+/** Dev-only (see `/v1/dev/stripe-connect/:siteId/advance`) — drives the FakeTenantStripeProvider forward the same way a real checkout.session.completed webhook would, keyed by the session id a runtime checkout call already handed back. */
+export const AdvanceFakeStripeConnectBodySchema = z.object({
+  sessionId: z.string().min(1),
+  buyerEmail: z.string().email().optional(),
+});
+
+export const ListPaymentsQuerySchema = z.object({
+  limit: z.coerce.number().int().optional(),
+  offset: z.coerce.number().int().optional(),
+});

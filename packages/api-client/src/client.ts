@@ -43,6 +43,10 @@ import type {
   EventSignupWidget,
   ListEventSignupsQuery,
   ListEventSignupsResult,
+  ConnectStripeInput,
+  StripeConnectionStatus,
+  ListPaymentsQuery,
+  ListPaymentsResult,
 } from "./types.js";
 
 export type ApiErrorCode =
@@ -466,6 +470,28 @@ export class ApiClient {
 
   getCalendarStatus(siteId: string): Promise<CalendarConnectionStatus | null> {
     return this.request("GET", `/v1/sites/${siteId}/calendar`);
+  }
+
+  // ---- stripe.connect / stripe.disconnect / stripe.status (Slice 10 / KAN-1137, ADR-0005) ----
+  connectStripe(siteId: string, input: ConnectStripeInput): Promise<StripeConnectionStatus> {
+    return this.request("POST", `/v1/sites/${siteId}/stripe`, input);
+  }
+
+  disconnectStripe(siteId: string): Promise<{ removed: true }> {
+    return this.request("DELETE", `/v1/sites/${siteId}/stripe`);
+  }
+
+  getStripeStatus(siteId: string): Promise<StripeConnectionStatus | null> {
+    return this.request("GET", `/v1/sites/${siteId}/stripe`);
+  }
+
+  // ---- payment.list (Slice 10 / KAN-1137) ----
+  listPayments(siteId: string, blockId: string, query: ListPaymentsQuery = {}): Promise<ListPaymentsResult> {
+    const params = new URLSearchParams();
+    if (query.limit !== undefined) params.set("limit", String(query.limit));
+    if (query.offset !== undefined) params.set("offset", String(query.offset));
+    const qs = params.toString();
+    return this.request("GET", `/v1/sites/${siteId}/payment-blocks/${blockId}/payments${qs ? `?${qs}` : ""}`);
   }
 
   resolveUrl(path: string): string {

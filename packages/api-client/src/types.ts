@@ -397,4 +397,41 @@ export interface ConnectCalendarInput {
   redirectUri?: string;
 }
 
+// ---- Slice 10 / KAN-1137: one-off payment blocks, bring-your-own Stripe (ADR-0005) ----
+
+export interface StripeConnectionStatus {
+  id: string;
+  stripeAccountId: string;
+  status: "connected" | "error";
+}
+
+export interface ConnectStripeInput {
+  /** A pre-obtained OAuth authorization code — the owner completes Stripe's own Connect consent screen in the browser and hands the resulting code here. Real providers only; the fake (default everywhere, including CI) accepts any string. */
+  authorizationCode: string;
+}
+
+export interface PaymentRecord {
+  id: string;
+  siteId: string;
+  blockId: string;
+  stripeSessionId: string;
+  stripePaymentIntentId: string | null;
+  amount: number;
+  currency: string;
+  status: "pending" | "completed" | "failed";
+  buyerEmail: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ListPaymentsQuery {
+  limit?: number;
+  offset?: number;
+}
+
+export interface ListPaymentsResult {
+  records: PaymentRecord[];
+  total: number;
+}
+
 export type { PageDocument, PostDocument, PostStatus, ThemeDocument, ThemeTokens, BlockNode, DocumentDiff, FieldDiff };

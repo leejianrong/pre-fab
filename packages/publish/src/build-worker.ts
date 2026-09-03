@@ -27,6 +27,7 @@ import { generateRssFeed, generateSitemap } from "./feeds.js";
 import { extractPublishSafeForms } from "./form-manifest.js";
 import { extractPublishSafeBookingWidgets } from "./booking-manifest.js";
 import { extractPublishSafeEventSignups } from "./event-signup-manifest.js";
+import { extractPublishSafePaymentBlocks } from "./payment-manifest.js";
 import type { PublishableAvailabilityRule } from "./build.js";
 
 interface WorkerInput {
@@ -143,6 +144,18 @@ async function main(): Promise<void> {
     await writeFile(
       path.join(workspace.outDir, "prefab-event-signups.json"),
       JSON.stringify(extractPublishSafeEventSignups(input.site.id, input.pages)),
+      "utf8",
+    );
+
+    // Slice 10 / KAN-1137 (ADR-0005): every Payment block's publish-safe
+    // manifest, the identical "self-host needs a bundle to seed its own
+    // runtime store from" reasoning as prefab-forms.json/
+    // prefab-booking-widgets.json — the tenant's own Stripe connection
+    // (credential-shaped, platform/operator state) is never written here,
+    // same as calendar_connections.
+    await writeFile(
+      path.join(workspace.outDir, "prefab-payment-blocks.json"),
+      JSON.stringify(extractPublishSafePaymentBlocks(input.site.id, input.pages)),
       "utf8",
     );
 

@@ -140,3 +140,44 @@ CREATE TABLE IF NOT EXISTS event_signups (
 
 CREATE INDEX IF NOT EXISTS event_signups_widget_id_status_idx ON event_signups (widget_id, status);
 CREATE INDEX IF NOT EXISTS event_signups_site_id_widget_id_created_at_idx ON event_signups (site_id, widget_id, created_at DESC, id);
+
+-- Slice 10 / KAN-1137 (ADR-0005, R10): mirrors the shape of
+-- packages/db/migrations/0009_slice10_payments.sql minus RLS/ulid/jsonb,
+-- same reasoning as every other table above. Unlike calendar sync
+-- (deliberately unavailable in self-host — see runtime-adapters.ts's own
+-- comment), a one-off payment needs no platform dependency beyond the
+-- OAuth connect step itself (ADR-0005: it's the tenant's own Stripe) — so,
+-- unlike `calendar_connections`, this instance DOES get a `stripe_connections`
+-- table and a connect/disconnect/status HTTP surface (see app.ts).
+CREATE TABLE IF NOT EXISTS payment_blocks (
+  id TEXT PRIMARY KEY,
+  site_id TEXT NOT NULL,
+  heading TEXT NOT NULL DEFAULT '',
+  description TEXT NOT NULL DEFAULT '',
+  button_label TEXT NOT NULL DEFAULT 'Pay now',
+  amount INTEGER NOT NULL,
+  currency TEXT NOT NULL DEFAULT 'usd',
+  success_message TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS stripe_connections (
+  site_id TEXT PRIMARY KEY,
+  stripe_account_id TEXT NOT NULL,
+  access_token TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'connected' CHECK (status IN ('connected', 'error'))
+);
+
+CREATE TABLE IF NOT EXISTS payment_records (
+  id TEXT PRIMARY KEY,
+  site_id TEXT NOT NULL,
+  block_id TEXT NOT NULL REFERENCES payment_blocks (id) ON DELETE CASCADE,
+  stripe_session_id TEXT NOT NULL UNIQUE,
+  stripe_payment_intent_id TEXT,
+  amount INTEGER NOT NULL,
+  currency TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'completed', 'failed')),
+  buyer_email TEXT,
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS payment_records_site_id_block_id_idx ON payment_records (site_id, block_id, created_at DESC);

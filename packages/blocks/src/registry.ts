@@ -42,6 +42,8 @@ import { Booking } from "./booking/Booking.js";
 import { bookingBlockDefinition, type BookingProps } from "./booking/schema.js";
 import { EventSignup } from "./eventsignup/EventSignup.js";
 import { eventSignupBlockDefinition, type EventSignupProps } from "./eventsignup/schema.js";
+import { Payment } from "./payment/Payment.js";
+import { paymentBlockDefinition, type PaymentProps } from "./payment/schema.js";
 
 /**
  * One entry per first-party block: its schema-half definition
@@ -132,6 +134,11 @@ const BLOCK_ENTRIES: BlockEntry[] = [
     definition: eventSignupBlockDefinition,
     Component: EventSignup,
     summary: (props: EventSignupProps) => `${props.heading || "event sign-up"} (capacity ${props.capacity ?? "unlimited"})`,
+  },
+  {
+    definition: paymentBlockDefinition,
+    Component: Payment,
+    summary: (props: PaymentProps) => `${props.heading} (${(props.amount / 100).toFixed(2)} ${props.currency.toUpperCase()})`,
   },
 ];
 
