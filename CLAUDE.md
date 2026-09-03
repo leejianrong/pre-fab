@@ -51,7 +51,7 @@ sequenced so they do not need to run concurrently.
 
 Multiple subagents running `make dev` in their own worktrees no longer need
 manual port coordination — `scripts/dev-ports.sh` (auto-run by `up`/`dev`)
-picks the next free `PREFAB_PROXY_PORT`/`PREFAB_API_HOST_PORT`/
+picks the next free `PREFAB_EDITOR_HOST_PORT`/`PREFAB_API_HOST_PORT`/
 `PREFAB_POSTGRES_PORT` per worktree's `.env` on its own. Each worktree's
 `make dev` output prints the URLs it landed on.
 
