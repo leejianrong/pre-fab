@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { ThemeTokens } from "@prefab/schema";
 import { cssVar, resolveThemeTokens, themeRootStyle, themeTokensToStyleVars } from "../src/theme-css.js";
 
-const EMPTY_TOKENS: ThemeTokens = { color: {}, fontSize: {}, spacing: {}, radius: {} };
+const EMPTY_TOKENS: ThemeTokens = { color: {}, fontSize: {}, spacing: {}, radius: {}, fontFamily: {} };
 
 describe("cssVar", () => {
   it("builds a bare var() reference — no literal fallback baked into the block (invariant 2)", () => {
@@ -12,14 +12,14 @@ describe("cssVar", () => {
 
 describe("resolveThemeTokens", () => {
   it("fills in a token the theme is missing from the given defaults", () => {
-    const resolved = resolveThemeTokens(EMPTY_TOKENS, { color: { accent: "#4f46e5" }, fontSize: {}, spacing: {}, radius: {} });
+    const resolved = resolveThemeTokens(EMPTY_TOKENS, { color: { accent: "#4f46e5" }, fontSize: {}, spacing: {}, radius: {}, fontFamily: {} });
     expect(resolved.color.accent).toBe("#4f46e5");
   });
 
   it("lets a theme's own value win over the default for the same key", () => {
     const resolved = resolveThemeTokens(
-      { color: { accent: "#ff0000" }, fontSize: {}, spacing: {}, radius: {} },
-      { color: { accent: "#4f46e5" }, fontSize: {}, spacing: {}, radius: {} },
+      { color: { accent: "#ff0000" }, fontSize: {}, spacing: {}, radius: {}, fontFamily: {} },
+      { color: { accent: "#4f46e5" }, fontSize: {}, spacing: {}, radius: {}, fontFamily: {} },
     );
     expect(resolved.color.accent).toBe("#ff0000");
   });
@@ -30,6 +30,7 @@ describe("resolveThemeTokens", () => {
     expect(vars["--pf-color-accent"]).toBeDefined();
     expect(vars["--pf-color-background"]).toBeDefined();
     expect(vars["--pf-fontSize-heading"]).toBeDefined();
+    expect(vars["--pf-fontFamily-heading"]).toBeDefined();
   });
 });
 
@@ -42,6 +43,7 @@ describe("themeRootStyle", () => {
     // Puck canvas and the published <body> both apply (ADR-0004 WYSIWYG).
     expect(style.background).toBe("var(--pf-color-background)");
     expect(style.color).toBe("var(--pf-color-foreground)");
+    expect(style.fontFamily).toBe("var(--pf-fontFamily-body)");
     expect(style["--pf-color-background"]).toBeDefined();
   });
 });

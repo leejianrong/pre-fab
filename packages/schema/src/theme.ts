@@ -15,6 +15,18 @@ export const ThemeTokensSchema = z.object({
   fontSize: z.record(z.string(), z.string()),
   spacing: z.record(z.string(), z.string()),
   radius: z.record(z.string(), z.string()),
+  /**
+   * CSS `font-family` stacks, keyed by role ("heading", "body"). System-font
+   * stacks only, deliberately: no @font-face/webfont loading pipeline exists
+   * (or is proposed here), so a pairing is guaranteed to render everywhere
+   * with no network fetch. `.default({})`, not required, for the same
+   * reason `BlockNode.responsive` defaults rather than requires (block.ts):
+   * every template's checked-in theme.json predates this group, and this
+   * keeps them validating as-is — they fall through to
+   * `DEFAULT_THEME_TOKENS.fontFamily` via `resolveThemeTokens` at render
+   * time (theme-css.ts) rather than failing closed.
+   */
+  fontFamily: z.record(z.string(), z.string()).default({}),
 });
 
 export type ThemeTokens = z.infer<typeof ThemeTokensSchema>;
@@ -66,5 +78,9 @@ export const DEFAULT_THEME_TOKENS: ThemeTokens = {
     control: "0.5rem",
     card: "0.75rem",
     full: "9999px",
+  },
+  fontFamily: {
+    heading: "system-ui, sans-serif",
+    body: "system-ui, sans-serif",
   },
 };
