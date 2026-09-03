@@ -42,6 +42,12 @@ export const API_MUTATIONS = [
   { name: "booking.cancel", method: "POST", path: "/v1/sites/:siteId/bookings/:bookingId/cancel" },
   { name: "calendar.connect", method: "POST", path: "/v1/sites/:siteId/calendar" },
   { name: "calendar.disconnect", method: "DELETE", path: "/v1/sites/:siteId/calendar" },
+  // ---- KAN-1138: event sign-ups ----
+  // eventSignup.create on a published site is a runtime mutation, not a
+  // control-plane one (no signed-in principal — a visitor, not an owner),
+  // deliberately absent here for the same reason submission.create/
+  // booking.create aren't either (see /v1/runtime/event-signups/:widgetId/signups).
+  { name: "eventSignup.delete", method: "DELETE", path: "/v1/sites/:siteId/event-signups/:widgetId/signups/:signupId" },
 ] as const;
 
 export type MutationName = (typeof API_MUTATIONS)[number]["name"];

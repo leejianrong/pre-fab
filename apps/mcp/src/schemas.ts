@@ -90,6 +90,11 @@ export const schemas = {
   "submission.export": { siteId: z.string(), formId: z.string(), format: z.enum(["csv", "json"]).optional() },
   "submission.delete": { siteId: z.string(), formId: z.string(), submissionId: z.string() },
 
+  "eventSignupWidget.get": { siteId: z.string(), widgetId: z.string() },
+  "eventSignup.list": { siteId: z.string(), widgetId: z.string(), limit: z.number().int().optional(), offset: z.number().int().optional() },
+  "eventSignup.export": { siteId: z.string(), widgetId: z.string(), format: z.enum(["csv", "json"]).optional() },
+  "eventSignup.delete": { siteId: z.string(), widgetId: z.string(), signupId: z.string() },
+
   "asset.upload": { siteId: z.string(), filePath: z.string().min(1) },
   "asset.list": { siteId: z.string() },
 

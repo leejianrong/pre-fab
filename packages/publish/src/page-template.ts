@@ -17,13 +17,15 @@
  * no such static import to point at, so it fails with "No matching import
  * has been found" for any dynamically-resolved component. `Form` and
  * `Booking` are imported directly below for exactly this reason, and
- * rendered on their own branch rather than through `blockComponents`. This
+ * rendered on their own branch rather than through `blockComponents`. The
+ * EventSignup block (KAN-1138) is the same third case, for the identical
+ * reason. This
  * file, plus @prefab/publish, is the only place in the repo allowed to
  * import Astro (enforced by tools/checks).
  */
 export const SITE_PAGE_ASTRO = `---
 import data from "../data.json";
-import { blockComponents, resolveThemeTokens, themeRootStyle, Form, Booking } from "@prefab/blocks";
+import { blockComponents, resolveThemeTokens, themeRootStyle, Form, Booking, EventSignup } from "@prefab/blocks";
 
 // SLICES.md Slice 5: "list and detail block types with pagination." A page
 // carrying a postdetail block is a *template* for one route per post
@@ -144,6 +146,18 @@ const themeVars = themeRootStyle(resolveThemeTokens(theme.tokens));
       if (block.type === "booking") {
         return (
           <Booking
+            client:load
+            {...block.props}
+            blockId={block.id}
+            responsive={block.responsive}
+            runtimeApiUrl={data.runtimeApiUrl}
+          />
+        );
+      }
+
+      if (block.type === "eventsignup") {
+        return (
+          <EventSignup
             client:load
             {...block.props}
             blockId={block.id}

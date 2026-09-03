@@ -19,6 +19,7 @@ import { CardGrid, CARDGRID_BLOCK_TYPE, cardGridDefaultProps } from "@prefab/blo
 import { PostList, POSTLIST_BLOCK_TYPE, postListDefaultProps } from "@prefab/blocks";
 import { PostDetail, POSTDETAIL_BLOCK_TYPE, postDetailDefaultProps } from "@prefab/blocks";
 import { Form, FORM_BLOCK_TYPE, formDefaultProps } from "@prefab/blocks";
+import { EventSignup, EVENTSIGNUP_BLOCK_TYPE, eventSignupDefaultProps } from "@prefab/blocks";
 import type { ThemeTokens } from "@prefab/schema";
 import { heroFields } from "./hero-fields.js";
 import { headingFields } from "./heading-fields.js";
@@ -39,6 +40,7 @@ import { cardGridFields } from "./cardgrid-fields.js";
 import { postListFields } from "./postlist-fields.js";
 import { postDetailFields } from "./postdetail-fields.js";
 import { formFields } from "./form-fields.js";
+import { eventSignupFields } from "./eventsignup-fields.js";
 
 /**
  * The only file besides apps/editor allowed to import @puckeditor/core
@@ -168,6 +170,13 @@ const BLOCK_ENTRIES: BlockEntry<any>[] = [
     Component: PostDetail,
   },
   { type: FORM_BLOCK_TYPE, label: "Form", fields: formFields, defaultProps: formDefaultProps, Component: Form },
+  {
+    type: EVENTSIGNUP_BLOCK_TYPE,
+    label: "Event sign-up",
+    fields: eventSignupFields,
+    defaultProps: eventSignupDefaultProps,
+    Component: EventSignup,
+  },
 ];
 
 // Puck's ComponentConfig<P> constrains P more tightly than a plain object

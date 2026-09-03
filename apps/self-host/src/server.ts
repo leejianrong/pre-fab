@@ -3,6 +3,7 @@ import { buildApp } from "./app.js";
 import { openSelfHostDb } from "./db.js";
 import { seedFormsFromBundle } from "./forms-seed.js";
 import { seedAvailabilityFromBundle, seedBookingWidgetsFromBundle } from "./booking-seed.js";
+import { seedEventSignupWidgetsFromBundle } from "./event-signup-seed.js";
 import { retryDueWebhookDeliveries } from "./lib/webhooks.js";
 
 /**
@@ -23,6 +24,8 @@ async function main(): Promise<void> {
   const bookingWidgetCount = await seedBookingWidgetsFromBundle(db, bundleDir);
   const seededAvailability = await seedAvailabilityFromBundle(db, bundleDir);
   console.log(`prefab self-host: seeded ${bookingWidgetCount} booking widget(s), availability rule ${seededAvailability ? "seeded" : "not present"} in ${bundleDir}`);
+  const eventSignupWidgetCount = await seedEventSignupWidgetsFromBundle(db, bundleDir);
+  console.log(`prefab self-host: seeded ${eventSignupWidgetCount} event sign-up widget(s) from ${bundleDir}`);
 
   const app = buildApp({ bundleDir, db });
 

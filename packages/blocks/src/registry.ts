@@ -40,6 +40,8 @@ import { Form } from "./form/Form.js";
 import { formBlockDefinition, type FormProps } from "./form/schema.js";
 import { Booking } from "./booking/Booking.js";
 import { bookingBlockDefinition, type BookingProps } from "./booking/schema.js";
+import { EventSignup } from "./eventsignup/EventSignup.js";
+import { eventSignupBlockDefinition, type EventSignupProps } from "./eventsignup/schema.js";
 
 /**
  * One entry per first-party block: its schema-half definition
@@ -125,6 +127,11 @@ const BLOCK_ENTRIES: BlockEntry[] = [
     definition: bookingBlockDefinition,
     Component: Booking,
     summary: (props: BookingProps) => props.heading || "booking widget",
+  },
+  {
+    definition: eventSignupBlockDefinition,
+    Component: EventSignup,
+    summary: (props: EventSignupProps) => `${props.heading || "event sign-up"} (capacity ${props.capacity ?? "unlimited"})`,
   },
 ];
 

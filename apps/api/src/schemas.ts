@@ -134,6 +134,26 @@ export const SubmitFormBodySchema = z.object({
   turnstileToken: z.string().max(4096).optional(),
 });
 
+// ---- KAN-1138: event sign-ups ----
+export const ListEventSignupsQuerySchema = z.object({
+  limit: z.coerce.number().int().optional(),
+  offset: z.coerce.number().int().optional(),
+});
+
+export const ExportEventSignupsQuerySchema = z.object({
+  format: z.enum(["csv", "json"]).default("csv"),
+});
+
+/**
+ * The runtime API's own sign-up body — deliberately loose (`z.record`, not
+ * per-field validation), same reasoning as SubmitFormBodySchema: field-shape
+ * validation is @prefab/runtime's job (validateSubmissionValues, checked
+ * against the widget's own manifest), not this route's.
+ */
+export const SignUpForEventBodySchema = z.object({
+  values: z.record(z.string(), z.union([z.string(), z.boolean()])).default({}),
+});
+
 // ---- Slice 8: accounts, plans and billing (ADR-0005, ADR-0012) ----
 const SiteRoleSchema = z.enum(["editor", "viewer"]);
 

@@ -40,6 +40,9 @@ import type {
   Booking,
   ConnectCalendarInput,
   CalendarConnectionStatus,
+  EventSignupWidget,
+  ListEventSignupsQuery,
+  ListEventSignupsResult,
 } from "./types.js";
 
 export type ApiErrorCode =
@@ -369,6 +372,34 @@ export class ApiClient {
 
   deleteSubmission(siteId: string, formId: string, submissionId: string): Promise<{ removed: true }> {
     return this.request("DELETE", `/v1/sites/${siteId}/forms/${formId}/submissions/${submissionId}`);
+  }
+
+  // ---- eventSignupWidget.get / eventSignup.list / eventSignup.export / eventSignup.delete (KAN-1138) ----
+  getEventSignupWidget(siteId: string, widgetId: string): Promise<EventSignupWidget> {
+    return this.request("GET", `/v1/sites/${siteId}/event-signups/${widgetId}`);
+  }
+
+  listEventSignups(siteId: string, widgetId: string, query: ListEventSignupsQuery = {}): Promise<ListEventSignupsResult> {
+    const params = new URLSearchParams();
+    if (query.limit !== undefined) params.set("limit", String(query.limit));
+    if (query.offset !== undefined) params.set("offset", String(query.offset));
+    const qs = params.toString();
+    return this.request("GET", `/v1/sites/${siteId}/event-signups/${widgetId}/signups${qs ? `?${qs}` : ""}`);
+  }
+
+  exportEventSignupsCsv(siteId: string, widgetId: string): Promise<string> {
+    return this.requestText("GET", `/v1/sites/${siteId}/event-signups/${widgetId}/signups/export?format=csv`);
+  }
+
+  exportEventSignupsJson(
+    siteId: string,
+    widgetId: string,
+  ): Promise<Array<{ id: string; createdAt: string; status: string; position: number | null; values: Record<string, unknown> }>> {
+    return this.request("GET", `/v1/sites/${siteId}/event-signups/${widgetId}/signups/export?format=json`);
+  }
+
+  deleteEventSignup(siteId: string, widgetId: string, signupId: string): Promise<{ removed: true }> {
+    return this.request("DELETE", `/v1/sites/${siteId}/event-signups/${widgetId}/signups/${signupId}`);
   }
 
   // ---- member.invite / member.list / member.updateRole / member.remove (Slice 8) ----

@@ -22,6 +22,10 @@ import {
   domainVerify,
   domainRemove,
   eject,
+  eventSignupWidgetGet,
+  eventSignupList,
+  eventSignupExport,
+  eventSignupDelete,
   exportBundle,
   exportSite,
   formConfigure,
@@ -335,6 +339,42 @@ submission
   .description("Delete a single submission — PDPA/GDPR per-record deletion")
   .action((siteId, formId, submissionId) =>
     runCommand(globalOptions(), async () => submissionDelete.run(await resolveContext(), { siteId, formId, submissionId })),
+  );
+
+const eventSignupWidget = program.command("event-signup-widget").description("Inspect an event sign-up (RSVP) block's published widget (KAN-1138)");
+eventSignupWidget
+  .command("get <siteId> <widgetId>")
+  .description("Show an event sign-up widget's published manifest (heading/fields/capacity/waitlist)")
+  .action((siteId, widgetId) => runCommand(globalOptions(), async () => eventSignupWidgetGet.run(await resolveContext(), { siteId, widgetId })));
+
+const eventSignup = program.command("event-signup").description("Manage an event sign-up widget's sign-ups (KAN-1138)");
+eventSignup
+  .command("list <siteId> <widgetId>")
+  .description("List an event sign-up widget's sign-ups")
+  .option("--limit <limit>", "page size")
+  .option("--offset <offset>")
+  .action((siteId, widgetId, options: { limit?: string; offset?: string }) =>
+    runCommand(globalOptions(), async () =>
+      eventSignupList.run(await resolveContext(), {
+        siteId,
+        widgetId,
+        limit: options.limit ? Number(options.limit) : undefined,
+        offset: options.offset ? Number(options.offset) : undefined,
+      }),
+    ),
+  );
+eventSignup
+  .command("export <siteId> <widgetId>")
+  .description("Export an event sign-up widget's sign-ups — CSV by default")
+  .option("--format <format>", "csv or json", "csv")
+  .action((siteId, widgetId, options: { format?: "csv" | "json" }) =>
+    runCommand(globalOptions(), async () => eventSignupExport.run(await resolveContext(), { siteId, widgetId, format: options.format })),
+  );
+eventSignup
+  .command("delete <siteId> <widgetId> <signupId>")
+  .description("Delete a single event sign-up — PDPA/GDPR per-record deletion")
+  .action((siteId, widgetId, signupId) =>
+    runCommand(globalOptions(), async () => eventSignupDelete.run(await resolveContext(), { siteId, widgetId, signupId })),
   );
 
 const asset = program.command("asset").description("Manage site assets (content-addressed uploads)");

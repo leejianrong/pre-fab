@@ -17,3 +17,5 @@ export * from "./availability-rules.js";
 export * from "./booking-widgets.js";
 export * from "./bookings.js";
 export * from "./calendar-connections.js";
+export * from "./event-signup-widgets.js";
+export * from "./event-signups.js";
