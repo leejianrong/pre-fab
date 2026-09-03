@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import type { SiteSummary } from "@prefab/api-client";
 import { TemplateGallery } from "./TemplateGallery.js";
 import { OnboardingWizard } from "./OnboardingWizard.js";
@@ -66,14 +66,23 @@ export function SitePicker({
           </ul>
         )}
       </div>
-      <button
-        type="button"
+      <Card
+        interactive
         onClick={() => setWizardOpen(true)}
-        style={{ padding: "0.75rem 1rem", textAlign: "left", border: "1px dashed #4f46e5", borderRadius: "0.375rem", background: "#eef2ff", color: "#4f46e5" }}
+        style={
+          {
+            border: "1px dashed var(--md-sys-color-primary)",
+            background: "var(--md-sys-color-primary-container)",
+            color: "var(--md-sys-color-on-primary-container)",
+            "--pf-card-hover-base": "var(--md-sys-color-primary-container)",
+          } as CSSProperties
+        }
       >
         <strong>Not sure where to start?</strong>
-        <div style={{ fontSize: "0.875rem" }}>Answer a couple of questions and we'll pick a template and style for you.</div>
-      </button>
+        <div className="pf-supporting-text" style={{ color: "inherit" }}>
+          Answer a couple of questions and we'll pick a template and style for you.
+        </div>
+      </Card>
       <TemplateGallery onSiteCreated={(siteId) => onSiteSelected(siteId, { firstRun: true })} />
       <form onSubmit={createSite} style={{ display: "grid", gap: "0.75rem" }}>
         <h2 className="pf-section-title">Or start blank</h2>
