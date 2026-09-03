@@ -76,7 +76,16 @@ export async function getPaymentRecordBySessionId(client: PoolClient, siteId: st
   return result.rows[0] ? rowToPaymentRecord(result.rows[0]) : null;
 }
 
-/** Marks a session's outcome once Checkout completes (webhook or dev-advance) — idempotent by construction: replaying the same event twice just re-sets the same values. */
+/**
+ * Marks a session's outcome once Checkout completes (webhook or dev-advance).
+ * `AND status = 'pending'` guards the *caller's* idempotency, not just the
+ * data's: Stripe retries webhooks it didn't get a fast 2xx for, and without
+ * this the row update is harmless (same values re-set) but the webhook
+ * route's owner-notification email would fire again on every retry. Scoping
+ * the transition to pending -> anything else means a replay after the first
+ * successful transition returns no row, so app.ts's `if (updated)` guard
+ * naturally skips the duplicate notification too.
+ */
 export async function updatePaymentRecordStatus(
   client: PoolClient,
   siteId: string,
@@ -89,7 +98,7 @@ export async function updatePaymentRecordStatus(
        stripe_payment_intent_id = COALESCE($2, stripe_payment_intent_id),
        buyer_email = COALESCE($3, buyer_email),
        updated_at = now()
-     WHERE site_id = $4 AND stripe_session_id = $5
+     WHERE site_id = $4 AND stripe_session_id = $5 AND status = 'pending'
      RETURNING *`,
     [patch.status, patch.stripePaymentIntentId ?? null, patch.buyerEmail ?? null, siteId, stripeSessionId],
   );
