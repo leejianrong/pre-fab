@@ -49,6 +49,10 @@ match, so the rule and its enforcement never disagree.
 Prefer fewer. Most work here is one agent deep in one slice, and slices are
 sequenced so they do not need to run concurrently.
 
+If more than one subagent runs `make dev` in its own worktree at once, they
+collide on the same default host ports — override `PREFAB_PROXY_PORT`/
+`PREFAB_API_HOST_PORT`/`PREFAB_POSTGRES_PORT` per worktree's `.env`.
+
 ## Invariants
 
 Each is enforced by CI. Breaking one is a build failure, not a review comment.
