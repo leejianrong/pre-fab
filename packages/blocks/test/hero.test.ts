@@ -24,6 +24,21 @@ describe("Hero block", () => {
     expect(html).not.toContain("pf-hero-cta");
   });
 
+  it("renders a full-bleed background image with a token-driven scrim, not a raw colour", () => {
+    const html = renderToStaticMarkup(
+      createElement(Hero, { ...heroDefaultProps, backgroundImage: "https://example.com/photo.jpg" }),
+    );
+    expect(html).toContain('src="https://example.com/photo.jpg"');
+    expect(html).toMatch(/var\(--pf-color-accent\)/);
+    expect(html).not.toMatch(/#[0-9a-fA-F]{3,8}/);
+    expect(html).not.toMatch(/rgba?\(/);
+  });
+
+  it("omits the image entirely when backgroundImage is empty (every existing template's Hero, unaffected)", () => {
+    const html = renderToStaticMarkup(createElement(Hero, heroDefaultProps));
+    expect(html).not.toContain("<img");
+  });
+
   it("props schema rejects an unrecognised field", () => {
     const result = HeroPropsSchema.safeParse({ ...heroDefaultProps, color: "#ff0000" });
     expect(result.success).toBe(false);

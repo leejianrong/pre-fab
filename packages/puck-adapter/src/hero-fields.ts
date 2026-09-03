@@ -20,4 +20,5 @@ export const heroFields: Fields<HeroProps> = {
       { label: "Accent", value: "accent" },
     ],
   },
+  backgroundImage: { type: "text", label: "Background image URL (optional, full-bleed)" },
 };
