@@ -8,6 +8,7 @@ import {
   type WizardAnswers,
 } from "@prefab/templates";
 import { api } from "./api.js";
+import { Card, FilledButton, TextButton, TextField } from "./ui/index.js";
 
 type Step = "businessType" | "style" | "details";
 
@@ -70,28 +71,24 @@ export function OnboardingWizard({
   const styleQuestion = WIZARD_QUESTIONS[1]!;
 
   return (
-    <div style={{ display: "grid", gap: "1rem", fontFamily: "system-ui, sans-serif" }}>
+    <div style={{ display: "grid", gap: "1rem" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-        <h2 style={{ fontSize: "1rem", margin: 0 }}>
+        <h2 className="pf-section-title" style={{ margin: 0 }}>
           {step === "businessType" ? businessTypeQuestion.prompt : step === "style" ? styleQuestion.prompt : "Confirm your site"}
         </h2>
-        <button type="button" onClick={onCancel} style={{ background: "none", border: "none", color: "#64748b", cursor: "pointer" }}>
+        <TextButton type="button" onClick={onCancel}>
           Cancel
-        </button>
+        </TextButton>
       </div>
 
       {step === "businessType" ? (
         <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "grid", gap: "0.5rem" }}>
           {businessTypeQuestion.options.map((option) => (
             <li key={option.id}>
-              <button
-                type="button"
-                onClick={() => chooseBusinessType(option.id)}
-                style={{ width: "100%", textAlign: "left", padding: "0.75rem 1rem", border: "1px solid #cbd5e1", borderRadius: "0.375rem", background: "white" }}
-              >
+              <Card interactive onClick={() => chooseBusinessType(option.id)}>
                 <strong>{option.label}</strong>
-                <div style={{ color: "#64748b", fontSize: "0.875rem" }}>{option.description}</div>
-              </button>
+                <div className="pf-supporting-text">{option.description}</div>
+              </Card>
             </li>
           ))}
         </ul>
@@ -101,41 +98,37 @@ export function OnboardingWizard({
         <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "grid", gap: "0.5rem" }}>
           {styleQuestion.options.map((option) => (
             <li key={option.id}>
-              <button
-                type="button"
-                onClick={() => chooseStyle(option.id)}
-                style={{ width: "100%", textAlign: "left", padding: "0.75rem 1rem", border: "1px solid #cbd5e1", borderRadius: "0.375rem", background: "white" }}
-              >
+              <Card interactive onClick={() => chooseStyle(option.id)}>
                 <strong>{option.label}</strong>
-                <div style={{ color: "#64748b", fontSize: "0.875rem" }}>{option.description}</div>
-              </button>
+                <div className="pf-supporting-text">{option.description}</div>
+              </Card>
             </li>
           ))}
           <li>
-            <button type="button" onClick={() => setStep("businessType")} style={{ background: "none", border: "none", color: "#64748b", cursor: "pointer", padding: "0.25rem 0" }}>
+            <TextButton type="button" onClick={() => setStep("businessType")}>
               ← Back
-            </button>
+            </TextButton>
           </li>
         </ul>
       ) : null}
 
       {step === "details" && answers.businessType && answers.style ? (
-        <form onSubmit={submit} style={{ display: "grid", gap: "0.5rem" }}>
-          <p style={{ color: "#64748b", fontSize: "0.875rem", margin: 0 }}>
+        <form onSubmit={submit} style={{ display: "grid", gap: "0.75rem" }}>
+          <p className="pf-supporting-text" style={{ margin: 0 }}>
             Recommended: <strong>{TEMPLATE_MANIFESTS.find((t) => t.id === answers.businessType)!.name}</strong> in the{" "}
             <strong>{getStylePreset(answers.style)!.name}</strong> style.
           </p>
-          <input placeholder="slug" value={slug} onChange={(e) => setSlug(e.target.value)} style={{ padding: "0.5rem" }} />
-          <input placeholder="name" value={name} onChange={(e) => setName(e.target.value)} style={{ padding: "0.5rem" }} />
+          <TextField label="Slug" value={slug} onChange={setSlug} />
+          <TextField label="Name" value={name} onChange={setName} />
           <div style={{ display: "flex", gap: "0.5rem" }}>
-            <button type="submit" disabled={pending} style={{ padding: "0.5rem 1rem", background: "#4f46e5", color: "white", border: "none", borderRadius: "0.375rem" }}>
+            <FilledButton type="submit" disabled={pending}>
               {pending ? "Creating…" : "Create my site"}
-            </button>
-            <button type="button" onClick={() => setStep("style")} style={{ background: "none", border: "none", color: "#64748b", cursor: "pointer" }}>
+            </FilledButton>
+            <TextButton type="button" onClick={() => setStep("style")}>
               ← Back
-            </button>
+            </TextButton>
           </div>
-          {error ? <p style={{ color: "#dc2626", fontSize: "0.875rem" }}>{error}</p> : null}
+          {error ? <p className="pf-error-text">{error}</p> : null}
         </form>
       ) : null}
     </div>
