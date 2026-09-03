@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 
-.PHONY: help up dev down nuke logs test test-integration ci
+.PHONY: help up dev down nuke logs test test-integration ci ports
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
@@ -8,10 +8,13 @@ help: ## Show this help
 .env:
 	cp .env.example .env
 
-up: .env ## Start postgres + api + editor in the background
+ports: .env ## Pick free host ports for postgres/api/nginx and write them into .env (auto-run by up/dev — run standalone just to see/refresh the URLs)
+	@scripts/dev-ports.sh
+
+up: ports ## Start postgres + api + editor in the background
 	docker compose up -d
 
-dev: .env ## Start postgres + api + editor in the foreground (Ctrl-C stops all)
+dev: ports ## Start postgres + api + editor in the foreground (Ctrl-C stops all)
 	docker compose up --build
 
 down: ## Stop the stack, keep volumes

@@ -103,10 +103,17 @@ thing detached; `make down` stops it, `make nuke` also wipes the Postgres
 volume and the pnpm store cache. See `make help`-worthy targets in the
 `Makefile` (`test`, `test-integration`, `ci`, `logs`).
 
-If `5170` (nginx), `8787` (the API, also still published directly for the
-CLI/MCP below) or `5432` (Postgres) collides with something else already
-running, override `PREFAB_PROXY_PORT`/`PREFAB_API_HOST_PORT`/
-`PREFAB_POSTGRES_PORT` in `.env` — nothing else needs to change.
+`5170` (nginx), `8787` (the API, also still published directly for the
+CLI/MCP below) and `5432` (Postgres) never need manual attention:
+`scripts/dev-ports.sh` runs automatically before `up`/`dev` (also on its own
+as `make ports`), checks each one, and rewrites `.env` to the next free port
+if something else already has it — printing the resulting URLs either way.
+Safe by construction: every inter-container hop (editor → api, api/migrate →
+postgres) already goes over Docker's internal network by service name, never
+through these host ports, so reassigning one only ever affects host-side
+consumers (your browser, a natively-run CLI/MCP), which the script keeps in
+sync in `.env` at the same time. A port that's already free is left alone,
+so re-running `make dev` in the same worktree keeps the same URLs.
 
 Prefer running natively instead of in Docker? `pnpm install`, then
 `pnpm run dev:db` (starts a system Postgres via `sudo pg_ctlcluster`/
