@@ -1,11 +1,44 @@
-# migrate/api/editor all bind-mount the whole repo, so `pnpm install` runs
-# against whatever node_modules already exists on the host tree (populated
-# by a prior native `pnpm install`, or not). `--config.confirmModulesPurge=false`
-# is required so pnpm doesn't abort waiting for an interactive confirmation it
-# can never get in a container. `--store-dir=/pnpm-store` pins the content-
-# addressable store to the named volume below explicitly — left to its
-# default, pnpm (running as root, no real $HOME in this image) wrote a
-# `.pnpm-store` directory straight into the bind-mounted repo root instead.
+# migrate/api/editor bind-mount the whole repo for hot reload, but never
+# node_modules itself — each package directory gets its own named volume
+# (below) shadowing the bind mount there, so a container's `pnpm install`
+# can never read, prune or overwrite anything the host installed natively,
+# or vice versa. That isolation is what makes running as root-in-container
+# vs. host-uid, and Node 22-in-container vs. whatever Node the host runs,
+# both safe to ignore: nothing ever crosses between the two. Two more
+# pnpm flags matter on top of that: `--config.confirmModulesPurge=false`,
+# since pnpm otherwise aborts waiting for an interactive confirmation it
+# can never get in a container; `--store-dir=/pnpm-store`, since left to
+# its default pnpm wrote a `.pnpm-store` straight into the bind-mounted
+# repo root instead of the named volume below. `--filter '!@prefab/self-host'`
+# is belt-and-suspenders on top of the volume isolation above: it skips
+# compiling self-host's one native dependency (better-sqlite3) in these
+# three containers entirely, since none of them use it and node:22-slim
+# has no build toolchain to compile it with anyway.
+x-dev-service: &dev-service
+  build:
+    context: .
+    dockerfile: docker/dev.Dockerfile
+  working_dir: /repo
+  volumes: &node-modules-volumes
+    - .:/repo
+    - pnpm-store:/pnpm-store
+    - node_modules_root:/repo/node_modules
+    - node_modules_api:/repo/apps/api/node_modules
+    - node_modules_cli:/repo/apps/cli/node_modules
+    - node_modules_editor:/repo/apps/editor/node_modules
+    - node_modules_mcp:/repo/apps/mcp/node_modules
+    - node_modules_e2e:/repo/e2e/node_modules
+    - node_modules_api_client:/repo/packages/api-client/node_modules
+    - node_modules_blocks:/repo/packages/blocks/node_modules
+    - node_modules_commands:/repo/packages/commands/node_modules
+    - node_modules_db:/repo/packages/db/node_modules
+    - node_modules_publish:/repo/packages/publish/node_modules
+    - node_modules_puck_adapter:/repo/packages/puck-adapter/node_modules
+    - node_modules_runtime:/repo/packages/runtime/node_modules
+    - node_modules_schema:/repo/packages/schema/node_modules
+    - node_modules_templates:/repo/packages/templates/node_modules
+    - node_modules_tools_checks:/repo/tools/checks/node_modules
+
 services:
   postgres:
     image: postgres:16
@@ -26,29 +59,17 @@ services:
       retries: 10
 
   migrate:
-    build:
-      context: .
-      dockerfile: docker/dev.Dockerfile
-    working_dir: /repo
-    volumes:
-      - .:/repo
-      - pnpm-store:/pnpm-store
+    <<: *dev-service
     environment:
       MIGRATE_DATABASE_URL: postgres://prefab:prefab@postgres:5432/prefab_dev
     depends_on:
       postgres:
         condition: service_healthy
-    command: sh -c "pnpm install --frozen-lockfile --config.confirmModulesPurge=false --store-dir=/pnpm-store && pnpm --filter @prefab/db run migrate"
+    command: sh -c "pnpm install --filter '!@prefab/self-host' --frozen-lockfile --config.confirmModulesPurge=false --store-dir=/pnpm-store && pnpm --filter @prefab/db run migrate"
     restart: "no"
 
   api:
-    build:
-      context: .
-      dockerfile: docker/dev.Dockerfile
-    working_dir: /repo
-    volumes:
-      - .:/repo
-      - pnpm-store:/pnpm-store
+    <<: *dev-service
     env_file:
       - .env
     environment:
@@ -63,16 +84,10 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
-    command: sh -c "pnpm install --frozen-lockfile --config.confirmModulesPurge=false --store-dir=/pnpm-store && pnpm --filter @prefab/api run dev"
+    command: sh -c "pnpm install --filter '!@prefab/self-host' --frozen-lockfile --config.confirmModulesPurge=false --store-dir=/pnpm-store && pnpm --filter @prefab/api run dev"
 
   editor:
-    build:
-      context: .
-      dockerfile: docker/dev.Dockerfile
-    working_dir: /repo
-    volumes:
-      - .:/repo
-      - pnpm-store:/pnpm-store
+    <<: *dev-service
     environment:
       # Container-network hostname: Vite's dev-server proxy runs server-side
       # (in this container), so it reaches `api` by service name, while the
@@ -83,7 +98,7 @@ services:
     # can never collide with another project's dev server on this laptop.
     depends_on:
       - api
-    command: sh -c "pnpm install --frozen-lockfile --config.confirmModulesPurge=false --store-dir=/pnpm-store && pnpm --filter @prefab/editor run dev"
+    command: sh -c "pnpm install --filter '!@prefab/self-host' --frozen-lockfile --config.confirmModulesPurge=false --store-dir=/pnpm-store && pnpm --filter @prefab/editor run dev"
 
   # The only service that publishes a host port for the browser-facing UI —
   # fronts editor at a stable hostname (docker/nginx.conf) so a laptop
@@ -101,3 +116,19 @@ services:
 volumes:
   pgdata:
   pnpm-store:
+  node_modules_root:
+  node_modules_api:
+  node_modules_cli:
+  node_modules_editor:
+  node_modules_mcp:
+  node_modules_e2e:
+  node_modules_api_client:
+  node_modules_blocks:
+  node_modules_commands:
+  node_modules_db:
+  node_modules_publish:
+  node_modules_puck_adapter:
+  node_modules_runtime:
+  node_modules_schema:
+  node_modules_templates:
+  node_modules_tools_checks:
