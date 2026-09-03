@@ -1,0 +1,47 @@
+# Copy this file to docker-compose.override.yml (gitignored, like .env —
+# `docker compose` loads it automatically alongside docker-compose.yml,
+# no extra flag needed) to route the editor through a machine-wide
+# Traefik instance at http://pre-fab.localhost/ instead of a directly-
+# published port. Requires that instance to already be running with a
+# `proxy` external network — see ~/dev-proxy (or wherever you've set one
+# up) for the Traefik side of this.
+#
+# Nothing here is required: docker-compose.yml works standalone with no
+# override present (including in CI), publishing the editor directly on
+# PREFAB_EDITOR_HOST_PORT instead. This file only ever adds to that
+# default, never replaces it — editor keeps its direct port either way.
+services:
+  editor:
+    # `default` (the project's own implicit network, needed to reach
+    # api/postgres by service name) plus `proxy` (Traefik's network) —
+    # listing both explicitly here, since an override's own `networks:`
+    # isn't merged with the base file's implicit one, it replaces it.
+    networks:
+      - default
+      - proxy
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.pre-fab.rule=Host(`pre-fab.localhost`)
+      - traefik.http.services.pre-fab.loadbalancer.server.port=5173
+      # Vite's dev server validates the HMR websocket upgrade's Host
+      # header as `hostname:port` against its own listening port (5173),
+      # separately from the plain-HTTP `allowedHosts` check (which only
+      # looks at the hostname) — see apps/editor/vite.config.ts's own
+      # comment. Traefik forwards the original Host header
+      # (`pre-fab.localhost`, no port, since that's what the browser sent
+      # on port 80) unless told otherwise; this rewrites it to what Vite's
+      # websocket check actually wants, the identical fix
+      # docker/nginx.conf used to apply.
+      - traefik.http.routers.pre-fab.middlewares=pre-fab-vite-host
+      - traefik.http.middlewares.pre-fab-vite-host.headers.customrequestheaders.Host=pre-fab.localhost:5173
+
+  api:
+    environment:
+      # Overrides docker-compose.yml's own default (http://localhost:5173)
+      # — the browser now reaches the editor at this origin instead, so
+      # CORS must allow it.
+      EDITOR_ORIGIN: http://pre-fab.localhost
+
+networks:
+  proxy:
+    external: true

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Auto-picks free host ports for `make dev`/`make up` and writes them into
 # .env, so two worktrees of this repo (or this repo alongside an unrelated
-# project) never have to fight over 5170/8787/5432 by hand.
+# project) never have to fight over 5173/8787/5432 by hand.
 #
 # Safe by construction: every inter-container hop (editor -> api, api/migrate
 # -> postgres) already goes over Docker's internal network using service
@@ -11,6 +11,13 @@
 # consumers (your browser, the CLI/MCP running natively, `psql` from the
 # host) care about the values this script writes, which is exactly why
 # reassigning them here is risk-free.
+#
+# If docker-compose.override.yml is present (see
+# docker-compose.override.yml.example), the editor is reached through a
+# machine-wide Traefik instance at http://pre-fab.localhost/ instead —
+# that override hardcodes its own EDITOR_ORIGIN in YAML, so this script's
+# PREFAB_EDITOR_HOST_PORT/.env changes are harmless but moot for the
+# editor's URL in that mode; only the printed summary needs to know.
 #
 # Idempotent: a port already free is left untouched, so restarting the same
 # worktree's stack keeps the same URLs across runs. Only a port that's
@@ -55,23 +62,23 @@ set_env_var() {
   fi
 }
 
-proxy_default=5170
+editor_default=5173
 api_default=8787
 pg_default=5432
 
-proxy_port=$(get_env_var PREFAB_PROXY_PORT "$proxy_default")
+editor_port=$(get_env_var PREFAB_EDITOR_HOST_PORT "$editor_default")
 api_port=$(get_env_var PREFAB_API_HOST_PORT "$api_default")
 pg_port=$(get_env_var PREFAB_POSTGRES_PORT "$pg_default")
 
-new_proxy_port=$(find_free_port "$proxy_port")
+new_editor_port=$(find_free_port "$editor_port")
 new_api_port=$(find_free_port "$api_port")
 new_pg_port=$(find_free_port "$pg_port")
 
-[ "$new_proxy_port" != "$proxy_port" ] && echo "PREFAB_PROXY_PORT $proxy_port is taken — using $new_proxy_port instead"
+[ "$new_editor_port" != "$editor_port" ] && echo "PREFAB_EDITOR_HOST_PORT $editor_port is taken — using $new_editor_port instead"
 [ "$new_api_port" != "$api_port" ] && echo "PREFAB_API_HOST_PORT $api_port is taken — using $new_api_port instead"
 [ "$new_pg_port" != "$pg_port" ] && echo "PREFAB_POSTGRES_PORT $pg_port is taken — using $new_pg_port instead"
 
-set_env_var PREFAB_PROXY_PORT "$new_proxy_port"
+set_env_var PREFAB_EDITOR_HOST_PORT "$new_editor_port"
 set_env_var PREFAB_API_HOST_PORT "$new_api_port"
 set_env_var PREFAB_POSTGRES_PORT "$new_pg_port"
 
@@ -79,8 +86,8 @@ set_env_var PREFAB_POSTGRES_PORT "$new_pg_port"
 # in-container one) — kept in sync so the browser, a natively-run CLI/MCP,
 # and the published-site runtime all still point at wherever the API
 # actually landed. VITE_PREFAB_API_URL is unset/empty in the Docker path
-# (the editor talks to the API same-origin, through nginx) but is rewritten
-# too for the native dev path's sake.
+# (the editor talks to the API same-origin, through its own dev-server
+# proxy) but is rewritten too for the native dev path's sake.
 if [ "$new_api_port" != "$api_port" ]; then
   for key in RUNTIME_API_URL PREFAB_API_URL VITE_PREFAB_API_URL; do
     set_env_var "$key" "http://localhost:${new_api_port}"
@@ -98,8 +105,14 @@ if [ "$new_pg_port" != "$pg_port" ]; then
   done
 fi
 
+if [ -f docker-compose.override.yml ]; then
+  editor_url="http://pre-fab.localhost/ (via Traefik)"
+else
+  editor_url="http://localhost:${new_editor_port}"
+fi
+
 cat <<EOF
-Editor:   http://pre-fab.localhost:${new_proxy_port}
+Editor:   ${editor_url}
 API:      http://localhost:${new_api_port}
 Postgres: localhost:${new_pg_port}
 EOF
