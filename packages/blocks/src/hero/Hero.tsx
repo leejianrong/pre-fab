@@ -15,13 +15,26 @@ import type { HeroProps } from "./schema.js";
  * form of the WYSIWYG guarantee this slice tests.
  */
 export function Hero(props: HeroProps & BlockRenderProps) {
-  const { heading, subheading, ctaLabel, ctaHref, background, blockId, responsive } = props;
+  // `backgroundImage = ""`, not a bare destructure: the publish pipeline
+  // spreads a page document's stored `block.props` straight onto this
+  // component with no schema-default-filling pass (packages/publish's
+  // page-template.ts), so a page saved before this field existed hands it
+  // `undefined` here, not "". Same reason `responsive` below is read as
+  // `responsive ?? {}` rather than trusted bare.
+  const { heading, subheading, ctaLabel, ctaHref, background, backgroundImage = "", blockId, responsive } = props;
   const hasCta = ctaLabel.length > 0 && ctaHref.length > 0;
+  const hasImage = backgroundImage.length > 0;
 
+  // With an image, text sits over a scrim rather than the flat theme
+  // background — `accent`/`accent-foreground` are reused for both rather
+  // than introducing a new token pair, since every theme already picks
+  // that pair to contrast (it's the CTA button's own colours).
   const sectionStyle: CSSProperties = {
-    background: cssVar("color", background),
-    color: cssVar("color", "foreground"),
-    padding: `${cssVar("spacing", "section")} ${cssVar("spacing", "element")}`,
+    position: "relative",
+    overflow: "hidden",
+    background: hasImage ? cssVar("color", "accent") : cssVar("color", background),
+    color: hasImage ? cssVar("color", "accent-foreground") : cssVar("color", "foreground"),
+    padding: hasImage ? `calc(${cssVar("spacing", "section")} * 2) ${cssVar("spacing", "element")}` : `${cssVar("spacing", "section")} ${cssVar("spacing", "element")}`,
   };
 
   return (
@@ -32,30 +45,46 @@ export function Hero(props: HeroProps & BlockRenderProps) {
       data-pf-block-id={blockId}
     >
       <ResponsiveStyle blockId={blockId ?? ""} responsive={responsive ?? {}} />
-      <h1 className="pf-hero-heading" style={{ fontSize: cssVar("fontSize", "heading"), fontFamily: cssVar("fontFamily", "heading"), margin: 0 }}>
-        {heading}
-      </h1>
-      {subheading ? (
-        <p className="pf-hero-subheading" style={{ fontSize: cssVar("fontSize", "body") }}>
-          {subheading}
-        </p>
+      {hasImage ? (
+        <>
+          <img
+            src={backgroundImage}
+            alt=""
+            aria-hidden="true"
+            style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", zIndex: 0 }}
+          />
+          <div style={{ position: "absolute", inset: 0, background: cssVar("color", "accent"), opacity: 0.55, zIndex: 0 }} />
+        </>
       ) : null}
-      {hasCta ? (
-        <a
-          className="pf-hero-cta"
-          href={ctaHref}
-          style={{
-            display: "inline-block",
-            background: cssVar("color", "accent"),
-            color: cssVar("color", "accent-foreground"),
-            borderRadius: cssVar("radius", "control"),
-            padding: "0.75em 1.5em",
-            textDecoration: "none",
-          }}
+      <div style={{ position: "relative", zIndex: 1 }}>
+        <h1
+          className="pf-hero-heading"
+          style={{ fontSize: cssVar("fontSize", "heading"), fontFamily: cssVar("fontFamily", "heading"), margin: 0, color: "inherit" }}
         >
-          {ctaLabel}
-        </a>
-      ) : null}
+          {heading}
+        </h1>
+        {subheading ? (
+          <p className="pf-hero-subheading" style={{ fontSize: cssVar("fontSize", "body"), color: "inherit" }}>
+            {subheading}
+          </p>
+        ) : null}
+        {hasCta ? (
+          <a
+            className="pf-hero-cta"
+            href={ctaHref}
+            style={{
+              display: "inline-block",
+              background: hasImage ? cssVar("color", "background") : cssVar("color", "accent"),
+              color: hasImage ? cssVar("color", "foreground") : cssVar("color", "accent-foreground"),
+              borderRadius: cssVar("radius", "control"),
+              padding: "0.75em 1.5em",
+              textDecoration: "none",
+            }}
+          >
+            {ctaLabel}
+          </a>
+        ) : null}
+      </div>
     </section>
   );
 }

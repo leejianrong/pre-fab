@@ -114,7 +114,7 @@ export async function gotoLiveSite(page: Page, hostname: string): Promise<void> 
 
 /** Default props for every first-party block type, keyed by block type — for building test documents that exercise the whole library at once. */
 export const ALL_BLOCK_TYPE_PROPS: Record<string, Record<string, unknown>> = {
-  hero: { heading: "Hero heading", subheading: "Hero subheading", ctaLabel: "Go", ctaHref: "#", background: "background" },
+  hero: { heading: "Hero heading", subheading: "Hero subheading", ctaLabel: "Go", ctaHref: "#", background: "background", backgroundImage: "" },
   heading: { text: "Section heading", level: "h2", size: "heading", align: "left" },
   richtext: { html: "Some rich text content.", size: "body", align: "left" },
   image: { src: "https://placehold.co/800x400", alt: "placeholder", caption: "", radius: "card" },

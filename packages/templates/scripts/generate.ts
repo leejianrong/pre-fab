@@ -520,6 +520,101 @@ const TEMPLATES: TemplateSpec[] = [
       { type: FOOTER_BLOCK_TYPE, props: { text: "© Jordan Blake", links: [] } },
     ],
   },
+  {
+    id: "wellness-studio",
+    siteName: "Still Water Yoga",
+    // A dedicated theme object, not the shared `theme()` helper above — this
+    // template varies fontFamily and spacing too (the helper only covers
+    // color/radius), and both matter here: a restrained serif/sans pairing
+    // and a wider section rhythm are the whole point of the "editorial
+    // design discipline" this template exists to demonstrate (KAN-1128).
+    theme: {
+      ...DEFAULT_THEME_TOKENS,
+      color: {
+        background: "#f7f5f0",
+        foreground: "#2b2b26",
+        surface: "#eeece3",
+        "surface-foreground": "#2b2b26",
+        border: "#ded9c9",
+        accent: "#5c6e58",
+        "accent-foreground": "#f7f5f0",
+        muted: "#ded9c9",
+        "muted-foreground": "#5c584d",
+      },
+      fontFamily: {
+        heading: "Georgia, 'Times New Roman', serif",
+        body: "'Segoe UI', -apple-system, sans-serif",
+      },
+      spacing: { ...DEFAULT_THEME_TOKENS.spacing, section: "6rem" },
+      radius: { ...DEFAULT_THEME_TOKENS.radius, card: "0.25rem", control: "0.25rem" },
+    },
+    blocks: [
+      { type: NAV_BLOCK_TYPE, props: { brand: "Still Water Yoga", links: [{ label: "Classes", href: "#classes" }, { label: "Philosophy", href: "#philosophy" }, { label: "Visit", href: "#contact" }] } },
+      {
+        type: HERO_BLOCK_TYPE,
+        props: {
+          heading: "Slow down. Show up. Breathe.",
+          subheading: "Vinyasa, restorative and breathwork classes in a small studio built for quiet attention.",
+          ctaLabel: "See class times",
+          ctaHref: "#classes",
+          background: "background",
+          backgroundImage: "https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?w=1200&q=70",
+        },
+      },
+      { type: HEADING_BLOCK_TYPE, props: { text: "Our philosophy", level: "h2", size: "heading", align: "left" } },
+      {
+        type: RICHTEXT_BLOCK_TYPE,
+        props: {
+          html: "We keep classes small and unhurried. No mirrors, no music you can't think over — just enough people in a room to notice each other's breathing.\n\nMost students start with one class a week and stay for years. There's no six-week transformation here, just a quiet, ongoing one.",
+          size: "body",
+          align: "left",
+        },
+      },
+      { type: HEADING_BLOCK_TYPE, props: { text: "Classes", level: "h2", size: "heading", align: "left" } },
+      {
+        type: CARDGRID_BLOCK_TYPE,
+        props: {
+          columns: 3,
+          cards: [
+            { title: "Vinyasa Flow", body: "A moving, breath-led practice. Mornings and early evenings, all levels.", href: "" },
+            { title: "Restorative", body: "Long holds, blankets and bolsters — the class students describe as the best hour of their week.", href: "" },
+            { title: "Breathwork & Meditation", body: "Twenty minutes of breathing, twenty minutes of stillness. No mat required.", href: "" },
+          ],
+        },
+      },
+      {
+        type: GALLERY_BLOCK_TYPE,
+        props: {
+          columns: 3,
+          images: [
+            { src: "https://images.unsplash.com/photo-1545205597-3d9d02c29597?w=900&q=80", alt: "A group class in tree pose on the beach at low tide" },
+            { src: "https://images.unsplash.com/photo-1506126613408-eca07ce68773?w=900&q=80", alt: "A student seated in meditation as the sun rises behind them" },
+            { src: "https://images.unsplash.com/photo-1552196563-55cd4e45efb3?w=900&q=80", alt: "A student in a seated stretch on a sunlit wooden studio floor" },
+          ],
+        },
+      },
+      {
+        type: TESTIMONIAL_BLOCK_TYPE,
+        props: {
+          quote: "I've tried a dozen studios in this city. This is the only one where I actually stopped checking the clock.",
+          author: "Priya Nandan",
+          role: "Student since 2019",
+        },
+      },
+      {
+        type: FAQ_BLOCK_TYPE,
+        props: {
+          items: [
+            { question: "Do I need to bring my own mat?", answer: "No — mats, blankets and bolsters are all provided, freshly cleaned after every class." },
+            { question: "I've never done yoga before. Is that a problem?", answer: "Most of our students hadn't either. Every class is taught to the person who's never been, not around them." },
+            { question: "What should I wear?", answer: "Whatever you can move in. There's no dress code here." },
+          ],
+        },
+      },
+      { type: CONTACTDETAILS_BLOCK_TYPE, props: { heading: "Visit the studio", email: "hello@stillwateryoga.example", phone: "+1 (555) 010-7733", address: "142 Birch Lane, Studio 2" } },
+      { type: FOOTER_BLOCK_TYPE, props: { text: "© Still Water Yoga", links: [] } },
+    ],
+  },
 ];
 
 // A distinct CTA button on every template's hero-adjacent section would be

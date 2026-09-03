@@ -17,7 +17,7 @@ function heroBlock(id: string) {
     parent: null,
     order: 1000,
     schemaVersion: 1,
-    props: { heading: "Ejected and standalone", subheading: "", ctaLabel: "", ctaHref: "", background: "background" },
+    props: { heading: "Ejected and standalone", subheading: "", ctaLabel: "", ctaHref: "", background: "background", backgroundImage: "" },
     responsive: {},
   };
 }
