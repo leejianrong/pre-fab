@@ -1,0 +1,432 @@
+/*
+ * Type scale, shape scale, elevation and state-layer tokens — the parts of
+ * M3 that are fixed spec constants, not derived from the seed color (that's
+ * theme.ts, generated at runtime). @material/web's own compiled components
+ * already carry these as internal fallback defaults, so this file exists
+ * for pre-fab's own hand-rolled pieces (Card, SideSheet, TopAppBar,
+ * StatusBadge) that reference the same custom-property names directly,
+ * values pulled from the M3 spec (material-web's own token source,
+ * tokens/versions/v0_192/), not reconstructed from memory.
+ *
+ * Typeface: both slots use a system-font stack rather than loading Roboto
+ * from a font CDN — this app is edited by non-technical owners who may be
+ * offline (R16), and a hard external font dependency for the editor's own
+ * chrome isn't worth the tradeoff. Revisit if the editor gets a real
+ * typographic identity later.
+ */
+
+:root {
+  --md-ref-typeface-brand: "Segoe UI", Roboto, -apple-system, BlinkMacSystemFont, Helvetica, Arial, sans-serif;
+  --md-ref-typeface-plain: "Segoe UI", Roboto, -apple-system, BlinkMacSystemFont, Helvetica, Arial, sans-serif;
+
+  /* Type scale — role: font / line-height / size / weight / tracking */
+  --md-sys-typescale-display-large-font: var(--md-ref-typeface-brand);
+  --md-sys-typescale-display-large-size: 3.5625rem;
+  --md-sys-typescale-display-large-line-height: 4rem;
+  --md-sys-typescale-display-large-weight: 400;
+  --md-sys-typescale-display-large-tracking: -0.015625rem;
+
+  --md-sys-typescale-display-medium-font: var(--md-ref-typeface-brand);
+  --md-sys-typescale-display-medium-size: 2.8125rem;
+  --md-sys-typescale-display-medium-line-height: 3.25rem;
+  --md-sys-typescale-display-medium-weight: 400;
+  --md-sys-typescale-display-medium-tracking: 0;
+
+  --md-sys-typescale-display-small-font: var(--md-ref-typeface-brand);
+  --md-sys-typescale-display-small-size: 2.25rem;
+  --md-sys-typescale-display-small-line-height: 2.75rem;
+  --md-sys-typescale-display-small-weight: 400;
+  --md-sys-typescale-display-small-tracking: 0;
+
+  --md-sys-typescale-headline-large-font: var(--md-ref-typeface-brand);
+  --md-sys-typescale-headline-large-size: 2rem;
+  --md-sys-typescale-headline-large-line-height: 2.5rem;
+  --md-sys-typescale-headline-large-weight: 400;
+  --md-sys-typescale-headline-large-tracking: 0;
+
+  --md-sys-typescale-headline-medium-font: var(--md-ref-typeface-brand);
+  --md-sys-typescale-headline-medium-size: 1.75rem;
+  --md-sys-typescale-headline-medium-line-height: 2.25rem;
+  --md-sys-typescale-headline-medium-weight: 400;
+  --md-sys-typescale-headline-medium-tracking: 0;
+
+  --md-sys-typescale-headline-small-font: var(--md-ref-typeface-brand);
+  --md-sys-typescale-headline-small-size: 1.5rem;
+  --md-sys-typescale-headline-small-line-height: 2rem;
+  --md-sys-typescale-headline-small-weight: 400;
+  --md-sys-typescale-headline-small-tracking: 0;
+
+  --md-sys-typescale-title-large-font: var(--md-ref-typeface-brand);
+  --md-sys-typescale-title-large-size: 1.375rem;
+  --md-sys-typescale-title-large-line-height: 1.75rem;
+  --md-sys-typescale-title-large-weight: 400;
+  --md-sys-typescale-title-large-tracking: 0;
+
+  --md-sys-typescale-title-medium-font: var(--md-ref-typeface-plain);
+  --md-sys-typescale-title-medium-size: 1rem;
+  --md-sys-typescale-title-medium-line-height: 1.5rem;
+  --md-sys-typescale-title-medium-weight: 500;
+  --md-sys-typescale-title-medium-tracking: 0.009375rem;
+
+  --md-sys-typescale-title-small-font: var(--md-ref-typeface-plain);
+  --md-sys-typescale-title-small-size: 0.875rem;
+  --md-sys-typescale-title-small-line-height: 1.25rem;
+  --md-sys-typescale-title-small-weight: 500;
+  --md-sys-typescale-title-small-tracking: 0.00625rem;
+
+  --md-sys-typescale-body-large-font: var(--md-ref-typeface-plain);
+  --md-sys-typescale-body-large-size: 1rem;
+  --md-sys-typescale-body-large-line-height: 1.5rem;
+  --md-sys-typescale-body-large-weight: 400;
+  --md-sys-typescale-body-large-tracking: 0.03125rem;
+
+  --md-sys-typescale-body-medium-font: var(--md-ref-typeface-plain);
+  --md-sys-typescale-body-medium-size: 0.875rem;
+  --md-sys-typescale-body-medium-line-height: 1.25rem;
+  --md-sys-typescale-body-medium-weight: 400;
+  --md-sys-typescale-body-medium-tracking: 0.015625rem;
+
+  --md-sys-typescale-body-small-font: var(--md-ref-typeface-plain);
+  --md-sys-typescale-body-small-size: 0.75rem;
+  --md-sys-typescale-body-small-line-height: 1rem;
+  --md-sys-typescale-body-small-weight: 400;
+  --md-sys-typescale-body-small-tracking: 0.025rem;
+
+  --md-sys-typescale-label-large-font: var(--md-ref-typeface-plain);
+  --md-sys-typescale-label-large-size: 0.875rem;
+  --md-sys-typescale-label-large-line-height: 1.25rem;
+  --md-sys-typescale-label-large-weight: 500;
+  --md-sys-typescale-label-large-tracking: 0.00625rem;
+
+  --md-sys-typescale-label-medium-font: var(--md-ref-typeface-plain);
+  --md-sys-typescale-label-medium-size: 0.75rem;
+  --md-sys-typescale-label-medium-line-height: 1rem;
+  --md-sys-typescale-label-medium-weight: 500;
+  --md-sys-typescale-label-medium-tracking: 0.03125rem;
+
+  --md-sys-typescale-label-small-font: var(--md-ref-typeface-plain);
+  --md-sys-typescale-label-small-size: 0.6875rem;
+  --md-sys-typescale-label-small-line-height: 1rem;
+  --md-sys-typescale-label-small-weight: 500;
+  --md-sys-typescale-label-small-tracking: 0.03125rem;
+
+  /* Shape scale */
+  --md-sys-shape-corner-none: 0px;
+  --md-sys-shape-corner-extra-small: 4px;
+  --md-sys-shape-corner-small: 8px;
+  --md-sys-shape-corner-medium: 12px;
+  --md-sys-shape-corner-large: 16px;
+  --md-sys-shape-corner-extra-large: 28px;
+  --md-sys-shape-corner-full: 9999px;
+
+  /* Elevation — shadow only; pair with a surface-tint wash by hand where a
+     hand-rolled surface needs one (see ui/Card.tsx / ui/SideSheet.tsx). */
+  --md-sys-elevation-level0: none;
+  --md-sys-elevation-level1: 0px 1px 2px 0px rgba(0, 0, 0, 0.3), 0px 1px 3px 1px rgba(0, 0, 0, 0.15);
+  --md-sys-elevation-level2: 0px 1px 2px 0px rgba(0, 0, 0, 0.3), 0px 2px 6px 2px rgba(0, 0, 0, 0.15);
+  --md-sys-elevation-level3: 0px 1px 3px 0px rgba(0, 0, 0, 0.3), 0px 4px 8px 3px rgba(0, 0, 0, 0.15);
+  --md-sys-elevation-level4: 0px 2px 3px 0px rgba(0, 0, 0, 0.3), 0px 6px 10px 4px rgba(0, 0, 0, 0.15);
+  --md-sys-elevation-level5: 0px 4px 4px 0px rgba(0, 0, 0, 0.3), 0px 8px 12px 6px rgba(0, 0, 0, 0.15);
+
+  /* State layer opacities */
+  --md-sys-state-hover-state-layer-opacity: 0.08;
+  --md-sys-state-focus-state-layer-opacity: 0.12;
+  --md-sys-state-pressed-state-layer-opacity: 0.12;
+  --md-sys-state-dragged-state-layer-opacity: 0.16;
+
+  /* Motion */
+  --md-sys-motion-duration-short2: 100ms;
+  --md-sys-motion-duration-medium2: 300ms;
+  --md-sys-motion-easing-standard: cubic-bezier(0.2, 0, 0, 1);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  background: var(--md-sys-color-surface);
+  color: var(--md-sys-color-on-surface);
+  font-family: var(--md-ref-typeface-plain);
+  font-size: var(--md-sys-typescale-body-large-size);
+  line-height: var(--md-sys-typescale-body-large-line-height);
+}
+
+a {
+  color: var(--md-sys-color-primary);
+}
+
+#root {
+  height: 100%;
+}
+
+/* Native <input type="date">/<select> fallback — md-outlined-text-field's
+   TextFieldType doesn't cover "date" (see ui/DateField.tsx), and
+   md-outlined-select is a combobox rather than a real <select> (see
+   ui/SelectField.tsx), so both hand-style a native control to the same
+   outlined-field shape/color tokens. */
+.pf-native-field {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.pf-native-field-label {
+  font-family: var(--md-ref-typeface-plain);
+  font-size: var(--md-sys-typescale-body-small-size);
+  color: var(--md-sys-color-on-surface-variant);
+}
+
+.pf-native-control {
+  font: inherit;
+  font-family: var(--md-ref-typeface-plain);
+  font-size: var(--md-sys-typescale-body-large-size);
+  color: var(--md-sys-color-on-surface);
+  background: transparent;
+  border: 1px solid var(--md-sys-color-outline);
+  border-radius: var(--md-sys-shape-corner-extra-small);
+  padding: 0.85rem 1rem;
+  outline: none;
+}
+
+.pf-native-control:focus {
+  border-color: var(--md-sys-color-primary);
+  border-width: 2px;
+  padding: calc(0.85rem - 1px) calc(1rem - 1px);
+}
+
+/* Outlined Card's hover state layer (state-layer opacities, scales-tokens.md) */
+.pf-card-interactive {
+  transition: background-color var(--md-sys-motion-duration-short2) var(--md-sys-motion-easing-standard);
+}
+
+.pf-card-interactive:hover {
+  background-color: color-mix(
+    in srgb,
+    var(--md-sys-color-on-surface) calc(var(--md-sys-state-hover-state-layer-opacity) * 100%),
+    var(--md-sys-color-surface)
+  );
+}
+
+/* SideSheet */
+.pf-scrim {
+  position: fixed;
+  inset: 0;
+  background: color-mix(in srgb, var(--md-sys-color-scrim) 40%, transparent);
+  display: flex;
+  justify-content: flex-end;
+  z-index: 50;
+}
+
+.pf-side-sheet {
+  height: 100%;
+  background: var(--md-sys-color-surface-container-high);
+  color: var(--md-sys-color-on-surface);
+  box-shadow: var(--md-sys-elevation-level2);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  animation: pf-slide-in var(--md-sys-motion-duration-medium2) var(--md-sys-motion-easing-standard);
+}
+
+@keyframes pf-slide-in {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+.pf-side-sheet-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 1rem;
+  border-bottom: 1px solid var(--md-sys-color-outline-variant);
+}
+
+.pf-side-sheet-title {
+  flex: 1;
+  margin: 0;
+  font-family: var(--md-ref-typeface-brand);
+  font-size: var(--md-sys-typescale-title-large-size);
+  line-height: var(--md-sys-typescale-title-large-line-height);
+  font-weight: var(--md-sys-typescale-title-large-weight);
+}
+
+.pf-side-sheet-body {
+  padding: 1rem;
+  display: grid;
+  gap: 1rem;
+  flex: 1;
+  align-content: start;
+}
+
+/* TopAppBar */
+.pf-top-app-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 1rem;
+  background: var(--md-sys-color-surface-container);
+  color: var(--md-sys-color-on-surface);
+  border-bottom: 1px solid var(--md-sys-color-outline-variant);
+}
+
+.pf-top-app-bar-title {
+  font-family: var(--md-ref-typeface-plain);
+  font-size: var(--md-sys-typescale-title-medium-size);
+  font-weight: var(--md-sys-typescale-title-medium-weight);
+  flex: 1;
+}
+
+.pf-top-app-bar-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* Shared page/form layout (login, signup) */
+.pf-centered-page {
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  padding: 2rem;
+}
+
+.pf-form {
+  display: grid;
+  gap: 1rem;
+  width: 320px;
+  max-width: 100%;
+}
+
+.pf-headline {
+  margin: 0;
+  font-family: var(--md-ref-typeface-brand);
+  font-size: var(--md-sys-typescale-headline-small-size);
+  line-height: var(--md-sys-typescale-headline-small-line-height);
+  font-weight: var(--md-sys-typescale-headline-small-weight);
+}
+
+/* Section header within a page — title-large, not the page's own headline. */
+.pf-section-title {
+  margin: 0 0 0.5rem 0;
+  font-family: var(--md-ref-typeface-brand);
+  font-size: var(--md-sys-typescale-title-large-size);
+  line-height: var(--md-sys-typescale-title-large-line-height);
+  font-weight: var(--md-sys-typescale-title-large-weight);
+}
+
+/* A subsection header one step down from pf-section-title (e.g. a card
+   inside a panel that already has its own pf-section-title). */
+.pf-subsection-title {
+  margin: 0;
+  font-family: var(--md-ref-typeface-plain);
+  font-size: var(--md-sys-typescale-title-medium-size);
+  line-height: var(--md-sys-typescale-title-medium-line-height);
+  font-weight: var(--md-sys-typescale-title-medium-weight);
+}
+
+.pf-error-text {
+  margin: 0;
+  color: var(--md-sys-color-error);
+  font-family: var(--md-ref-typeface-plain);
+  font-size: var(--md-sys-typescale-body-small-size);
+}
+
+.pf-supporting-text {
+  margin: 0;
+  color: var(--md-sys-color-on-surface-variant);
+  font-family: var(--md-ref-typeface-plain);
+  font-size: var(--md-sys-typescale-body-medium-size);
+}
+
+/* A text/outlined button for a destructive action (Remove, Delete) —
+   overrides the component's own label/state-layer color tokens (there's
+   no plain `color` to inherit; @material/web's buttons key their label
+   color off --md-text-button-label-text-color etc., not currentColor). */
+.pf-destructive-button {
+  --md-text-button-label-text-color: var(--md-sys-color-error);
+  --md-text-button-hover-label-text-color: var(--md-sys-color-error);
+  --md-text-button-hover-state-layer-color: var(--md-sys-color-error);
+  --md-text-button-pressed-label-text-color: var(--md-sys-color-error);
+  --md-text-button-pressed-state-layer-color: var(--md-sys-color-error);
+  --md-text-button-focus-label-text-color: var(--md-sys-color-error);
+  --md-outlined-button-label-text-color: var(--md-sys-color-error);
+  --md-outlined-button-hover-label-text-color: var(--md-sys-color-error);
+  --md-outlined-button-hover-state-layer-color: var(--md-sys-color-error);
+  --md-outlined-button-pressed-label-text-color: var(--md-sys-color-error);
+  --md-outlined-button-pressed-state-layer-color: var(--md-sys-color-error);
+  --md-outlined-button-focus-label-text-color: var(--md-sys-color-error);
+  --md-outlined-button-outline-color: var(--md-sys-color-error);
+}
+
+.pf-mono-field {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+}
+
+/* Dialog — native <dialog>, M3 basic-dialog shape/elevation/color (see
+   ui/Dialog.tsx for why this is hand-rolled rather than md-dialog). The
+   browser centers and modal-traps focus for a dialog shown via
+   showModal(); only appearance needs styling here. */
+/* display:none while closed is normally a UA-stylesheet default
+   (`dialog:not([open])`) — but any author rule for the SAME property beats
+   a UA rule regardless of specificity, so this class's own `display: grid`
+   below has to be scoped to `[open]` explicitly, or it silently keeps the
+   (offscreen-positioned-by-default, but still laid out and interactive)
+   dialog visible and intercepting clicks even while closed. Confirmed
+   against a real browser: computed `display` read "grid" with `open`
+   false, and the dialog was sitting at the top of the page, blocking the
+   top app bar's own buttons. */
+.pf-dialog:not([open]) {
+  display: none;
+}
+
+.pf-dialog[open] {
+  border: none;
+  border-radius: var(--md-sys-shape-corner-extra-large);
+  padding: 1.5rem;
+  max-width: min(420px, calc(100vw - 2rem));
+  background: var(--md-sys-color-surface-container-high);
+  color: var(--md-sys-color-on-surface);
+  box-shadow: var(--md-sys-elevation-level3);
+  display: grid;
+  gap: 1rem;
+}
+
+.pf-dialog::backdrop {
+  background: color-mix(in srgb, var(--md-sys-color-scrim) 40%, transparent);
+}
+
+.pf-dialog-headline {
+  margin: 0;
+  font-family: var(--md-ref-typeface-brand);
+  font-size: var(--md-sys-typescale-headline-small-size);
+  line-height: var(--md-sys-typescale-headline-small-line-height);
+  font-weight: var(--md-sys-typescale-headline-small-weight);
+}
+
+.pf-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* LoadingIndicator */
+.pf-loading {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 2rem;
+  font-family: var(--md-ref-typeface-plain);
+  font-size: var(--md-sys-typescale-body-large-size);
+  color: var(--md-sys-color-on-surface-variant);
+}

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { api } from "./api.js";
+import { FilledButton, TextButton, TextField } from "./ui/index.js";
 
 /**
  * The browser's version of the `dev.login` bootstrap the CLI and the e2e
@@ -27,32 +28,17 @@ export function LoginScreen({ onLoggedIn, onSignUp }: { onLoggedIn: () => void; 
   }
 
   return (
-    <div style={{ display: "grid", placeItems: "center", height: "100vh", fontFamily: "system-ui, sans-serif" }}>
-      <form onSubmit={submit} style={{ display: "grid", gap: "0.75rem", width: 320 }}>
-        <h1 style={{ fontSize: "1.25rem", margin: 0 }}>pre-fab</h1>
-        <label style={{ display: "grid", gap: "0.25rem", fontSize: "0.875rem" }}>
-          Seeded account email
-          <input
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            style={{ padding: "0.5rem", border: "1px solid #cbd5e1", borderRadius: "0.375rem" }}
-          />
-        </label>
-        <button
-          type="submit"
-          disabled={pending}
-          style={{ padding: "0.5rem", background: "#4f46e5", color: "white", border: "none", borderRadius: "0.375rem" }}
-        >
+    <div className="pf-centered-page">
+      <form onSubmit={submit} className="pf-form">
+        <h1 className="pf-headline">pre-fab</h1>
+        <TextField label="Seeded account email" value={email} onChange={setEmail} />
+        <FilledButton type="submit" disabled={pending}>
           {pending ? "Signing in…" : "Sign in"}
-        </button>
-        {error ? <p style={{ color: "#dc2626", fontSize: "0.875rem" }}>{error}</p> : null}
-        <button
-          type="button"
-          onClick={onSignUp}
-          style={{ background: "none", border: "none", color: "#4f46e5", cursor: "pointer", fontSize: "0.875rem", padding: 0, justifySelf: "start" }}
-        >
+        </FilledButton>
+        {error ? <p className="pf-error-text">{error}</p> : null}
+        <TextButton type="button" onClick={onSignUp} style={{ justifySelf: "start" }}>
           First time? Create an account
-        </button>
+        </TextButton>
       </form>
     </div>
   );
