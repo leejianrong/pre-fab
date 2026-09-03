@@ -79,18 +79,40 @@ enforced by CI (`pnpm run ci:containment`, `pnpm run ci:parity`):
 
 - Node 22+
 - pnpm 10 (`corepack enable` picks up the pinned version from `package.json`)
-- A local Postgres 16 with `sudo` access for `scripts/db-up.sh` (it starts
-  the cluster and creates the `prefab` roles/databases; see that script and
-  `scripts/db-init.sql` for exactly what it does)
+- Docker with Compose v2, for `make dev` (below) — or, to run everything
+  natively instead, a local Postgres 16 with `sudo` access for
+  `scripts/db-up.sh` (it starts the cluster and creates the `prefab`
+  roles/databases; see that script and `scripts/db-init.sql` for exactly
+  what it does)
 
 ## Local setup
 
 ```bash
-pnpm install
-cp .env.example .env        # then fill in each app's .env as noted below
-pnpm run dev:db              # starts Postgres, creates prefab/prefab_app roles + dev/test/e2e DBs
-pnpm run db:migrate          # runs packages/db/migrations against prefab_dev
+make dev
 ```
+
+That's it: it copies `.env.example` to `.env` on first run, then brings up
+Postgres, runs migrations, and starts `apps/api` and `apps/editor` together
+in Docker Compose, hot-reloading on file changes. Open the editor at
+**`http://pre-fab.localhost:5170`** — an nginx service fronts it there
+(`docker/nginx.conf`) rather than publishing its port directly, so running
+several projects' dev stacks on one laptop doesn't fight over `:5173`, the
+most common Vite default. (`*.localhost` needs no `/etc/hosts` entry —
+modern browsers treat it as loopback per RFC 6761.) `make up` does the same
+thing detached; `make down` stops it, `make nuke` also wipes the Postgres
+volume and the pnpm store cache. See `make help`-worthy targets in the
+`Makefile` (`test`, `test-integration`, `ci`, `logs`).
+
+If `5170` (nginx), `8787` (the API, also still published directly for the
+CLI/MCP below) or `5432` (Postgres) collides with something else already
+running, override `PREFAB_PROXY_PORT`/`PREFAB_API_HOST_PORT`/
+`PREFAB_POSTGRES_PORT` in `.env` — nothing else needs to change.
+
+Prefer running natively instead of in Docker? `pnpm install`, then
+`pnpm run dev:db` (starts a system Postgres via `sudo pg_ctlcluster`/
+`service postgresql start` and `scripts/db-init.sql` — requires a local
+Postgres 16 install and `sudo`) and `pnpm run db:migrate`, then the two dev
+servers from "Running the pieces" below in separate terminals.
 
 `.env.example` documents every variable. The essentials:
 
@@ -108,7 +130,10 @@ its variables are unset:
 - `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID_PRO` - our own plan billing, never a tenant's own Stripe account.
 - `GOOGLE_CALENDAR_CLIENT_ID`/`_SECRET` and `MICROSOFT_CALENDAR_CLIENT_ID`/`_SECRET`/`_TENANT` - two-way calendar sync for bookings.
 
-### Running the pieces
+### Running the pieces natively
+
+Only needed for the native path above — `make dev` already runs api and
+editor for you.
 
 ```bash
 pnpm --filter @prefab/api run dev        # HTTP API on :8787
@@ -119,7 +144,8 @@ pnpm --filter @prefab/mcp run start      # stdio MCP server; needs PREFAB_TOKEN
 
 ## Usage
 
-Open the editor at `http://localhost:5173`, dev-login with any seeded
+Open the editor — `http://pre-fab.localhost:5170` via `make dev`,
+`http://localhost:5173` if running natively — dev-login with any seeded
 email (or sign up for real and read the verification code back from
 `GET /v1/dev/emails?to=<email>`, the dev-only stand-in for an inbox), then
 pick a template or start blank.
@@ -148,8 +174,10 @@ with no `@prefab/*` dependency. See "Self-hosting a site" below.
 
 ## Self-hosting a site
 
-`apps/self-host` serves an exported bundle and keeps its forms and
-bookings working with zero connection to pre-fab:
+A different Docker image from the one `make dev` uses above: this one is
+what a *customer* runs to serve their own exported site, with zero
+connection to pre-fab. `apps/self-host` serves an exported bundle and keeps
+its forms and bookings working:
 
 ```bash
 prefab export-bundle <siteId> ./site --runtime-api-url http://localhost:8080
