@@ -138,3 +138,56 @@ jobs:
       - name: Install Playwright's Chromium
         run: pnpm --filter @prefab/e2e exec playwright install --with-deps chromium
       - run: pnpm --filter @prefab/e2e run test
+
+  # PR #25 added the Docker Compose + Makefile dev environment (`make dev`).
+  # Both real bugs it shipped with — containers writing root-owned files
+  # into the bind-mounted repo, and a Node ABI mismatch corrupting
+  # apps/self-host's native better-sqlite3 build — only ever surfaced by
+  # actually running the stack; validating docker-compose.yml/Dockerfile
+  # config wouldn't have caught either (see their comments for the fixes).
+  # This job is that: build the images for real, bring the stack up, hit
+  # it over HTTP, tear it down. Per dev-playbook's guidance on layering
+  # checks by cost, this is an infra/integration-level check — a fresh
+  # multi-container `docker compose up --build`, not a fast unit-test-layer
+  # assertion — so it gets its own job, same as fidelity and e2e above.
+  dev-environment:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Seed .env the same way `make dev` does
+        run: cp .env.example .env
+      - name: Build and start postgres, migrate, api, editor, nginx
+        run: docker compose up --build -d
+      - name: Wait for the API and the editor (through nginx) to answer
+        run: |
+          api_ok=""
+          editor_ok=""
+          for i in $(seq 1 120); do
+            if [ -z "$api_ok" ] && curl -sf http://localhost:8787/health | grep -q '"ok":true'; then
+              api_ok=1
+            fi
+            # --resolve, not a DNS lookup: README's "*.localhost needs no
+            # /etc/hosts entry" claim is a browser behavior (RFC 6761), and
+            # curl on the runner shouldn't depend on that resolving the
+            # same way — this hits nginx on 127.0.0.1 while still sending
+            # the real Host header nginx.conf's server_name matches on.
+            if [ -z "$editor_ok" ] && curl -sf --resolve pre-fab.localhost:5170:127.0.0.1 http://pre-fab.localhost:5170/ >/dev/null; then
+              editor_ok=1
+            fi
+            if [ -n "$api_ok" ] && [ -n "$editor_ok" ]; then
+              echo "api and editor are both up after $((i * 5))s"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::stack did not come up healthy within 10 minutes (api_ok=${api_ok:-no}, editor_ok=${editor_ok:-no})"
+          exit 1
+      - name: Dump container status and logs on failure
+        if: failure()
+        run: |
+          docker compose ps
+          docker compose logs
+      - name: Tear down
+        if: always()
+        run: docker compose down -v
