@@ -32,7 +32,7 @@ export function Hero(props: HeroProps & BlockRenderProps) {
       data-pf-block-id={blockId}
     >
       <ResponsiveStyle blockId={blockId ?? ""} responsive={responsive ?? {}} />
-      <h1 className="pf-hero-heading" style={{ fontSize: cssVar("fontSize", "heading"), margin: 0 }}>
+      <h1 className="pf-hero-heading" style={{ fontSize: cssVar("fontSize", "heading"), fontFamily: cssVar("fontFamily", "heading"), margin: 0 }}>
         {heading}
       </h1>
       {subheading ? (
