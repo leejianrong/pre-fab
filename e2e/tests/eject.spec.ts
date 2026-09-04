@@ -19,6 +19,14 @@ function heroBlock(id: string) {
     schemaVersion: 1,
     props: { heading: "Ejected and standalone", subheading: "", ctaLabel: "", ctaHref: "", background: "background", backgroundImage: "" },
     responsive: {},
+    // ADR-0015 / KAN-1152: proves the scroll-reveal mechanism actually
+    // reaches the ejected build, not just that eject still works in
+    // general — packages/blocks/src (including scroll-reveal.tsx) is
+    // copied wholesale by `ejectSite`, and the vendored @prefab/schema
+    // shim's `BlockNode` type needs `scrollReveal` for this ejected
+    // project's own `npm run build` (real Astro, real tsc, zero
+    // pre-fab packages) to compile and render it at all.
+    scrollReveal: true,
   };
 }
 
@@ -49,6 +57,11 @@ test("an ejected project builds and runs with npm install && npm run build, with
 
     const html = await readFile(path.join(outDir, "dist", "index.html"), "utf8");
     expect(html).toContain("Ejected and standalone");
+    // ADR-0015 / KAN-1152: the scroll-reveal attribute and its shared
+    // CSS/script asset both made it through a real, independent Astro
+    // build with no @prefab/* package installed.
+    expect(html).toContain("data-pf-reveal");
+    expect(html).toContain("IntersectionObserver");
   } finally {
     await rm(outDir, { recursive: true, force: true });
   }

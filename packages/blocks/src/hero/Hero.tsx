@@ -1,18 +1,24 @@
 import type { CSSProperties } from "react";
 import { cssVar } from "../theme-css.js";
 import { ResponsiveStyle, type BlockRenderProps } from "../responsive.js";
+import { scrollRevealAttrs } from "../scroll-reveal.js";
 import type { HeroProps } from "./schema.js";
 
 /**
- * Slice 1's one block type, since extended (Slice 2) with the two props
- * every first-party block accepts on top of its own: `blockId` and
- * `responsive` (BlockRenderProps — see responsive.tsx). Still deliberately
- * plain otherwise: no state, no effects, no browser-only API — this is
- * what "SSR-safe and free of Puck-specific context" (ADR-0004) looks like
- * in practice. The same component renders inside the Puck canvas (via
- * @prefab/puck-adapter) and inside the Astro publish output (via
- * @prefab/publish) with zero branching between them, which is the concrete
- * form of the WYSIWYG guarantee this slice tests.
+ * Slice 1's one block type, since extended (Slice 2) with the props every
+ * first-party block accepts on top of its own: `blockId`, `responsive` and
+ * `scrollReveal` (BlockRenderProps — see responsive.tsx). Still
+ * deliberately plain otherwise: no state, no effects, no browser-only API —
+ * this is what "SSR-safe and free of Puck-specific context" (ADR-0004)
+ * looks like in practice. `scrollRevealAttrs` (ADR-0015) is the reference
+ * example of the thin, additive change a block makes to opt into
+ * scroll-reveal: one import, one destructure, one attribute spread onto the
+ * root element — no wrapper, no new child, no per-block CSS. The same
+ * component renders inside the Puck canvas (via @prefab/puck-adapter) and
+ * inside the Astro publish output (via @prefab/publish) with zero branching
+ * between them, which is the concrete form of the WYSIWYG guarantee this
+ * slice tests; `scrollReveal` is simply never set inside the canvas
+ * (ADR-0015), so this looks identical to before there with no extra code.
  */
 export function Hero(props: HeroProps & BlockRenderProps) {
   // `backgroundImage = ""`, not a bare destructure: the publish pipeline
@@ -21,7 +27,7 @@ export function Hero(props: HeroProps & BlockRenderProps) {
   // page-template.ts), so a page saved before this field existed hands it
   // `undefined` here, not "". Same reason `responsive` below is read as
   // `responsive ?? {}` rather than trusted bare.
-  const { heading, subheading, ctaLabel, ctaHref, background, backgroundImage = "", blockId, responsive } = props;
+  const { heading, subheading, ctaLabel, ctaHref, background, backgroundImage = "", blockId, responsive, scrollReveal } = props;
   const hasCta = ctaLabel.length > 0 && ctaHref.length > 0;
   const hasImage = backgroundImage.length > 0;
 
@@ -43,6 +49,7 @@ export function Hero(props: HeroProps & BlockRenderProps) {
       style={sectionStyle}
       data-pf-block-type="hero"
       data-pf-block-id={blockId}
+      {...scrollRevealAttrs(scrollReveal)}
     >
       <ResponsiveStyle blockId={blockId ?? ""} responsive={responsive ?? {}} />
       {hasImage ? (

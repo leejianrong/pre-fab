@@ -33,6 +33,13 @@
  * touches the ~30 existing block files. A `"flow"` page (the default, every
  * existing site) takes the untouched branch and renders byte-identically to
  * before this feature existed.
+ *
+ * ADR-0015 (KAN-1152): `scrollReveal` is passed to every block the same
+ * uniform way `responsive` already is, and `ScrollRevealAssets` is rendered
+ * once, gated on whether any block on this page actually opted in
+ * (`pageNeedsScrollRevealAssets`) — a page with nothing opted in emits no
+ * extra CSS/JS at all, so this feature is invisible to every existing
+ * template/site until a block explicitly turns it on.
  */
 export const SITE_PAGE_ASTRO = `---
 import data from "../data.json";
@@ -48,6 +55,8 @@ import {
   freePositionBaseStyle,
   rankRootBlocksForStacking,
   freeCanvasRootStyle,
+  ScrollRevealAssets,
+  pageNeedsScrollRevealAssets,
 } from "@prefab/blocks";
 
 // SLICES.md Slice 5: "list and detail block types with pagination." A page
@@ -132,6 +141,7 @@ const themeVars = themeRootStyle(resolveThemeTokens(theme.tokens));
     <title>{page.title} · {site.name}</title>
   </head>
   <body style={themeVars} data-pf-site={site.id} data-pf-page={page.id}>
+    <ScrollRevealAssets anyRevealed={pageNeedsScrollRevealAssets(page.blocks)} />
     {(() => {
       // ADR-0014: everything below this line, up to \`rendered\`, is
       // identical in shape to what this loop did before free positioning
@@ -173,6 +183,7 @@ const themeVars = themeRootStyle(resolveThemeTokens(theme.tokens));
               {...block.props}
               blockId={block.id}
               responsive={block.responsive}
+              scrollReveal={block.scrollReveal}
               runtimeApiUrl={data.runtimeApiUrl}
               turnstileSiteKey={data.turnstileSiteKey}
             />
@@ -186,6 +197,7 @@ const themeVars = themeRootStyle(resolveThemeTokens(theme.tokens));
               {...block.props}
               blockId={block.id}
               responsive={block.responsive}
+              scrollReveal={block.scrollReveal}
               runtimeApiUrl={data.runtimeApiUrl}
             />
           );
@@ -198,6 +210,7 @@ const themeVars = themeRootStyle(resolveThemeTokens(theme.tokens));
               {...block.props}
               blockId={block.id}
               responsive={block.responsive}
+              scrollReveal={block.scrollReveal}
               runtimeApiUrl={data.runtimeApiUrl}
             />
           );
@@ -210,12 +223,15 @@ const themeVars = themeRootStyle(resolveThemeTokens(theme.tokens));
               {...block.props}
               blockId={block.id}
               responsive={block.responsive}
+              scrollReveal={block.scrollReveal}
               runtimeApiUrl={data.runtimeApiUrl}
             />
           );
         }
 
-        return <Component {...block.props} {...extraProps} blockId={block.id} responsive={block.responsive} />;
+        return (
+          <Component {...block.props} {...extraProps} blockId={block.id} responsive={block.responsive} scrollReveal={block.scrollReveal} />
+        );
       }
 
       // Root-level blocks only (ADR-0014's scope exactly) — a block with a

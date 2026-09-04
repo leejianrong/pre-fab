@@ -126,6 +126,12 @@ export interface BlockNode {
   props: Record<string, unknown>;
   responsive?: BlockResponsive;
   position?: FreePosition;
+  // ADR-0015 (KAN-1152): scroll-triggered reveal opt-in — see this file's
+  // module comment above \`FreePosition\` for why a runtime-inert, type-only
+  // field like this still needs a shim entry: the ejected project's own
+  // type-check of the copied block sources (src/blocks, cp'd verbatim from
+  // packages/blocks/src) resolves \`@prefab/schema\` to this shim.
+  scrollReveal?: boolean;
 }
 
 export interface ThemeTokens {

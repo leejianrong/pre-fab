@@ -32,9 +32,10 @@ for the reference example):
 
 `BlockRenderProps` (`packages/blocks/src/responsive.tsx`) is the one thing
 every block accepts beyond its own props: `{ blockId?: string; responsive?:
-BlockResponsive }`. Puck doesn't forward them today (no per-breakpoint-override
-widget in the canvas yet), so both must be optional and a component must
-render sensibly with neither set.
+BlockResponsive; scrollReveal?: boolean }`. Puck doesn't forward any of them
+today (no per-breakpoint-override widget in the canvas yet, and scroll-reveal
+is deliberately published-output-only — see ADR-0015), so all three must be
+optional and a component must render sensibly with none set.
 
 ## Props schema rules
 
@@ -99,6 +100,21 @@ callback. Mechanically enforced today (`checkSsrSafety`,
 `tools/checks/src/ssr-safety.ts`, AST-walked so a comment or string literal
 mentioning "window" is never a false positive) — this predates this card, and
 is unchanged by it; listed here so the whole contract lives in one place.
+
+## Scroll-triggered reveal (ADR-0015)
+
+`scrollReveal` is a third, optional `BlockRenderProps` field, sibling to
+`blockId`/`responsive`: an optional `boolean`, absent/`undefined` read as
+`false` everywhere it matters (not schema-defaulted, unlike `responsive` —
+see ADR-0015 for why). A block opts in
+by spreading `scrollRevealAttrs(scrollReveal)` (`packages/blocks/src/
+scroll-reveal.tsx`) onto its own root element — one attribute
+(`data-pf-reveal`), no wrapper, no per-block CSS. See ADR-0015 for the full
+design: why this is a page-level shared vanilla-JS observer rather than a
+per-block `useEffect`/island, how it stays SSR-safe and
+`prefers-reduced-motion`-correct with zero JS dependency for content to
+exist, and why (like `responsive`/`position`) it never applies inside the
+Puck canvas.
 
 ## No Puck context in a block (ADR-0004)
 
