@@ -112,9 +112,9 @@ function buildFixture(): { site: SiteManifest; theme: ThemeDocument; pages: Page
   };
 
   const pages: PageDocument[] = [
-    { id: homeId, siteId, slug: "home", title: "Home", schemaVersion: 1, version: 0, blocks: homeBlocks },
-    { id: blogId, siteId, slug: "blog", title: "Blog", schemaVersion: 1, version: 0, blocks: blogBlocks },
-    { id: postPageId, siteId, slug: "post", title: "Post", schemaVersion: 1, version: 0, blocks: postBlocks },
+    { id: homeId, siteId, slug: "home", title: "Home", schemaVersion: 1, version: 0, layoutMode: "flow", blocks: homeBlocks },
+    { id: blogId, siteId, slug: "blog", title: "Blog", schemaVersion: 1, version: 0, layoutMode: "flow", blocks: blogBlocks },
+    { id: postPageId, siteId, slug: "post", title: "Post", schemaVersion: 1, version: 0, layoutMode: "flow", blocks: postBlocks },
   ];
 
   const site: SiteManifest = {

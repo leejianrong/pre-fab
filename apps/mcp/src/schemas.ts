@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { BlockListSchema, PostStatusSchema, ThemeTokensSchema } from "@prefab/schema";
+import { BlockListSchema, LayoutModeSchema, PostStatusSchema, ThemeTokensSchema } from "@prefab/schema";
 
 /**
  * MCP tool input shapes — one per command in @prefab/commands' registry.
@@ -38,6 +38,10 @@ export const schemas = {
     title: z.string(),
     slug: z.string(),
     blocks: BlockListSchema,
+    // ADR-0014 / KAN-1129: optional, defaults to "flow" — an agent calling
+    // this tool without ever hearing about free positioning behaves exactly
+    // as before.
+    layoutMode: LayoutModeSchema.optional(),
     expectedVersion: z.number().int().nonnegative(),
   },
 

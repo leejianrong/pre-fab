@@ -643,6 +643,13 @@ export function buildApp(deps: AppDeps): FastifyInstance {
           title: rekeyed.title,
           slug: rekeyed.slug,
           blocks: rekeyed.blocks,
+          // Template checkout files on disk are read as a plain, unvalidated
+          // cast to PageDocument (packages/templates/src/server.ts) rather
+          // than through PageDocumentSchema, so a template authored before
+          // ADR-0014 has no `layoutMode` key at runtime despite the type
+          // saying otherwise — default it the same way every other
+          // pre-migration document defaults, rather than trust the cast.
+          layoutMode: rekeyed.layoutMode ?? "flow",
           expectedVersion: 0,
         });
         if (!written.ok) throw new Error("unreachable: brand-new page cannot already be at a later version");
@@ -724,6 +731,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
       title: body.title,
       schemaVersion: 1,
       version: body.expectedVersion,
+      layoutMode: body.layoutMode,
       blocks: body.blocks,
     };
 
@@ -749,6 +757,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
         title: validated.document.title,
         slug: validated.document.slug,
         blocks: validated.document.blocks,
+        layoutMode: validated.document.layoutMode,
         expectedVersion: body.expectedVersion,
       });
 
