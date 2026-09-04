@@ -1,4 +1,4 @@
-import type { BlockNode, DocumentDiff, FieldDiff, PageDocument, PostDocument, PostStatus, ThemeDocument, ThemeTokens } from "@prefab/schema";
+import type { BlockNode, DocumentDiff, FieldDiff, LayoutMode, PageDocument, PostDocument, PostStatus, ThemeDocument, ThemeTokens } from "@prefab/schema";
 
 export interface SiteSummary {
   id: string;
@@ -114,6 +114,8 @@ export interface WritePageInput {
   title: string;
   slug: string;
   blocks: BlockNode[];
+  /** ADR-0014 / KAN-1129. Omitted (or "flow") behaves exactly as before this field existed. */
+  layoutMode?: LayoutMode;
   expectedVersion: number;
 }
 

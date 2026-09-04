@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { BlockListSchema, PostStatusSchema, ThemeTokensSchema } from "@prefab/schema";
+import { BlockListSchema, LayoutModeSchema, PostStatusSchema, ThemeTokensSchema } from "@prefab/schema";
 
 export const CreateSiteBodySchema = z.object({
   slug: z.string().min(1).max(64),
@@ -19,6 +19,10 @@ export const WritePageBodySchema = z.object({
   title: z.string().min(1).max(200),
   slug: z.string().min(1).max(64),
   blocks: BlockListSchema,
+  // ADR-0014 / KAN-1129: defaults to "flow" so a caller that predates free
+  // positioning (an old CLI, a pushed pre-migration export) writes exactly
+  // as it always has — never dropped silently, never forced into "free".
+  layoutMode: LayoutModeSchema.default("flow"),
   expectedVersion: z.number().int().nonnegative(),
 });
 
