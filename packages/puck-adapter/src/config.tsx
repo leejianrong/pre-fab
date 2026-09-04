@@ -216,5 +216,13 @@ export function createPuckConfig(tokens: ThemeTokens): Config {
   };
 }
 
+// ADR-0014 / KAN-1129: Puck's `overrides` (including `preview`, which
+// FreeCanvasPreview replaces) is a prop on the `<Puck>` component itself,
+// not part of `Config` — re-exported here so apps/editor's SiteEditor has
+// one place (`@prefab/puck-adapter`) to import both the config and the
+// override it must pass alongside it, rather than reaching into
+// free-canvas.ts directly.
+export { FreeCanvasPreview } from "./free-canvas.js";
+
 /** The set of block types the Puck canvas can render — everything else is an "unknown block" (R19). */
 export const PUCK_KNOWN_TYPES = new Set(BLOCK_ENTRIES.map((entry) => entry.type));
