@@ -20,6 +20,8 @@ interface RawBlockRow {
   props: Record<string, unknown>;
   responsive: BlockResponsive;
   position: FreePosition | null;
+  /** ADR-0015 / KAN-1152. Nullable, mirroring `position` above — see 0011_kan1152_scroll_reveal.sql. */
+  scroll_reveal: boolean | null;
 }
 
 function rowToBlockNode(row: RawBlockRow): BlockNode {
@@ -32,6 +34,10 @@ function rowToBlockNode(row: RawBlockRow): BlockNode {
     props: row.props,
     responsive: row.responsive,
     ...(row.position ? { position: row.position } : {}),
+    // `!== null`, not a truthy check: a stored `false` (an explicit opt-out
+    // written back after being on) must round-trip as `false`, not vanish
+    // the same way a genuinely-absent value does.
+    ...(row.scroll_reveal !== null ? { scrollReveal: row.scroll_reveal } : {}),
   };
 }
 
@@ -169,8 +175,8 @@ export async function writePageDocument(
   await client.query(`DELETE FROM blocks WHERE page_id = $1`, [input.pageId]);
   for (const block of input.blocks) {
     await client.query(
-      `INSERT INTO blocks (id, page_id, site_id, type, parent, "order", schema_version, props, responsive, position)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+      `INSERT INTO blocks (id, page_id, site_id, type, parent, "order", schema_version, props, responsive, position, scroll_reveal)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
       [
         block.id,
         input.pageId,
@@ -182,6 +188,7 @@ export async function writePageDocument(
         JSON.stringify(block.props),
         JSON.stringify(block.responsive),
         block.position ? JSON.stringify(block.position) : null,
+        block.scrollReveal ?? null,
       ],
     );
   }

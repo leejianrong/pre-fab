@@ -27,6 +27,22 @@ import { FreePositionSchema } from "./free-position.js";
  * — required iff (page is "free" AND block.parent === null), rejected
  * otherwise — since that rule needs the *page's* `layoutMode`, which this
  * block-level schema has no visibility into on its own.
+ *
+ * `scrollReveal` (ADR-0015, KAN-1152) is a per-block opt-in for a
+ * scroll-triggered reveal animation on the published site. Shaped like
+ * `position` above, not like `responsive`: genuinely `.optional()` rather
+ * than `.default(...)`, deliberately, because `responsive`'s own default
+ * shipped back when *every* stored `BlockNode` fixture in the codebase
+ * still needed updating for it — doing the same here would mean every
+ * existing block literal across the repo (tests, seed data,
+ * packages/db's row mapper) gains a newly-*required* field it has no
+ * reason to care about, which is exactly the non-additive ripple this
+ * slice is supposed to avoid. `.optional()` keeps every caller that never
+ * mentions `scrollReveal` compiling and behaving unchanged — reading it as
+ * `scrollReveal === true` (or `?? false`) at every render call site is the
+ * cost of that choice, paid once. Never needs a version bump or migration
+ * either way — it's a new optional field, full stop (docs/BLOCK_CONTRACT.md's
+ * Versioning section).
  */
 export const BlockNodeSchema = z.object({
   id: UlidSchema,
@@ -37,6 +53,7 @@ export const BlockNodeSchema = z.object({
   props: z.record(z.string(), z.unknown()),
   responsive: BlockResponsiveSchema.default({}),
   position: FreePositionSchema.optional(),
+  scrollReveal: z.boolean().optional(),
 });
 
 export type BlockNode = z.infer<typeof BlockNodeSchema>;

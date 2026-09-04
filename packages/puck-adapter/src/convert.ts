@@ -110,5 +110,12 @@ function componentDataToBlock(
     // with value `undefined` still fails `"position" in block` checks
     // inconsistently across engines/serialization, so we just omit it).
     ...(previous?.position !== undefined ? { position: previous.position } : {}),
+    // ADR-0015 / KAN-1152: same reasoning and same "omit, don't default"
+    // shape as `position` immediately above — Puck's canvas has no
+    // scroll-reveal UI of its own, so a canvas edit that doesn't touch it
+    // must not silently turn a block's reveal opt-in back off, and a block
+    // that never had the field stays without it rather than gaining an
+    // explicit `false`.
+    ...(previous?.scrollReveal !== undefined ? { scrollReveal: previous.scrollReveal } : {}),
   };
 }
