@@ -1,5 +1,6 @@
 export * from "./theme-css.js";
 export * from "./responsive.js";
+export * from "./free-position.js";
 export * from "./registry.js";
 export * from "./hero/index.js";
 export * from "./heading/index.js";

@@ -84,16 +84,41 @@ interface PageGroup {
   blocks: BlockNode[];
 }
 
+/**
+ * ADR-0014 (KAN-1129): two root blocks on a `"free"` page, positioned
+ * side by side (never overlapping — this harness screenshots each block's
+ * own bounding box independently, so an overlap would make the fixture
+ * itself ambiguous about which pixels belong to which block). Proves R9's
+ * fidelity claim extends to the free-positioning render path, not just
+ * flow: the hosted pipeline and a from-scratch ejected build must place
+ * `position`'s x/y/w/h/rotate identically, the same way every other block
+ * type here already has to.
+ */
+function freeLayoutBlocks(): BlockNode[] {
+  return [
+    {
+      ...blockNode("hero", 1000, { ...NON_COLLECTION_BLOCK_PROPS.hero!, heading: "Free block one" }),
+      position: { base: { x: 5, y: 5, w: 40, h: 30, rotate: -8, opacity: 1 } },
+    },
+    {
+      ...blockNode("button", 2000, NON_COLLECTION_BLOCK_PROPS.button!),
+      position: { base: { x: 55, y: 50, w: 30, h: 15, rotate: 0, opacity: 0.85 } },
+    },
+  ];
+}
+
 function buildFixture(): { site: SiteManifest; theme: ThemeDocument; pages: PageDocument[]; posts: PostDocument[]; groups: PageGroup[] } {
   const siteId = newUlid();
   const homeId = newUlid();
   const blogId = newUlid();
   const postPageId = newUlid();
   const postId = newUlid();
+  const freeLayoutId = newUlid();
 
   const homeBlocks = Object.entries(NON_COLLECTION_BLOCK_PROPS).map(([type, props], i) => blockNode(type, (i + 1) * 1000, props));
   const blogBlocks = [blockNode("postlist", 1000, POSTLIST_PROPS)];
   const postBlocks = [blockNode("postdetail", 1000, {})];
+  const freeBlocks = freeLayoutBlocks();
 
   const post: PostDocument = {
     id: postId,
@@ -115,6 +140,7 @@ function buildFixture(): { site: SiteManifest; theme: ThemeDocument; pages: Page
     { id: homeId, siteId, slug: "home", title: "Home", schemaVersion: 1, version: 0, layoutMode: "flow", blocks: homeBlocks },
     { id: blogId, siteId, slug: "blog", title: "Blog", schemaVersion: 1, version: 0, layoutMode: "flow", blocks: blogBlocks },
     { id: postPageId, siteId, slug: "post", title: "Post", schemaVersion: 1, version: 0, layoutMode: "flow", blocks: postBlocks },
+    { id: freeLayoutId, siteId, slug: "free-layout", title: "Free Layout", schemaVersion: 1, version: 0, layoutMode: "free", blocks: freeBlocks },
   ];
 
   const site: SiteManifest = {
@@ -131,6 +157,7 @@ function buildFixture(): { site: SiteManifest; theme: ThemeDocument; pages: Page
     { route: "/", blocks: homeBlocks },
     { route: "/blog", blocks: blogBlocks },
     { route: `/post/${post.slug}`, blocks: postBlocks },
+    { route: "/free-layout", blocks: freeBlocks },
   ];
 
   return { site, theme, pages, posts: [post], groups };
