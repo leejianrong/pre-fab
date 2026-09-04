@@ -21,10 +21,34 @@
  * exactly this reason, and rendered on their own branch rather than
  * through `blockComponents`. This file, plus @prefab/publish, is the only
  * place in the repo allowed to import Astro (enforced by tools/checks).
+ *
+ * ADR-0014 (KAN-1129): a `"free"` page's root-level blocks each carry a
+ * `position` instead of relying on document flow. `freePositionBaseStyle`/
+ * `FreePositionStyle`/`rankRootBlocksForStacking` (@prefab/blocks/
+ * free-position.tsx) are the CSS-emission half of that, mirroring how
+ * `ResponsiveStyle` already works — but unlike `ResponsiveStyle`, nothing
+ * about any individual block component changes: this file wraps each
+ * root-level block's already-rendered markup in a positioned container
+ * itself, in the one rendering loop below, so free positioning never
+ * touches the ~30 existing block files. A `"flow"` page (the default, every
+ * existing site) takes the untouched branch and renders byte-identically to
+ * before this feature existed.
  */
 export const SITE_PAGE_ASTRO = `---
 import data from "../data.json";
-import { blockComponents, resolveThemeTokens, themeRootStyle, Form, Booking, EventSignup, Payment } from "@prefab/blocks";
+import {
+  blockComponents,
+  resolveThemeTokens,
+  themeRootStyle,
+  Form,
+  Booking,
+  EventSignup,
+  Payment,
+  FreePositionStyle,
+  freePositionBaseStyle,
+  rankRootBlocksForStacking,
+  freeCanvasRootStyle,
+} from "@prefab/blocks";
 
 // SLICES.md Slice 5: "list and detail block types with pagination." A page
 // carrying a postdetail block is a *template* for one route per post
@@ -108,78 +132,124 @@ const themeVars = themeRootStyle(resolveThemeTokens(theme.tokens));
     <title>{page.title} · {site.name}</title>
   </head>
   <body style={themeVars} data-pf-site={site.id} data-pf-page={page.id}>
-    {page.blocks.map((block) => {
-      const Component = blockComponents[block.type];
-      // R19: a block type unknown to this build is preserved in the
-      // document and shown as a placeholder in the editor, but skipped
-      // here rather than crashing the whole page's publish.
-      if (!Component) return null;
+    {(() => {
+      // ADR-0014: everything below this line, up to \`rendered\`, is
+      // identical in shape to what this loop did before free positioning
+      // existed — \`renderBlockInner\` is that same per-block branch,
+      // factored out only so \`wrapIfFree\` can sit around it. When
+      // \`page.layoutMode\` isn't \`"free"\` (every page before this feature,
+      // and every page that hasn't opted in), \`wrapIfFree\` is a no-op and
+      // \`rendered\` is returned exactly as \`page.blocks.map(renderBlockInner)\`
+      // would be on its own, so a "flow" page's output is byte-identical to
+      // before this feature existed.
+      const isFreeLayout = page.layoutMode === "free";
+      const freeZIndexByBlockId = isFreeLayout ? rankRootBlocksForStacking(page.blocks) : new Map();
 
-      let extraProps = {};
-      if (block.type === "postdetail" && detailPost) {
-        extraProps = { post: detailPost };
-      } else if (block.type === "postlist" && block.id === listBlockId) {
-        const postsPerPage = block.props?.postsPerPage ?? 10;
-        const start = (listPageNumber - 1) * postsPerPage;
-        extraProps = {
-          posts: data.posts.slice(start, start + postsPerPage),
-          pageNumber: listPageNumber,
-          totalPages: listTotalPages,
-          basePath: page.slug,
-        };
+      function renderBlockInner(block) {
+        const Component = blockComponents[block.type];
+        // R19: a block type unknown to this build is preserved in the
+        // document and shown as a placeholder in the editor, but skipped
+        // here rather than crashing the whole page's publish.
+        if (!Component) return null;
+
+        let extraProps = {};
+        if (block.type === "postdetail" && detailPost) {
+          extraProps = { post: detailPost };
+        } else if (block.type === "postlist" && block.id === listBlockId) {
+          const postsPerPage = block.props?.postsPerPage ?? 10;
+          const start = (listPageNumber - 1) * postsPerPage;
+          extraProps = {
+            posts: data.posts.slice(start, start + postsPerPage),
+            pageNumber: listPageNumber,
+            totalPages: listTotalPages,
+            basePath: page.slug,
+          };
+        }
+
+        if (block.type === "form") {
+          return (
+            <Form
+              client:load
+              {...block.props}
+              blockId={block.id}
+              responsive={block.responsive}
+              runtimeApiUrl={data.runtimeApiUrl}
+              turnstileSiteKey={data.turnstileSiteKey}
+            />
+          );
+        }
+
+        if (block.type === "booking") {
+          return (
+            <Booking
+              client:load
+              {...block.props}
+              blockId={block.id}
+              responsive={block.responsive}
+              runtimeApiUrl={data.runtimeApiUrl}
+            />
+          );
+        }
+
+        if (block.type === "eventsignup") {
+          return (
+            <EventSignup
+              client:load
+              {...block.props}
+              blockId={block.id}
+              responsive={block.responsive}
+              runtimeApiUrl={data.runtimeApiUrl}
+            />
+          );
+        }
+
+        if (block.type === "payment") {
+          return (
+            <Payment
+              client:load
+              {...block.props}
+              blockId={block.id}
+              responsive={block.responsive}
+              runtimeApiUrl={data.runtimeApiUrl}
+            />
+          );
+        }
+
+        return <Component {...block.props} {...extraProps} blockId={block.id} responsive={block.responsive} />;
       }
 
-      if (block.type === "form") {
+      // Root-level blocks only (ADR-0014's scope exactly) — a block with a
+      // non-null \`parent\` never gets a positioned wrapper, free page or not
+      // (there are no nested non-root blocks in production today, but this
+      // guard is what keeps that true if one ever shows up). \`element ===
+      // null\` (an unknown block type) also passes through untouched: no
+      // positioning container around markup that isn't there.
+      function wrapIfFree(block, element) {
+        if (!isFreeLayout || element === null || block.parent !== null || !block.position) return element;
+        const style = freePositionBaseStyle(block.position.base, freeZIndexByBlockId.get(block.id));
         return (
-          <Form
-            client:load
-            {...block.props}
-            blockId={block.id}
-            responsive={block.responsive}
-            runtimeApiUrl={data.runtimeApiUrl}
-            turnstileSiteKey={data.turnstileSiteKey}
-          />
+          <div style={style} data-pf-free-block-id={block.id}>
+            <FreePositionStyle blockId={block.id} position={block.position} />
+            {element}
+          </div>
         );
       }
 
-      if (block.type === "booking") {
-        return (
-          <Booking
-            client:load
-            {...block.props}
-            blockId={block.id}
-            responsive={block.responsive}
-            runtimeApiUrl={data.runtimeApiUrl}
-          />
-        );
-      }
+      const rendered = page.blocks.map((block) => wrapIfFree(block, renderBlockInner(block)));
 
-      if (block.type === "eventsignup") {
-        return (
-          <EventSignup
-            client:load
-            {...block.props}
-            blockId={block.id}
-            responsive={block.responsive}
-            runtimeApiUrl={data.runtimeApiUrl}
-          />
-        );
-      }
+      if (!isFreeLayout) return rendered;
 
-      if (block.type === "payment") {
-        return (
-          <Payment
-            client:load
-            {...block.props}
-            blockId={block.id}
-            responsive={block.responsive}
-            runtimeApiUrl={data.runtimeApiUrl}
-          />
-        );
-      }
-
-      return <Component {...block.props} {...extraProps} blockId={block.id} responsive={block.responsive} />;
-    })}
+      // The positioned canvas root every wrapped block's percentage
+      // \`left\`/\`top\`/\`width\`/\`height\` resolves against (ADR-0014's
+      // Consequences: "its own Astro render path... on a positioned canvas
+      // root") — see \`freeCanvasRootStyle\`'s own comment for why it needs
+      // an explicit minHeight, not just position:relative.
+      return (
+        <div style={freeCanvasRootStyle()} data-pf-free-canvas-root="">
+          {rendered}
+        </div>
+      );
+    })()}
   </body>
 </html>
 `;

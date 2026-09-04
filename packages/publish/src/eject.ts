@@ -98,6 +98,36 @@ export interface BlockResponsive {
   lg?: ResponsiveOverride;
 }
 
+// ADR-0014 (KAN-1129): the free-positioning geometry @prefab/blocks'
+// free-position.tsx (vendored alongside every other block source, see this
+// file's own \`cp\` of BLOCKS_SRC_ROOT) imports as \`import type\` from
+// "@prefab/schema" — never a runtime value, so (like everything else in
+// this file) it never needs a real implementation here, only a type shape
+// for the ejected project's own type-checking to resolve against.
+export interface FreeRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  rotate: number;
+  opacity: number;
+}
+export interface FreePosition {
+  base: FreeRect;
+  md?: Partial<FreeRect>;
+  lg?: Partial<FreeRect>;
+}
+export interface BlockNode {
+  id: string;
+  type: string;
+  parent: string | null;
+  order: number;
+  schemaVersion: number;
+  props: Record<string, unknown>;
+  responsive?: BlockResponsive;
+  position?: FreePosition;
+}
+
 export interface ThemeTokens {
   color: Record<string, string>;
   fontSize: Record<string, string>;
