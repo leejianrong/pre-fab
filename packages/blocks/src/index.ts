@@ -1,5 +1,7 @@
 export * from "./theme-css.js";
 export * from "./responsive.js";
+export * from "./free-position.js";
+export * from "./scroll-reveal.js";
 export * from "./registry.js";
 export * from "./hero/index.js";
 export * from "./heading/index.js";
@@ -21,4 +23,7 @@ export * from "./postlist/index.js";
 export * from "./postdetail/index.js";
 export * from "./form/index.js";
 export * from "./booking/index.js";
+export * from "./eventsignup/index.js";
+export * from "./payment/index.js";
+export * from "./subscription/index.js";
 export * from "./markdown-lite.js";

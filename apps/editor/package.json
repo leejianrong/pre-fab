@@ -10,10 +10,13 @@
     "test:unit": "vitest run --passWithNoTests"
   },
   "dependencies": {
+    "@material/material-color-utilities": "0.3.0",
+    "@material/web": "2.4.0",
     "@prefab/api-client": "workspace:*",
     "@prefab/blocks": "workspace:*",
     "@prefab/puck-adapter": "workspace:*",
     "@prefab/schema": "workspace:*",
+    "@prefab/templates": "workspace:*",
     "@puckeditor/core": "0.23.0",
     "react": "19.0.0",
     "react-dom": "19.0.0"

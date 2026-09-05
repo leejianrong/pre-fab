@@ -12,7 +12,7 @@ async function forkTemplate(page: import("@playwright/test").Page, slugSuffix: s
   await page.getByLabel(/site slug/i).fill(`consultant-fork-${slugSuffix}`);
   await page.getByLabel(/site name/i).fill(`Consultant Fork ${slugSuffix}`);
   await page.getByRole("button", { name: /create my site/i }).click();
-  await page.waitForSelector('button:has-text("Publish")', { timeout: 15_000 });
+  await page.getByRole("button", { name: /^publish$/i }).waitFor({ timeout: 15_000 });
 }
 
 // SLICES.md Slice 3: "Forking a template twice yields two independent

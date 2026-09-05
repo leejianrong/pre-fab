@@ -35,7 +35,7 @@ cost sets the floor under the entry tier.
 |---|---|
 | Cloudflare custom hostname (SSL for SaaS) | **First 100 free** on Free/Pro/Business, then **$0.10 per hostname per month** |
 | Pay-as-you-go ceiling | **50,000 custom hostnames**; beyond that requires Enterprise, pricing unpublished |
-| Workers for Platforms | **$25/month platform-wide base**, plus usage. Only one request is billed across the dispatch chain |
+| Workers for Platforms | **$25/month platform-wide base**, including 20M requests and 60M CPU-ms; **$0.30 per additional million requests**, **$0.02 per additional million CPU-ms**. 1,000 scripts included, **$0.02 per additional script**. Only one request is billed across the dispatch chain, but CPU time is charged collectively across all three (dispatch → user → outbound) |
 
 **The finding is that SSL for SaaS is not the binding constraint, and an earlier
 note in planning implied it was.** At $0.10 per site per month — $1.20 a year —
@@ -47,6 +47,17 @@ The floor is actually set by the $25/month platform base, which two or three
 paying customers cover, and then by per-site variable cost: requests, CPU, R2
 storage and operations, Postgres rows and email sends. All are small, and R2's
 zero egress is what keeps image-heavy marketing sites cheap (ADR-0007).
+
+**Resolved 2026-09-03 (KAN-1141):** Workers for Platforms' per-tenant component
+is negligible at any plausible scale, confirming rather than revising that
+conclusion. The $25 base includes 1,000 scripts (one dispatched Worker per
+tenant site) before the $0.02/script overage even starts, so the first 1,000
+paying customers cost nothing beyond the base on that dimension alone. The
+20M-request/60M-CPU-ms included allotment, at $0.30/million requests and
+$0.02/million CPU-ms overage, is immaterial against ADR-0007's static-first
+design in particular: most requests never touch a Worker's CPU budget at all
+(served from cache/R2), so only genuinely dynamic requests (a form submit, a
+booking API call) consume it.
 
 **Therefore the entry tier is priced on willingness to pay and competitive
 position, not on cost.** Wix and Squarespace entry tiers sit around $16–25/month;

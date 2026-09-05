@@ -13,6 +13,15 @@ export const HeroPropsSchema = z
     ctaLabel: z.string().max(40).default(""),
     ctaHref: z.string().max(2048).default(""),
     background: z.enum(["background", "accent"]).default("background"),
+    /**
+     * A URL, never a raw colour — still token-driven where it matters: the
+     * scrim behind the text and the text colour itself are the theme's own
+     * `accent`/`accent-foreground` pair (already guaranteed to contrast,
+     * since every theme uses it for CTA buttons), not a literal rgba().
+     * Empty string (the default) renders exactly as before — every
+     * existing template's Hero block is unaffected.
+     */
+    backgroundImage: z.string().max(2048).default(""),
   })
   .strict();
 
@@ -27,6 +36,7 @@ export const heroDefaultProps: HeroProps = {
   ctaLabel: "Get in touch",
   ctaHref: "#contact",
   background: "background",
+  backgroundImage: "",
 };
 
 export const heroBlockDefinition: BlockTypeDefinition<HeroProps> = {

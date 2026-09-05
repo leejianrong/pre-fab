@@ -98,5 +98,24 @@ function componentDataToBlock(
     // block that already had overrides keeps them across a canvas edit,
     // and a genuinely new block starts with none.
     responsive: previous?.responsive ?? {},
+    // ADR-0014 / KAN-1129: same reasoning as `responsive` above — Puck's
+    // canvas has no free-positioning UI of its own either (that's
+    // free-canvas.tsx, layered outside Puck's own content editing), so a
+    // canvas edit that doesn't touch positioning (e.g. changing an
+    // unrelated block's text prop) must not silently drop this block's
+    // `position`. Carried forward only when present: a block with no prior
+    // position (a "flow" page, or a brand-new block) stays without one,
+    // since `position` must be *absent*, never `undefined`-but-present,
+    // wherever validatePageDocument doesn't require it (an explicit key
+    // with value `undefined` still fails `"position" in block` checks
+    // inconsistently across engines/serialization, so we just omit it).
+    ...(previous?.position !== undefined ? { position: previous.position } : {}),
+    // ADR-0015 / KAN-1152: same reasoning and same "omit, don't default"
+    // shape as `position` immediately above — Puck's canvas has no
+    // scroll-reveal UI of its own, so a canvas edit that doesn't touch it
+    // must not silently turn a block's reveal opt-in back off, and a block
+    // that never had the field stays without it rather than gaining an
+    // explicit `false`.
+    ...(previous?.scrollReveal !== undefined ? { scrollReveal: previous.scrollReveal } : {}),
   };
 }

@@ -26,6 +26,9 @@ import { hashDirectory } from "./content-hash.js";
 import { generateRssFeed, generateSitemap } from "./feeds.js";
 import { extractPublishSafeForms } from "./form-manifest.js";
 import { extractPublishSafeBookingWidgets } from "./booking-manifest.js";
+import { extractPublishSafeEventSignups } from "./event-signup-manifest.js";
+import { extractPublishSafePaymentBlocks } from "./payment-manifest.js";
+import { extractPublishSafeSubscriptionBlocks } from "./subscription-manifest.js";
 import type { PublishableAvailabilityRule } from "./build.js";
 
 interface WorkerInput {
@@ -134,6 +137,38 @@ async function main(): Promise<void> {
     // instance can seed local slot computation with zero extra operator
     // setup (R10). `null` when the site never called `availability.set`.
     await writeFile(path.join(workspace.outDir, "prefab-availability.json"), JSON.stringify(input.availabilityRule), "utf8");
+
+    // KAN-1138: every EventSignup block's publish-safe manifest — the same
+    // "self-host needs a bundle to seed its own runtime store from"
+    // reasoning as prefab-forms.json/prefab-booking-widgets.json. Sign-ups
+    // themselves are never written here (visitor PII, R20).
+    await writeFile(
+      path.join(workspace.outDir, "prefab-event-signups.json"),
+      JSON.stringify(extractPublishSafeEventSignups(input.site.id, input.pages)),
+      "utf8",
+    );
+
+    // Slice 10 / KAN-1137 (ADR-0005): every Payment block's publish-safe
+    // manifest, the identical "self-host needs a bundle to seed its own
+    // runtime store from" reasoning as prefab-forms.json/
+    // prefab-booking-widgets.json — the tenant's own Stripe connection
+    // (credential-shaped, platform/operator state) is never written here,
+    // same as calendar_connections.
+    await writeFile(
+      path.join(workspace.outDir, "prefab-payment-blocks.json"),
+      JSON.stringify(extractPublishSafePaymentBlocks(input.site.id, input.pages)),
+      "utf8",
+    );
+
+    // KAN-1154 / ADR-0016: every Subscription block's publish-safe
+    // manifest, the identical reasoning as prefab-payment-blocks.json
+    // immediately above — a distinct file for a distinct block type/table,
+    // never folded into the Payment one.
+    await writeFile(
+      path.join(workspace.outDir, "prefab-subscription-blocks.json"),
+      JSON.stringify(extractPublishSafeSubscriptionBlocks(input.site.id, input.pages)),
+      "utf8",
+    );
 
     const contentHash = await hashDirectory(workspace.outDir);
     await ensureBundleStore(input.bundleStoreDir);

@@ -21,10 +21,11 @@ export type TemplateManifest = z.infer<typeof TemplateManifestSchema>;
 
 /**
  * Eight at launch (ADR-0011: "fewer than that and 'pretty by default' fails
- * for the beachhead user"). Each `id` names a directory under
- * packages/templates/templates/ authored as an ordinary exported site tree
- * (site.json/theme.json/pages/*.json) — see scripts/generate.ts for how
- * they were produced and README-style regeneration instructions there.
+ * for the beachhead user"), growing from there (KAN-1128). Each `id` names
+ * a directory under packages/templates/templates/ authored as an ordinary
+ * exported site tree (site.json/theme.json/pages/*.json) — see
+ * scripts/generate.ts for how they were produced and README-style
+ * regeneration instructions there.
  */
 export const TEMPLATE_MANIFESTS: TemplateManifest[] = [
   {
@@ -82,5 +83,12 @@ export const TEMPLATE_MANIFESTS: TemplateManifest[] = [
     category: "personal-brand",
     tagline: "An about page for a writer, speaker or creator",
     description: "A simple personal site: who you are, what you've made or written, a quote about your work, and how people can reach you.",
+  },
+  {
+    id: "wellness-studio",
+    name: "Yoga & Wellness Studio",
+    category: "wellness-studio",
+    tagline: "A full-bleed hero photograph, restrained type and room to breathe",
+    description: "Class offerings, a philosophy statement and a photo gallery for a yoga studio or small wellness practice — built around generous whitespace and a calm serif/sans pairing rather than a busy schedule grid.",
   },
 ];

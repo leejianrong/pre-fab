@@ -1,0 +1,146 @@
+# migrate/api/editor bind-mount the whole repo for hot reload, but never
+# node_modules itself — each package directory gets its own named volume
+# (below) shadowing the bind mount there, so a container's `pnpm install`
+# can never read, prune or overwrite anything the host installed natively,
+# or vice versa. That isolation is what makes running as root-in-container
+# vs. host-uid, and Node 22-in-container vs. whatever Node the host runs,
+# both safe to ignore: nothing ever crosses between the two. Two more
+# pnpm flags matter on top of that: `--config.confirmModulesPurge=false`,
+# since pnpm otherwise aborts waiting for an interactive confirmation it
+# can never get in a container; `--store-dir=/pnpm-store`, since left to
+# its default pnpm wrote a `.pnpm-store` straight into the bind-mounted
+# repo root instead of the named volume below. `--filter '!@prefab/self-host'`
+# is belt-and-suspenders on top of the volume isolation above: it skips
+# compiling self-host's one native dependency (better-sqlite3) in these
+# three containers entirely, since none of them use it and node:22-slim
+# has no build toolchain to compile it with anyway.
+x-dev-service: &dev-service
+  build:
+    context: .
+    dockerfile: docker/dev.Dockerfile
+  working_dir: /repo
+  volumes: &node-modules-volumes
+    - .:/repo
+    - pnpm-store:/pnpm-store
+    - node_modules_root:/repo/node_modules
+    - node_modules_api:/repo/apps/api/node_modules
+    - node_modules_cli:/repo/apps/cli/node_modules
+    - node_modules_editor:/repo/apps/editor/node_modules
+    - node_modules_mcp:/repo/apps/mcp/node_modules
+    - node_modules_e2e:/repo/e2e/node_modules
+    - node_modules_api_client:/repo/packages/api-client/node_modules
+    - node_modules_blocks:/repo/packages/blocks/node_modules
+    - node_modules_commands:/repo/packages/commands/node_modules
+    - node_modules_db:/repo/packages/db/node_modules
+    - node_modules_publish:/repo/packages/publish/node_modules
+    - node_modules_puck_adapter:/repo/packages/puck-adapter/node_modules
+    - node_modules_runtime:/repo/packages/runtime/node_modules
+    - node_modules_schema:/repo/packages/schema/node_modules
+    - node_modules_templates:/repo/packages/templates/node_modules
+    - node_modules_tools_checks:/repo/tools/checks/node_modules
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # docker-entrypoint-initdb.d scripts run in filename order, once,
+      # only on first boot against an empty data dir.
+      - ./scripts/db-init.sql:/docker-entrypoint-initdb.d/01-roles.sql:ro
+      - ./scripts/db-init-databases.sql:/docker-entrypoint-initdb.d/02-databases.sql:ro
+    ports:
+      - "${PREFAB_POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  migrate:
+    <<: *dev-service
+    environment:
+      MIGRATE_DATABASE_URL: postgres://prefab:prefab@postgres:5432/prefab_dev
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: sh -c "pnpm install --filter '!@prefab/self-host' --frozen-lockfile --config.confirmModulesPurge=false --store-dir=/pnpm-store && pnpm --filter @prefab/db run migrate"
+    restart: "no"
+
+  api:
+    <<: *dev-service
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgres://prefab_app:prefab_app@postgres:5432/prefab_dev
+      DATABASE_URL_TEST: postgres://prefab_app:prefab_app@postgres:5432/prefab_test
+      # Host-facing origin: whatever the browser actually reaches the editor
+      # at, so CORS allows it. Default matches editor's own directly-
+      # published port below; docker-compose.override.yml.example
+      # overrides this to http://pre-fab.localhost when a machine-wide
+      # Traefik instance fronts it there instead (see that file).
+      EDITOR_ORIGIN: http://localhost:${PREFAB_EDITOR_HOST_PORT:-5173}
+      API_PORT: "8787"
+    ports:
+      - "${PREFAB_API_HOST_PORT:-8787}:8787"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    command: sh -c "pnpm install --filter '!@prefab/self-host' --frozen-lockfile --config.confirmModulesPurge=false --store-dir=/pnpm-store && pnpm --filter @prefab/api run dev"
+    # editor's own `pnpm install` shares every node_modules_* volume above
+    # with this container's: with no healthcheck, editor's `depends_on: api`
+    # only waits for this container to *start*, so on a slow/cold host both
+    # installs can run at once and corrupt each other's pnpm temp files
+    # (`ENOENT ... node_modules/.pnpm/lock.yaml.<random>`). Node 22 ships a
+    # native `fetch`, so this needs nothing beyond the base image.
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:8787/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+
+  editor:
+    <<: *dev-service
+    environment:
+      # Container-network hostname: Vite's dev-server proxy runs server-side
+      # (in this container), so it reaches `api` by service name, while the
+      # browser on the host talks to it over whichever host port/hostname
+      # is actually published below.
+      PREFAB_API_PROXY_TARGET: http://api:8787
+    # Published directly here (5173 is a very common Vite default, hence
+    # scripts/dev-ports.sh auto-picking around a collision the same way it
+    # does for the other two host ports) — a per-project reverse-proxy
+    # container isn't worth it just to give one project a stable hostname;
+    # see docker-compose.override.yml.example for the machine-wide
+    # alternative (one Traefik instance, every project on this laptop).
+    ports:
+      - "${PREFAB_EDITOR_HOST_PORT:-5173}:5173"
+    # condition: service_healthy, not the default service_started — api's
+    # healthcheck above only turns healthy once its own `pnpm install` has
+    # finished, which is what actually serializes the two installs (see the
+    # comment on api's healthcheck).
+    depends_on:
+      api:
+        condition: service_healthy
+    command: sh -c "pnpm install --filter '!@prefab/self-host' --frozen-lockfile --config.confirmModulesPurge=false --store-dir=/pnpm-store && pnpm --filter @prefab/editor run dev"
+
+volumes:
+  pgdata:
+  pnpm-store:
+  node_modules_root:
+  node_modules_api:
+  node_modules_cli:
+  node_modules_editor:
+  node_modules_mcp:
+  node_modules_e2e:
+  node_modules_api_client:
+  node_modules_blocks:
+  node_modules_commands:
+  node_modules_db:
+  node_modules_publish:
+  node_modules_puck_adapter:
+  node_modules_runtime:
+  node_modules_schema:
+  node_modules_templates:
+  node_modules_tools_checks:

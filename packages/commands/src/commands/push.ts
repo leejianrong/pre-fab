@@ -50,6 +50,10 @@ async function runPush(ctx: CommandContext, args: PushArgs): Promise<PushResult>
       title: page.title,
       slug: page.slug,
       blocks: page.blocks,
+      // ADR-0014 / KAN-1129: threaded through so a "free"-layout page's
+      // checked-out file round-trips (R8) instead of silently reverting to
+      // "flow" on every push/import.
+      layoutMode: page.layoutMode,
       expectedVersion,
     });
     pushed.push(`pages/${page.slug}.json`);
