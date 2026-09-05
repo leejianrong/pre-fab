@@ -40,7 +40,8 @@
         "ctaHref": "#menu",
         "background": "background"
       },
-      "responsive": {}
+      "responsive": {},
+      "scrollReveal": true
     },
     {
       "id": "01M136AM1E82KHCPZYQGNVQTVD",
