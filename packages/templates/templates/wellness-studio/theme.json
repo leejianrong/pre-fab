@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "tokens": {
+    "color": {
+      "background": "#f7f5f0",
+      "foreground": "#2b2b26",
+      "surface": "#eeece3",
+      "surface-foreground": "#2b2b26",
+      "border": "#ded9c9",
+      "accent": "#5c6e58",
+      "accent-foreground": "#f7f5f0",
+      "muted": "#ded9c9",
+      "muted-foreground": "#5c584d"
+    },
+    "fontSize": {
+      "xs": "0.75rem",
+      "sm": "0.9375rem",
+      "body": "1.125rem",
+      "lg": "1.25rem",
+      "heading": "clamp(2rem, 4vw, 3.5rem)",
+      "display": "clamp(2.5rem, 6vw, 4.5rem)"
+    },
+    "spacing": {
+      "xs": "0.5rem",
+      "sm": "0.75rem",
+      "element": "1rem",
+      "lg": "2rem",
+      "section": "6rem"
+    },
+    "radius": {
+      "control": "0.25rem",
+      "card": "0.25rem",
+      "full": "9999px"
+    },
+    "fontFamily": {
+      "heading": "Georgia, 'Times New Roman', serif",
+      "body": "'Segoe UI', -apple-system, sans-serif"
+    }
+  }
+}

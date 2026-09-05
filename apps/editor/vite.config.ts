@@ -12,10 +12,12 @@ export default defineConfig({
     // service (Vite's default host binding, localhost-only, is invisible to
     // a mapped port); harmless for native dev too.
     host: true,
-    // docker-compose.yml's nginx service fronts this dev server at
-    // pre-fab.localhost, so requests arrive with that Host header rather
-    // than localhost — Vite blocks unrecognized hosts by default (DNS
-    // rebinding protection) and returns a bare "Blocked request" 403.
+    // "localhost" (the default direct-port path) is always implicitly
+    // allowed; "pre-fab.localhost" is only reached when
+    // docker-compose.override.yml.example's opt-in machine-wide Traefik
+    // instance fronts this dev server there instead, so requests arrive
+    // with that Host header — Vite blocks unrecognized hosts by default
+    // (DNS rebinding protection) and returns a bare "Blocked request" 403.
     allowedHosts: ["pre-fab.localhost"],
     // Proxied rather than called cross-origin: browsers do not reliably
     // treat different ports on `localhost` as the same site for cookie

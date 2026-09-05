@@ -43,7 +43,7 @@ import {
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "templates");
 
-type BlockSpec = { type: string; props: Record<string, unknown> };
+type BlockSpec = { type: string; props: Record<string, unknown>; scrollReveal?: boolean };
 
 interface TemplateSpec {
   id: string;
@@ -52,29 +52,36 @@ interface TemplateSpec {
   blocks: BlockSpec[];
 }
 
-function theme(overrides: Partial<ThemeTokens["color"]>, radiusOverrides: Partial<ThemeTokens["radius"]> = {}): ThemeTokens {
-  return {
-    ...DEFAULT_THEME_TOKENS,
-    color: { ...DEFAULT_THEME_TOKENS.color, ...overrides },
-    radius: { ...DEFAULT_THEME_TOKENS.radius, ...radiusOverrides },
-  };
-}
+// The `theme(color, radius)` shortcut every template used to share (only
+// overriding color/radius, everything else left at DEFAULT_THEME_TOKENS) is
+// gone (KAN-1152 thread 1): every template now also sets its own fontFamily
+// and section spacing, so each spec below builds its full ThemeTokens
+// literal directly — the same shape wellness-studio's spec already used.
 
 const TEMPLATES: TemplateSpec[] = [
   {
     id: "consultant",
     siteName: "Ada Consulting",
-    theme: theme({
-      background: "#ffffff",
-      foreground: "#0f172a",
-      surface: "#f8fafc",
-      "surface-foreground": "#0f172a",
-      border: "#e2e8f0",
-      accent: "#4f46e5",
-      "accent-foreground": "#ffffff",
-      muted: "#e2e8f0",
-      "muted-foreground": "#475569",
-    }),
+    theme: {
+      ...DEFAULT_THEME_TOKENS,
+      color: {
+        background: "#ffffff",
+        foreground: "#0f172a",
+        surface: "#f8fafc",
+        "surface-foreground": "#0f172a",
+        border: "#e2e8f0",
+        accent: "#4f46e5",
+        "accent-foreground": "#ffffff",
+        muted: "#e2e8f0",
+        "muted-foreground": "#475569",
+      },
+      fontFamily: {
+        heading: "'Helvetica Neue', Arial, sans-serif",
+        body: "system-ui, sans-serif",
+      },
+      spacing: { ...DEFAULT_THEME_TOKENS.spacing, section: "5rem" },
+      radius: { ...DEFAULT_THEME_TOKENS.radius, control: "0.375rem", card: "0.5rem" },
+    },
     blocks: [
       { type: NAV_BLOCK_TYPE, props: { brand: "Ada Consulting", links: [{ label: "Services", href: "#services" }, { label: "Contact", href: "#contact" }] } },
       {
@@ -85,7 +92,11 @@ const TEMPLATES: TemplateSpec[] = [
           ctaLabel: "Book an introduction call",
           ctaHref: "#contact",
           background: "background",
+          // No hero image (KAN-1152 thread 1, deliberate restraint): a
+          // generic stock "consulting" photo reads as filler on a one-person
+          // services site — this template stays text/color-led on purpose.
         },
+        scrollReveal: true,
       },
       { type: HEADING_BLOCK_TYPE, props: { text: "What I help with", level: "h2", size: "heading", align: "left" } },
       {
@@ -117,8 +128,9 @@ const TEMPLATES: TemplateSpec[] = [
   {
     id: "photographer",
     siteName: "Lena Cruz Photography",
-    theme: theme(
-      {
+    theme: {
+      ...DEFAULT_THEME_TOKENS,
+      color: {
         background: "#0b0b0d",
         foreground: "#f5f5f4",
         surface: "#18181b",
@@ -129,8 +141,23 @@ const TEMPLATES: TemplateSpec[] = [
         muted: "#3f3f46",
         "muted-foreground": "#d4d4d8",
       },
-      { card: "0.25rem", control: "0.25rem" },
-    ),
+      // fontFamily deliberately stays the system-ui default (KAN-1152 thread
+      // 1): a named serif/sans pairing (Georgia, Helvetica Neue, even just
+      // one axis) was tried and measurably, reproducibly cost 10+ Lighthouse
+      // performance points in this template specifically — its own 6-image
+      // gallery already spends most of its R3 headroom, and a headless
+      // Chromium resolving an uninstalled named font down its fallback
+      // chain is real, non-trivial main-thread cost under mobile CPU
+      // throttling. A neutral system sans is also a defensible fit for this
+      // template's "let the photography speak" stark-minimalism anyway —
+      // see the PR description for the full measurement trail.
+      fontFamily: {
+        heading: "system-ui, sans-serif",
+        body: "system-ui, sans-serif",
+      },
+      spacing: { ...DEFAULT_THEME_TOKENS.spacing, section: "5rem" },
+      radius: { ...DEFAULT_THEME_TOKENS.radius, card: "0.25rem", control: "0.25rem" },
+    },
     blocks: [
       { type: NAV_BLOCK_TYPE, props: { brand: "Lena Cruz", links: [{ label: "Portfolio", href: "#portfolio" }, { label: "Contact", href: "#contact" }] } },
       {
@@ -141,7 +168,14 @@ const TEMPLATES: TemplateSpec[] = [
           ctaLabel: "Enquire about a shoot",
           ctaHref: "#contact",
           background: "background",
+          // No hero backgroundImage here (KAN-1152 thread 1): tried, but this
+          // template's own 6-image gallery already sits close to the R3
+          // Lighthouse floor, and a full-bleed hero image (any size — bytes
+          // were not the driver; see the PR description) reliably pushed it
+          // below 90. Backed off per the card's own instructions rather than
+          // ship a regression.
         },
+        scrollReveal: true,
       },
       { type: HEADING_BLOCK_TYPE, props: { text: "Recent work", level: "h2", size: "heading", align: "left" } },
       {
@@ -173,17 +207,26 @@ const TEMPLATES: TemplateSpec[] = [
   {
     id: "tutor",
     siteName: "BrightPath Tutoring",
-    theme: theme({
-      background: "#ffffff",
-      foreground: "#0c2340",
-      surface: "#eef4fb",
-      "surface-foreground": "#0c2340",
-      border: "#d7e6f5",
-      accent: "#0c6b81",
-      "accent-foreground": "#ffffff",
-      muted: "#d7e6f5",
-      "muted-foreground": "#2d5069",
-    }),
+    theme: {
+      ...DEFAULT_THEME_TOKENS,
+      color: {
+        background: "#ffffff",
+        foreground: "#0c2340",
+        surface: "#eef4fb",
+        "surface-foreground": "#0c2340",
+        border: "#d7e6f5",
+        accent: "#0c6b81",
+        "accent-foreground": "#ffffff",
+        muted: "#d7e6f5",
+        "muted-foreground": "#2d5069",
+      },
+      fontFamily: {
+        heading: "Charter, Cambria, Georgia, serif",
+        body: "-apple-system, 'Segoe UI', system-ui, sans-serif",
+      },
+      spacing: { ...DEFAULT_THEME_TOKENS.spacing, section: "5rem" },
+      radius: { ...DEFAULT_THEME_TOKENS.radius, control: "0.5rem", card: "1rem" },
+    },
     blocks: [
       { type: NAV_BLOCK_TYPE, props: { brand: "BrightPath Tutoring", links: [{ label: "Subjects", href: "#subjects" }, { label: "FAQ", href: "#faq" }, { label: "Contact", href: "#contact" }] } },
       {
@@ -194,7 +237,13 @@ const TEMPLATES: TemplateSpec[] = [
           ctaLabel: "Book a free trial session",
           ctaHref: "#contact",
           background: "background",
+          // No hero image (KAN-1152 thread 1, deliberate restraint): a
+          // tutoring service working with minors is a poor fit for a
+          // generic stock "student" photo, so this template stays
+          // text/color-led rather than force a full-bleed image where it
+          // doesn't earn its place.
         },
+        scrollReveal: true,
       },
       { type: HEADING_BLOCK_TYPE, props: { text: "Subjects I teach", level: "h2", size: "heading", align: "left" } },
       {
@@ -225,8 +274,9 @@ const TEMPLATES: TemplateSpec[] = [
   {
     id: "cafe",
     siteName: "The Daily Grind Café",
-    theme: theme(
-      {
+    theme: {
+      ...DEFAULT_THEME_TOKENS,
+      color: {
         background: "#fdf6ec",
         foreground: "#3f2a1d",
         surface: "#f6e8d7",
@@ -237,8 +287,20 @@ const TEMPLATES: TemplateSpec[] = [
         muted: "#e6d2b8",
         "muted-foreground": "#5c4530",
       },
-      { card: "1rem", control: "1rem" },
-    ),
+      // fontFamily deliberately stays the system-ui default (KAN-1152 thread
+      // 1): a warm serif heading (Palatino/Georgia) was tried and measured
+      // (see PR description) to cost 10+ Lighthouse performance points here
+      // often enough to fail R3 — this page's own 3-image gallery already
+      // spends meaningful headroom, same root cause as photographer's. The
+      // warmth stays expressed through color (cream/terracotta) and the
+      // more generous radius/spacing below instead.
+      fontFamily: {
+        heading: "system-ui, sans-serif",
+        body: "system-ui, sans-serif",
+      },
+      spacing: { ...DEFAULT_THEME_TOKENS.spacing, section: "5rem" },
+      radius: { ...DEFAULT_THEME_TOKENS.radius, control: "0.75rem", card: "1.25rem" },
+    },
     blocks: [
       { type: NAV_BLOCK_TYPE, props: { brand: "The Daily Grind", links: [{ label: "Menu", href: "#menu" }, { label: "Visit", href: "#visit" }] } },
       {
@@ -249,7 +311,13 @@ const TEMPLATES: TemplateSpec[] = [
           ctaLabel: "See the menu",
           ctaHref: "#menu",
           background: "background",
+          // No hero image (KAN-1152 thread 1): tried a full-bleed interior
+          // photo here, but combined with this page's own 3-image gallery
+          // it reliably cost 10+ Lighthouse performance points. Backed off
+          // per the card's own instructions; the gallery below already
+          // carries this template's photography.
         },
+        scrollReveal: true,
       },
       { type: HEADING_BLOCK_TYPE, props: { text: "Menu highlights", level: "h2", size: "heading", align: "left" } },
       {
@@ -282,17 +350,26 @@ const TEMPLATES: TemplateSpec[] = [
   {
     id: "fitness-coach",
     siteName: "Forge Fitness Coaching",
-    theme: theme({
-      background: "#0e0e10",
-      foreground: "#f4f4f5",
-      surface: "#1a1a1d",
-      "surface-foreground": "#f4f4f5",
-      border: "#2a2a2e",
-      accent: "#f4536b",
-      "accent-foreground": "#1a1a1d",
-      muted: "#3f3f46",
-      "muted-foreground": "#d4d4d8",
-    }),
+    theme: {
+      ...DEFAULT_THEME_TOKENS,
+      color: {
+        background: "#0e0e10",
+        foreground: "#f4f4f5",
+        surface: "#1a1a1d",
+        "surface-foreground": "#f4f4f5",
+        border: "#2a2a2e",
+        accent: "#f4536b",
+        "accent-foreground": "#1a1a1d",
+        muted: "#3f3f46",
+        "muted-foreground": "#d4d4d8",
+      },
+      fontFamily: {
+        heading: "'Arial Black', 'Helvetica Neue', Arial, sans-serif",
+        body: "'Helvetica Neue', Arial, sans-serif",
+      },
+      spacing: { ...DEFAULT_THEME_TOKENS.spacing, section: "5rem" },
+      radius: { ...DEFAULT_THEME_TOKENS.radius, control: "0.25rem", card: "0.5rem" },
+    },
     blocks: [
       { type: NAV_BLOCK_TYPE, props: { brand: "Forge Fitness", links: [{ label: "Programs", href: "#programs" }, { label: "FAQ", href: "#faq" }, { label: "Sign up", href: "#contact" }] } },
       {
@@ -303,7 +380,9 @@ const TEMPLATES: TemplateSpec[] = [
           ctaLabel: "Start your first week free",
           ctaHref: "#contact",
           background: "background",
+          backgroundImage: "https://images.unsplash.com/photo-1517963879433-6ad2b056d712?w=700&q=50",
         },
+        scrollReveal: true,
       },
       { type: HEADING_BLOCK_TYPE, props: { text: "Programs", level: "h2", size: "heading", align: "left" } },
       {
@@ -341,8 +420,9 @@ const TEMPLATES: TemplateSpec[] = [
   {
     id: "agency",
     siteName: "Northwind Digital",
-    theme: theme(
-      {
+    theme: {
+      ...DEFAULT_THEME_TOKENS,
+      color: {
         background: "#ffffff",
         foreground: "#1e1b3a",
         surface: "#f4f2fb",
@@ -353,8 +433,13 @@ const TEMPLATES: TemplateSpec[] = [
         muted: "#e3ddf7",
         "muted-foreground": "#433d5e",
       },
-      { card: "0.5rem", control: "0.375rem" },
-    ),
+      fontFamily: {
+        heading: "Futura, 'Century Gothic', 'Segoe UI', sans-serif",
+        body: "system-ui, sans-serif",
+      },
+      spacing: { ...DEFAULT_THEME_TOKENS.spacing, section: "5.5rem" },
+      radius: { ...DEFAULT_THEME_TOKENS.radius, card: "0.5rem", control: "0.375rem" },
+    },
     blocks: [
       { type: NAV_BLOCK_TYPE, props: { brand: "Northwind Digital", links: [{ label: "Services", href: "#services" }, { label: "Work", href: "#work" }, { label: "Contact", href: "#contact" }] } },
       {
@@ -365,7 +450,12 @@ const TEMPLATES: TemplateSpec[] = [
           ctaLabel: "Start a project",
           ctaHref: "#contact",
           background: "background",
+          // No hero image (KAN-1152 thread 1, deliberate restraint): a
+          // stock "team at a whiteboard" photo is exactly the cliché this
+          // studio's own copy ("not a slide deck") is pushing against —
+          // stays text-led on purpose.
         },
+        scrollReveal: true,
       },
       { type: HEADING_BLOCK_TYPE, props: { text: "Services", level: "h2", size: "heading", align: "left" } },
       {
@@ -406,8 +496,9 @@ const TEMPLATES: TemplateSpec[] = [
   {
     id: "event",
     siteName: "Riverside Summer Fest",
-    theme: theme(
-      {
+    theme: {
+      ...DEFAULT_THEME_TOKENS,
+      color: {
         background: "#fff8f0",
         foreground: "#3a1d1d",
         surface: "#ffe9d6",
@@ -418,8 +509,13 @@ const TEMPLATES: TemplateSpec[] = [
         muted: "#ffd3ab",
         "muted-foreground": "#6b4530",
       },
-      { card: "1rem", control: "9999px" },
-    ),
+      fontFamily: {
+        heading: "Rockwell, 'Bookman Old Style', Georgia, serif",
+        body: "system-ui, sans-serif",
+      },
+      spacing: { ...DEFAULT_THEME_TOKENS.spacing, section: "5rem" },
+      radius: { ...DEFAULT_THEME_TOKENS.radius, card: "1.25rem", control: "9999px" },
+    },
     blocks: [
       { type: NAV_BLOCK_TYPE, props: { brand: "Riverside Summer Fest", links: [{ label: "Schedule", href: "#schedule" }, { label: "Venue", href: "#venue" }] } },
       {
@@ -430,7 +526,9 @@ const TEMPLATES: TemplateSpec[] = [
           ctaLabel: "Get tickets",
           ctaHref: "#contact",
           background: "background",
+          backgroundImage: "https://images.unsplash.com/photo-1470229722913-7c0e2dbbafd3?w=1000&q=55",
         },
+        scrollReveal: true,
       },
       { type: HEADING_BLOCK_TYPE, props: { text: "Schedule", level: "h2", size: "heading", align: "left" } },
       {
@@ -461,8 +559,9 @@ const TEMPLATES: TemplateSpec[] = [
   {
     id: "personal-brand",
     siteName: "Jordan Blake",
-    theme: theme(
-      {
+    theme: {
+      ...DEFAULT_THEME_TOKENS,
+      color: {
         background: "#fbfaf8",
         foreground: "#1c1c1a",
         surface: "#f1efe9",
@@ -473,8 +572,13 @@ const TEMPLATES: TemplateSpec[] = [
         muted: "#e3e0d8",
         "muted-foreground": "#454239",
       },
-      { card: "0.25rem", control: "0.25rem" },
-    ),
+      fontFamily: {
+        heading: "Baskerville, 'Big Caslon', Georgia, serif",
+        body: "system-ui, sans-serif",
+      },
+      spacing: { ...DEFAULT_THEME_TOKENS.spacing, section: "6rem" },
+      radius: { ...DEFAULT_THEME_TOKENS.radius, card: "0.25rem", control: "0.25rem" },
+    },
     blocks: [
       { type: NAV_BLOCK_TYPE, props: { brand: "Jordan Blake", links: [{ label: "About", href: "#about" }, { label: "Writing", href: "#writing" }, { label: "Contact", href: "#contact" }] } },
       {
@@ -485,7 +589,13 @@ const TEMPLATES: TemplateSpec[] = [
           ctaLabel: "Get in touch",
           ctaHref: "#contact",
           background: "background",
+          // No hero image (KAN-1152 thread 1, deliberate restraint): "Jordan
+          // Blake" is a specific named person, and a generic stock portrait
+          // would misrepresent them worse than no photo at all — a real
+          // photo of this person belongs here once one exists, not a
+          // placeholder. Stays minimalist/text-led on purpose.
         },
+        scrollReveal: true,
       },
       { type: HEADING_BLOCK_TYPE, props: { text: "About", level: "h2", size: "heading", align: "left" } },
       {
@@ -520,6 +630,99 @@ const TEMPLATES: TemplateSpec[] = [
       { type: FOOTER_BLOCK_TYPE, props: { text: "© Jordan Blake", links: [] } },
     ],
   },
+  {
+    id: "wellness-studio",
+    siteName: "Still Water Yoga",
+    // This template is untouched by KAN-1152 thread 1 (already done,
+    // KAN-1128) — its own restrained serif/sans pairing and wider section
+    // rhythm are the reference the other 8 templates were revised toward.
+    theme: {
+      ...DEFAULT_THEME_TOKENS,
+      color: {
+        background: "#f7f5f0",
+        foreground: "#2b2b26",
+        surface: "#eeece3",
+        "surface-foreground": "#2b2b26",
+        border: "#ded9c9",
+        accent: "#5c6e58",
+        "accent-foreground": "#f7f5f0",
+        muted: "#ded9c9",
+        "muted-foreground": "#5c584d",
+      },
+      fontFamily: {
+        heading: "Georgia, 'Times New Roman', serif",
+        body: "'Segoe UI', -apple-system, sans-serif",
+      },
+      spacing: { ...DEFAULT_THEME_TOKENS.spacing, section: "6rem" },
+      radius: { ...DEFAULT_THEME_TOKENS.radius, card: "0.25rem", control: "0.25rem" },
+    },
+    blocks: [
+      { type: NAV_BLOCK_TYPE, props: { brand: "Still Water Yoga", links: [{ label: "Classes", href: "#classes" }, { label: "Philosophy", href: "#philosophy" }, { label: "Visit", href: "#contact" }] } },
+      {
+        type: HERO_BLOCK_TYPE,
+        props: {
+          heading: "Slow down. Show up. Breathe.",
+          subheading: "Vinyasa, restorative and breathwork classes in a small studio built for quiet attention.",
+          ctaLabel: "See class times",
+          ctaHref: "#classes",
+          background: "background",
+          backgroundImage: "https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?w=1200&q=70",
+        },
+      },
+      { type: HEADING_BLOCK_TYPE, props: { text: "Our philosophy", level: "h2", size: "heading", align: "left" } },
+      {
+        type: RICHTEXT_BLOCK_TYPE,
+        props: {
+          html: "We keep classes small and unhurried. No mirrors, no music you can't think over — just enough people in a room to notice each other's breathing.\n\nMost students start with one class a week and stay for years. There's no six-week transformation here, just a quiet, ongoing one.",
+          size: "body",
+          align: "left",
+        },
+      },
+      { type: HEADING_BLOCK_TYPE, props: { text: "Classes", level: "h2", size: "heading", align: "left" } },
+      {
+        type: CARDGRID_BLOCK_TYPE,
+        props: {
+          columns: 3,
+          cards: [
+            { title: "Vinyasa Flow", body: "A moving, breath-led practice. Mornings and early evenings, all levels.", href: "" },
+            { title: "Restorative", body: "Long holds, blankets and bolsters — the class students describe as the best hour of their week.", href: "" },
+            { title: "Breathwork & Meditation", body: "Twenty minutes of breathing, twenty minutes of stillness. No mat required.", href: "" },
+          ],
+        },
+      },
+      {
+        type: GALLERY_BLOCK_TYPE,
+        props: {
+          columns: 3,
+          images: [
+            { src: "https://images.unsplash.com/photo-1545205597-3d9d02c29597?w=900&q=80", alt: "A group class in tree pose on the beach at low tide" },
+            { src: "https://images.unsplash.com/photo-1506126613408-eca07ce68773?w=900&q=80", alt: "A student seated in meditation as the sun rises behind them" },
+            { src: "https://images.unsplash.com/photo-1552196563-55cd4e45efb3?w=900&q=80", alt: "A student in a seated stretch on a sunlit wooden studio floor" },
+          ],
+        },
+      },
+      {
+        type: TESTIMONIAL_BLOCK_TYPE,
+        props: {
+          quote: "I've tried a dozen studios in this city. This is the only one where I actually stopped checking the clock.",
+          author: "Priya Nandan",
+          role: "Student since 2019",
+        },
+      },
+      {
+        type: FAQ_BLOCK_TYPE,
+        props: {
+          items: [
+            { question: "Do I need to bring my own mat?", answer: "No — mats, blankets and bolsters are all provided, freshly cleaned after every class." },
+            { question: "I've never done yoga before. Is that a problem?", answer: "Most of our students hadn't either. Every class is taught to the person who's never been, not around them." },
+            { question: "What should I wear?", answer: "Whatever you can move in. There's no dress code here." },
+          ],
+        },
+      },
+      { type: CONTACTDETAILS_BLOCK_TYPE, props: { heading: "Visit the studio", email: "hello@stillwateryoga.example", phone: "+1 (555) 010-7733", address: "142 Birch Lane, Studio 2" } },
+      { type: FOOTER_BLOCK_TYPE, props: { text: "© Still Water Yoga", links: [] } },
+    ],
+  },
 ];
 
 // A distinct CTA button on every template's hero-adjacent section would be
@@ -546,6 +749,7 @@ async function generateTemplate(spec: TemplateSpec): Promise<void> {
     schemaVersion: 1,
     props: b.props,
     responsive: {},
+    ...(b.scrollReveal !== undefined ? { scrollReveal: b.scrollReveal } : {}),
   }));
 
   const page: PageDocument = {

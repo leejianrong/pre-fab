@@ -16,6 +16,7 @@
     "@prefab/blocks": "workspace:*",
     "@prefab/puck-adapter": "workspace:*",
     "@prefab/schema": "workspace:*",
+    "@prefab/templates": "workspace:*",
     "@puckeditor/core": "0.23.0",
     "react": "19.0.0",
     "react-dom": "19.0.0"

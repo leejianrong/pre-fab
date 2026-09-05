@@ -29,6 +29,7 @@ export const pageWrite: Command<{ siteId: string; pageId: string } & WritePageIn
       title: args.title,
       slug: args.slug,
       blocks: args.blocks,
+      layoutMode: args.layoutMode,
       expectedVersion: args.expectedVersion,
     }),
 };

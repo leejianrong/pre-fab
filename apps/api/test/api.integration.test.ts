@@ -397,7 +397,7 @@ describe("template fork-on-use (Slice 3, ADR-0011)", () => {
     const list = await app.inject({ method: "GET", url: "/v1/templates", headers: { cookie } });
     expect(list.statusCode).toBe(200);
     const templates = list.json() as Array<{ id: string }>;
-    expect(templates.length).toBe(8);
+    expect(templates.length).toBeGreaterThanOrEqual(8);
     const templateId = templates[0]!.id;
 
     const forked = await app.inject({

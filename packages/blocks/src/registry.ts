@@ -40,6 +40,12 @@ import { Form } from "./form/Form.js";
 import { formBlockDefinition, type FormProps } from "./form/schema.js";
 import { Booking } from "./booking/Booking.js";
 import { bookingBlockDefinition, type BookingProps } from "./booking/schema.js";
+import { EventSignup } from "./eventsignup/EventSignup.js";
+import { eventSignupBlockDefinition, type EventSignupProps } from "./eventsignup/schema.js";
+import { Payment } from "./payment/Payment.js";
+import { paymentBlockDefinition, type PaymentProps } from "./payment/schema.js";
+import { Subscription } from "./subscription/Subscription.js";
+import { subscriptionBlockDefinition, type SubscriptionProps } from "./subscription/schema.js";
 
 /**
  * One entry per first-party block: its schema-half definition
@@ -125,6 +131,22 @@ const BLOCK_ENTRIES: BlockEntry[] = [
     definition: bookingBlockDefinition,
     Component: Booking,
     summary: (props: BookingProps) => props.heading || "booking widget",
+  },
+  {
+    definition: eventSignupBlockDefinition,
+    Component: EventSignup,
+    summary: (props: EventSignupProps) => `${props.heading || "event sign-up"} (capacity ${props.capacity ?? "unlimited"})`,
+  },
+  {
+    definition: paymentBlockDefinition,
+    Component: Payment,
+    summary: (props: PaymentProps) => `${props.heading} (${(props.amount / 100).toFixed(2)} ${props.currency.toUpperCase()})`,
+  },
+  {
+    definition: subscriptionBlockDefinition,
+    Component: Subscription,
+    summary: (props: SubscriptionProps) =>
+      `${props.heading} (${(props.price / 100).toFixed(2)} ${props.currency.toUpperCase()}/${props.interval})`,
   },
 ];
 

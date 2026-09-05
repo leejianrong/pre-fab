@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import type { SiteSummary } from "@prefab/api-client";
 import { TemplateGallery } from "./TemplateGallery.js";
+import { OnboardingWizard } from "./OnboardingWizard.js";
 import { api } from "./api.js";
 import { Card, FilledButton, TextField } from "./ui/index.js";
 
@@ -14,6 +15,10 @@ export function SitePicker({
   const [name, setName] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Opt-in, additive entry point (KAN-1130) — the existing template gallery
+  // and blank-site form below are untouched, so nothing that already
+  // depends on them (e2e included) changes when the wizard isn't open.
+  const [wizardOpen, setWizardOpen] = useState(false);
 
   useEffect(() => {
     api.listSites().then(setSites).catch((err) => setError(String(err)));
@@ -31,6 +36,14 @@ export function SitePicker({
     } finally {
       setPending(false);
     }
+  }
+
+  if (wizardOpen) {
+    return (
+      <div style={{ maxWidth: 480, margin: "4rem auto" }}>
+        <OnboardingWizard onSiteCreated={onSiteSelected} onCancel={() => setWizardOpen(false)} />
+      </div>
+    );
   }
 
   return (
@@ -53,6 +66,23 @@ export function SitePicker({
           </ul>
         )}
       </div>
+      <Card
+        interactive
+        onClick={() => setWizardOpen(true)}
+        style={
+          {
+            border: "1px dashed var(--md-sys-color-primary)",
+            background: "var(--md-sys-color-primary-container)",
+            color: "var(--md-sys-color-on-primary-container)",
+            "--pf-card-hover-base": "var(--md-sys-color-primary-container)",
+          } as CSSProperties
+        }
+      >
+        <strong>Not sure where to start?</strong>
+        <div className="pf-supporting-text" style={{ color: "inherit" }}>
+          Answer a couple of questions and we'll pick a template and style for you.
+        </div>
+      </Card>
       <TemplateGallery onSiteCreated={(siteId) => onSiteSelected(siteId, { firstRun: true })} />
       <form onSubmit={createSite} style={{ display: "grid", gap: "0.75rem" }}>
         <h2 className="pf-section-title">Or start blank</h2>

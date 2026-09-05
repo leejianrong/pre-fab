@@ -1,12 +1,55 @@
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { availableParallelism, tmpdir } from "node:os";
 import { spawn } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { PageDocument, PostDocument, SiteManifest, ThemeDocument } from "@prefab/schema";
+import { createConcurrencyGate, type ConcurrencyGate } from "./concurrency-gate.js";
 
 const PACKAGE_ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const BUILD_WORKER_PATH = path.join(PACKAGE_ROOT, "src", "build-worker.ts");
+
+/**
+ * KAN-1153 (follow-up to KAN-1140's profiling, PR #34): each call below
+ * spawns a real Vite/React-SSR Astro build subprocess — CPU- and
+ * memory-heavy. Fanned-out benchmarking found throughput peaking near the
+ * host's core count and *dropping* past it, with real swap growth under
+ * heavier concurrent load. This gate bounds how many of those subprocesses
+ * this process will run at once; everything past the cap queues FIFO and
+ * runs once a slot frees up, rather than piling up unbounded. Wrapping
+ * `buildSiteBundle` itself (not each of its callers) means every current
+ * and future caller — apps/api's publish.create/preview routes,
+ * packages/commands' CLI `build`/`preview`, tools/checks' template-budgets
+ * check — is capped for free, with nothing to keep in sync if a new caller
+ * shows up.
+ *
+ * `PREFAB_BUILD_CONCURRENCY` overrides the default (the host's reported
+ * core count) — mainly for a CI runner with too few cores to want this cap
+ * biting during the test suite itself, or a test that wants a small,
+ * deterministic cap to exercise queuing behavior directly.
+ */
+function resolveBuildConcurrencyLimit(): number {
+  const override = process.env.PREFAB_BUILD_CONCURRENCY;
+  if (override !== undefined) {
+    const parsed = Number.parseInt(override, 10);
+    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  }
+  return Math.max(1, availableParallelism());
+}
+
+const buildConcurrencyGate = createConcurrencyGate({ limit: resolveBuildConcurrencyLimit() });
+
+/**
+ * The module-singleton gate every `buildSiteBundle` call is routed through.
+ * Exposed for introspection — an integration test confirms real concurrent
+ * `buildSiteBundle` calls are actually queued by *this* gate (not just that
+ * the `ConcurrencyGate` primitive works in isolation), and an ops surface
+ * could equally read `.active`/`.pending` off it later to report queue
+ * depth. Not a way to bypass or reconfigure the cap.
+ */
+export function getBuildConcurrencyGate(): ConcurrencyGate {
+  return buildConcurrencyGate;
+}
 
 export interface BuildSiteBundleInput {
   site: SiteManifest;
@@ -54,6 +97,10 @@ export interface BuildSiteBundleResult {
  * beyond what's already on disk in node_modules (R16).
  */
 export async function buildSiteBundle(input: BuildSiteBundleInput): Promise<BuildSiteBundleResult> {
+  return buildConcurrencyGate.run(() => buildSiteBundleUngated(input));
+}
+
+async function buildSiteBundleUngated(input: BuildSiteBundleInput): Promise<BuildSiteBundleResult> {
   const inputFile = await mkdtemp(path.join(tmpdir(), "pf-build-input-"));
   const inputPath = path.join(inputFile, "input.json");
   const resolvedInput = {

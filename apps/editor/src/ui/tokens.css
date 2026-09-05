@@ -208,10 +208,13 @@ a {
 }
 
 .pf-card-interactive:hover {
+  /* --pf-card-hover-base lets a card with an overridden resting background
+     (SitePicker's onboarding-wizard callout) keep the state-layer wash in
+     the same color family instead of hopping back to plain surface. */
   background-color: color-mix(
     in srgb,
     var(--md-sys-color-on-surface) calc(var(--md-sys-state-hover-state-layer-opacity) * 100%),
-    var(--md-sys-color-surface)
+    var(--pf-card-hover-base, var(--md-sys-color-surface))
   );
 }
 

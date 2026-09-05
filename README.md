@@ -94,19 +94,34 @@ make dev
 That's it: it copies `.env.example` to `.env` on first run, then brings up
 Postgres, runs migrations, and starts `apps/api` and `apps/editor` together
 in Docker Compose, hot-reloading on file changes. Open the editor at
-**`http://pre-fab.localhost:5170`** — an nginx service fronts it there
-(`docker/nginx.conf`) rather than publishing its port directly, so running
-several projects' dev stacks on one laptop doesn't fight over `:5173`, the
-most common Vite default. (`*.localhost` needs no `/etc/hosts` entry —
-modern browsers treat it as loopback per RFC 6761.) `make up` does the same
-thing detached; `make down` stops it, `make nuke` also wipes the Postgres
-volume and the pnpm store cache. See `make help`-worthy targets in the
-`Makefile` (`test`, `test-integration`, `ci`, `logs`).
+**`http://localhost:5173`**. `make up` does the same thing detached; `make
+down` stops it, `make nuke` also wipes the Postgres volume and the pnpm
+store cache. See `make help`-worthy targets in the `Makefile` (`test`,
+`test-integration`, `ci`, `logs`).
 
-If `5170` (nginx), `8787` (the API, also still published directly for the
-CLI/MCP below) or `5432` (Postgres) collides with something else already
-running, override `PREFAB_PROXY_PORT`/`PREFAB_API_HOST_PORT`/
-`PREFAB_POSTGRES_PORT` in `.env` — nothing else needs to change.
+`5173` (the editor), `8787` (the API, also still published directly for the
+CLI/MCP below) and `5432` (Postgres) never need manual attention:
+`scripts/dev-ports.sh` runs automatically before `up`/`dev` (also on its own
+as `make ports`), checks each one, and rewrites `.env` to the next free port
+if something else already has it — printing the resulting URLs either way.
+Safe by construction: every inter-container hop (editor → api, api/migrate →
+postgres) already goes over Docker's internal network by service name, never
+through these host ports, so reassigning one only ever affects host-side
+consumers (your browser, a natively-run CLI/MCP), which the script keeps in
+sync in `.env` at the same time. A port that's already free is left alone,
+so re-running `make dev` in the same worktree keeps the same URLs.
+
+Running several projects' dev stacks on this laptop and want one stable
+hostname per project instead of juggling ports? Copy
+`docker-compose.override.yml.example` to `docker-compose.override.yml`
+(gitignored, loaded automatically) to route the editor through a
+machine-wide Traefik instance at **`http://pre-fab.localhost/`** instead —
+see that file for what it needs (a `proxy` external Docker network and a
+Traefik container watching the Docker socket, both one-time, machine-level
+setup outside this repo). `*.localhost` needs no `/etc/hosts` entry —
+modern browsers treat it as loopback per RFC 6761. Nothing here is
+required: the plain `http://localhost:5173` path above always works with
+no override present, including in CI.
 
 Prefer running natively instead of in Docker? `pnpm install`, then
 `pnpm run dev:db` (starts a system Postgres via `sudo pg_ctlcluster`/
@@ -144,9 +159,9 @@ pnpm --filter @prefab/mcp run start      # stdio MCP server; needs PREFAB_TOKEN
 
 ## Usage
 
-Open the editor — `http://pre-fab.localhost:5170` via `make dev`,
-`http://localhost:5173` if running natively — dev-login with any seeded
-email (or sign up for real and read the verification code back from
+Open the editor at `http://localhost:5173` (either `make dev` or running
+natively) — dev-login with any seeded email (or sign up for real and read
+the verification code back from
 `GET /v1/dev/emails?to=<email>`, the dev-only stand-in for an inbox), then
 pick a template or start blank.
 
