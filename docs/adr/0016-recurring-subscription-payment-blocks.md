@@ -283,3 +283,104 @@ new table.** Rejected in question 3 for the same reason a distinct block
 type was chosen in question 1: every existing one-off row would carry five
 permanently-NULL/default columns forever, and every existing reader of that
 table would need to keep ignoring them.
+
+## Addendum (part 2, KAN-1154): resolving `siteId` for post-checkout events
+
+Part 1 above builds Checkout-session creation only and explicitly leaves
+"part 2's webhook handler" the job of consuming `checkout.session.completed`
+and every subsequent lifecycle event. Part 2 (this addendum) implements
+that consumer (`apps/api/src/lib/subscription-webhook.ts`,
+`apps/self-host/src/subscription-webhook.ts`, and the extended
+`/v1/webhooks/stripe-connect` route + dev-advance route in both `app.ts`
+files) exactly against the state machine and column shape this ADR already
+designed — no schema change, no new migration. This addendum records the
+one real design decision part 2 itself had to make, per the card's own
+framing of it as a two-option choice.
+
+### The problem
+
+`checkout.session.completed` resolves `siteId` the same way the one-off
+payment webhook always has: `client_reference_id`/`metadata.siteId`,
+threaded through at Checkout-session-creation time
+(`CreateSubscriptionCheckoutSessionInput`, part 1). But every subsequent
+lifecycle event — `invoice.paid`, `invoice.payment_failed`,
+`customer.subscription.updated`, `customer.subscription.deleted` — arrives
+with **no Checkout Session context at all**. An invoice event carries a
+reference to its subscription; a subscription event *is* the subscription.
+Neither carries `client_reference_id`, because neither is a Checkout
+Session. `subscription_records` is RLS-keyed on `site_id` (R20) exactly
+like `payment_records`, so the webhook handler must resolve `siteId`
+*before* it can touch the table at all — the identical constraint part 1's
+own `CreateCheckoutSessionInput` comment already documents for the first
+event, now facing every event after it with no session to fall back on.
+
+### Two options, and which this part took
+
+**(a) — chosen: set `subscription_data[metadata]` on the Checkout Session
+at creation time**, so Stripe copies `siteId`/`subscriptionRecordId` onto
+the *Subscription* object itself once the session completes. A Subscription
+carries its own `.metadata` at its own top level for the rest of its life —
+`customer.subscription.updated`/`.deleted` read it directly off
+`event.data.object.metadata`. An Invoice references its subscription (and,
+depending on API version, a mirror of that subscription's metadata) via
+`invoice.subscription`/`invoice.subscription_details` (or, on the
+2025-03-31+ restructure, `invoice.parent.subscription_details`) — see
+`extractSubscriptionEventContext` (both `apps/api`/`apps/self-host` copies)
+for the defensive, more-than-one-shape read this repo's own "UNVERIFIED, no
+live account" constraint requires.
+
+**(b) — rejected: resolve `stripe_subscription_id` -> `site_id` via a
+lookup query that runs before tenant context is set.** This repo's RLS
+policy shape is `USING (site_id = current_setting('app.site_id', true))`
+(every migration since 0001) — every existing query in this codebase either
+already has `siteId` in hand before it ever calls `withTenantContext`, or
+gets it from exactly the mechanism (a) uses (Checkout's own
+`client_reference_id`/`metadata`, e.g. the one-off payment webhook, Slice
+8's billing webhook's `client_reference_id`-carries-`accountId` for its own
+`checkout.session.completed`). There is no existing "look up which tenant a
+row belongs to with no tenant context set yet, using a non-`site_id` key"
+query anywhere in this codebase to extend — building one for this part
+alone means either a `SECURITY DEFINER` function or a superuser-role
+bypass-RLS read path, both meaningfully more surface (a new RLS-adjacent
+trust boundary to reason about and keep correct) than asking Stripe to echo
+back an identifier it already has a documented field for. (a) needs no new
+query shape, no new trust boundary, and no live account to get right beyond
+what part 1 already committed to being UNVERIFIED about.
+
+### Idempotency mechanism (point 4 of the card)
+
+Two independent layers, not one:
+
+1. **Exact redelivery** (Stripe retries any event it didn't get a fast 2xx
+   for — the same `event.id` twice): guarded by `recordStripeWebhookEvent`,
+   reusing Slice 8's own `stripe_webhook_events` table
+   (`packages/db/migrations/0007_slice8.sql`) unchanged — Stripe event ids
+   are globally unique regardless of which integration receives them, so
+   this needed no new table in `apps/api`. `apps/self-host` had no such
+   table at all before this part (it had no real webhook consumer of any
+   kind — see below); `schema.sql` now carries an identical
+   `stripe_webhook_events` table for the same reason.
+2. **Out-of-order / different-event-id delivery** (a delayed `invoice.paid`
+   arriving after a *later* `customer.subscription.deleted` already set
+   `status = 'canceled'`): guarded by `updateSubscriptionLifecycle`'s own
+   `fromStatuses` parameter — every transition only ever fires from the
+   state machine's own documented predecessor set, so a transition whose
+   precondition the row's current status no longer satisfies matches no
+   row and is silently skipped (no write, no notification). This is the
+   layer redelivery-dedup alone cannot provide: two *different* event ids
+   delivered out of order are not duplicates by id, but one of them must
+   still lose, and `checkout.session.completed` -> `active`/`trialing` is
+   additionally guarded to fire only from `'incomplete'`, the identical
+   discipline `updatePaymentRecordStatus`'s own `AND status = 'pending'`
+   guard already uses for the one-off path.
+
+### Self-host parity, verified concretely
+
+`apps/self-host` had **no real webhook consumer of any kind** before this
+part — not for subscriptions, and not for the existing one-off payment path
+either (confirmed by reading `apps/self-host/src/app.ts` in full: only
+`/v1/dev/stripe-connect/advance`, the dev-only simulate route, existed).
+This part adds `/v1/webhooks/stripe-connect` to `apps/self-host` for the
+first time, scoped to subscription lifecycle events only — the pre-existing
+one-off payment webhook gap is untouched and out of this card's scope, left
+for a future card to close symmetrically if desired.

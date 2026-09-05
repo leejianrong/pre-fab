@@ -253,20 +253,44 @@ export class RealTenantStripeProvider implements TenantStripeProvider {
    * thing to Stripe, but sending `0` explicitly is needless noise on every
    * request that doesn't use one). UNVERIFIED against a live Stripe account
    * — see this module's own comment.
+   *
+   * KAN-1154 part 2 / ADR-0016 addendum: `subscription_data[metadata]` is
+   * also always sent — Stripe Checkout copies it onto the *Subscription*
+   * object itself once the session completes (distinct from the top-level
+   * `metadata`/`client_reference_id` above, which only ever land on the
+   * Checkout *Session*, and a session is a one-time, never-seen-again
+   * object once it completes). This is what lets part 2's webhook handler
+   * resolve `siteId` for every event AFTER `checkout.session.completed` —
+   * `customer.subscription.updated`/`.deleted` carry it directly at
+   * `event.data.object.metadata` (the Subscription's own top-level field),
+   * and `invoice.paid`/`invoice.payment_failed` carry it nested under the
+   * invoice's own reference to its subscription (see
+   * subscription-webhook.ts's `extractSubscriptionEventContext` for the
+   * exact, defensively-multi-shaped read). The alternative this part
+   * considered — resolving `stripe_subscription_id` -> `site_id` via a
+   * lookup query that runs before tenant context is set — was rejected:
+   * this repo's RLS (`USING (site_id = current_setting('app.site_id',
+   * true))`) has no existing pattern for a pre-tenant-context lookup by a
+   * non-`site_id` key, and inventing one is strictly more surface (a new
+   * query shape, a new "is this safe under RLS" argument to make) than
+   * asking Stripe to echo back an identifier it already offers a field
+   * for.
    */
   async createSubscriptionCheckoutSession(input: CreateSubscriptionCheckoutSessionInput): Promise<CheckoutSession> {
     const body = new URLSearchParams({
       mode: "subscription",
       "line_items[0][price_data][currency]": input.currency,
       "line_items[0][price_data][product_data][name]": input.productName,
-      "line_items[0][price_data][unit_amount]": String(input.price),
       "line_items[0][price_data][recurring][interval]": input.interval,
+      "line_items[0][price_data][unit_amount]": String(input.price),
       "line_items[0][quantity]": "1",
       success_url: input.successUrl,
       cancel_url: input.cancelUrl,
       client_reference_id: input.subscriptionRecordId,
       "metadata[siteId]": input.siteId,
       "metadata[subscriptionRecordId]": input.subscriptionRecordId,
+      "subscription_data[metadata][siteId]": input.siteId,
+      "subscription_data[metadata][subscriptionRecordId]": input.subscriptionRecordId,
     });
     if (input.trialPeriodDays > 0) {
       body.set("subscription_data[trial_period_days]", String(input.trialPeriodDays));

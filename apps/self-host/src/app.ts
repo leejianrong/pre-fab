@@ -28,6 +28,15 @@ import { renderManageBookingPage } from "./booking-manage-page.js";
 import { createSqlitePaymentBlockStore, createSqliteStripeConnectionStore, createSqlitePaymentRecordStore } from "./payment-adapters.js";
 import { createSqliteSubscriptionBlockStore, createSqliteSubscriptionRecordStore } from "./subscription-adapters.js";
 import { createTenantStripeProvider, FakeTenantStripeProvider, type TenantStripeProvider } from "./lib/tenant-stripe.js";
+import { EmailSubscriptionNotifier } from "./lib/subscription-notifier.js";
+import {
+  applySubscriptionCheckoutCompleted,
+  applyInvoicePaid,
+  applyInvoicePaymentFailed,
+  applySubscriptionUpdated,
+  applySubscriptionDeleted,
+  extractSubscriptionEventContext,
+} from "./subscription-webhook.js";
 
 const SubmitFormBodySchema = z.object({
   values: z.record(z.string(), z.unknown()),
@@ -55,6 +64,26 @@ const SignUpForEventBodySchema = z.object({ values: z.record(z.string(), z.union
 const ConnectStripeBodySchema = z.object({ siteId: z.string().min(1), authorizationCode: z.string().min(1) });
 const AdvanceFakeStripeConnectBodySchema = z.object({ sessionId: z.string().min(1), buyerEmail: z.string().email().optional() });
 
+// KAN-1154 part 2 / ADR-0016 (R10) — mirrors apps/api's own
+// AdvanceFakeSubscriptionBodySchema (schemas.ts): one flexible route keyed
+// by `event`, not five. `siteId` is explicit in the body (not a path
+// segment) for the same reason ConnectStripeBodySchema's own comment
+// gives: a self-hosted instance has no authenticated principal to resolve
+// it from, so the operator/test scripting this already knows their own
+// site's id.
+const AdvanceFakeSubscriptionBodySchema = z.object({
+  siteId: z.string().min(1),
+  event: z.enum(["checkout_completed", "invoice_paid", "invoice_payment_failed", "subscription_updated", "subscription_deleted"]),
+  eventId: z.string().min(1).optional(),
+  stripeCheckoutSessionId: z.string().min(1).optional(),
+  stripeSubscriptionId: z.string().min(1).optional(),
+  stripeCustomerId: z.string().min(1).optional(),
+  buyerEmail: z.string().email().optional(),
+  status: z.enum(["incomplete", "incomplete_expired", "trialing", "active", "past_due", "canceled", "unpaid", "paused"]).optional(),
+  currentPeriodEnd: z.coerce.date().optional(),
+  cancelAtPeriodEnd: z.boolean().optional(),
+});
+
 export interface AppDeps {
   /** The already-exported static bundle this instance serves (R10) — a self-hosted instance is one site, not a multi-tenant store. */
   bundleDir: string;
@@ -69,6 +98,8 @@ export interface AppDeps {
   ownerEmail?: string | null;
   /** Slice 10 / KAN-1137 (ADR-0005) — injectable so a test can reach the exact same fake instance the routes use. Defaults to createTenantStripeProvider()'s env-based choice. */
   tenantStripeProvider?: TenantStripeProvider;
+  /** KAN-1154 part 2 / ADR-0016 (R10) — Stripe Connect's own webhook signing secret, required only when a real TenantStripeProvider is configured. Defaults to STRIPE_CONNECT_WEBHOOK_SECRET. */
+  stripeConnectWebhookSecret?: string;
 }
 
 /**
@@ -129,6 +160,11 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   const paymentRecordStore = createSqlitePaymentRecordStore(db);
   const paymentCheckoutDeps = { paymentBlocks: paymentBlockStore, stripeConnections: stripeConnectionStore, paymentRecords: paymentRecordStore, tenantStripe: tenantStripeProvider };
 
+  // KAN-1154 part 2 / ADR-0016 (R10) — same `emailSender`/`ownerEmail`
+  // every other self-host notifier already uses.
+  const subscriptionNotifier = new EmailSubscriptionNotifier(emailSender);
+  const stripeConnectWebhookSecret = deps.stripeConnectWebhookSecret ?? process.env.STRIPE_CONNECT_WEBHOOK_SECRET ?? "";
+
   // KAN-1154 / ADR-0016 (R10) — creation only (see that ADR); `stripeConnectionStore` is the exact same instance the one-off payment path above uses.
   const subscriptionBlockStore = createSqliteSubscriptionBlockStore(db);
   const subscriptionRecordStore = createSqliteSubscriptionRecordStore(db);
@@ -151,6 +187,24 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   };
 
   const app = Fastify({ logger: false });
+
+  // KAN-1154 part 2 / ADR-0016 — mirrors apps/api's own identical content-
+  // type parser exactly: Stripe webhook signature verification needs the
+  // exact raw request bytes (Stripe-Signature is an HMAC over the literal
+  // body, not the re-serialized JSON), stashed alongside the ordinarily-
+  // parsed body so every other route's `request.body` is unaffected.
+  app.addContentTypeParser<Buffer>("application/json", { parseAs: "buffer" }, (request, body, done) => {
+    (request as FastifyRequest & { rawBody?: Buffer }).rawBody = body;
+    if (body.length === 0) {
+      done(null, undefined);
+      return;
+    }
+    try {
+      done(null, JSON.parse(body.toString("utf8")));
+    } catch (error) {
+      done(error as Error, undefined);
+    }
+  });
 
   app.get("/health", async () => ({ ok: true }));
 
@@ -489,6 +543,193 @@ export function buildApp(deps: AppDeps): FastifyInstance {
       return { error: { code: "not_found", message: "no payment record for that session id" } };
     }
     return { record };
+  });
+
+  // ---- Dev-only: drive the subscription lifecycle state machine (KAN-1154
+  // part 2 / ADR-0016) the same way advance-stripe-connect above drives
+  // one-off payments — one flexible route keyed by `event`, calling exactly
+  // the same subscription-webhook.ts functions the real webhook route below
+  // calls, so the two can never disagree. ----
+  app.post("/v1/dev/stripe-connect/subscriptions/advance", async (request, reply) => {
+    if (!(tenantStripeProvider instanceof FakeTenantStripeProvider)) {
+      reply.status(404);
+      return { error: { code: "not_found", message: "the fake tenant-Stripe provider is not in use — nothing to advance" } };
+    }
+    const parsed = AdvanceFakeSubscriptionBodySchema.safeParse(request.body);
+    if (!parsed.success) {
+      reply.status(400);
+      return { error: { code: "validation_error", message: "invalid request body", details: parsed.error.issues } };
+    }
+    const body = parsed.data;
+    const eventId = body.eventId ?? newUlid();
+    const webhookDeps = { db, notifier: subscriptionNotifier, ownerEmail };
+
+    let outcome;
+    switch (body.event) {
+      case "checkout_completed":
+        if (!body.stripeCheckoutSessionId || !body.stripeSubscriptionId || !body.stripeCustomerId) {
+          reply.status(400);
+          return { error: { code: "validation_error", message: "checkout_completed needs stripeCheckoutSessionId, stripeSubscriptionId and stripeCustomerId" } };
+        }
+        outcome = await applySubscriptionCheckoutCompleted(
+          eventId,
+          {
+            siteId: body.siteId,
+            stripeCheckoutSessionId: body.stripeCheckoutSessionId,
+            stripeSubscriptionId: body.stripeSubscriptionId,
+            stripeCustomerId: body.stripeCustomerId,
+            buyerEmail: body.buyerEmail ?? null,
+            currentPeriodEnd: body.currentPeriodEnd?.toISOString() ?? null,
+          },
+          webhookDeps,
+        );
+        break;
+      case "invoice_paid":
+        if (!body.stripeSubscriptionId) {
+          reply.status(400);
+          return { error: { code: "validation_error", message: "invoice_paid needs stripeSubscriptionId" } };
+        }
+        outcome = await applyInvoicePaid(eventId, { siteId: body.siteId, stripeSubscriptionId: body.stripeSubscriptionId }, webhookDeps);
+        break;
+      case "invoice_payment_failed":
+        if (!body.stripeSubscriptionId) {
+          reply.status(400);
+          return { error: { code: "validation_error", message: "invoice_payment_failed needs stripeSubscriptionId" } };
+        }
+        outcome = await applyInvoicePaymentFailed(eventId, { siteId: body.siteId, stripeSubscriptionId: body.stripeSubscriptionId }, webhookDeps);
+        break;
+      case "subscription_updated":
+        if (!body.stripeSubscriptionId || !body.status) {
+          reply.status(400);
+          return { error: { code: "validation_error", message: "subscription_updated needs stripeSubscriptionId and status" } };
+        }
+        outcome = await applySubscriptionUpdated(
+          eventId,
+          {
+            siteId: body.siteId,
+            stripeSubscriptionId: body.stripeSubscriptionId,
+            status: body.status,
+            currentPeriodEnd: body.currentPeriodEnd?.toISOString() ?? null,
+            cancelAtPeriodEnd: body.cancelAtPeriodEnd ?? false,
+            canceledAt: body.status === "canceled" ? new Date().toISOString() : null,
+          },
+          webhookDeps,
+        );
+        break;
+      case "subscription_deleted":
+        if (!body.stripeSubscriptionId) {
+          reply.status(400);
+          return { error: { code: "validation_error", message: "subscription_deleted needs stripeSubscriptionId" } };
+        }
+        outcome = await applySubscriptionDeleted(eventId, { siteId: body.siteId, stripeSubscriptionId: body.stripeSubscriptionId, canceledAt: new Date().toISOString() }, webhookDeps);
+        break;
+    }
+
+    if (outcome.status === "no_match") {
+      reply.status(404);
+      return { error: { code: "not_found", message: "no subscription record in a state this event can apply to" } };
+    }
+    return outcome;
+  });
+
+  // ---- Real Stripe Connect webhooks (KAN-1154 part 2 / ADR-0016):
+  // signature-verified, subscription lifecycle only — self-host had NO real
+  // webhook consumer of any kind before this card (confirmed: even the
+  // one-off payment path, Slice 10 / KAN-1137, only ever had the dev-advance
+  // route above; that gap is pre-existing and out of this card's scope, not
+  // touched here). UNVERIFIED against a live Stripe account, same as every
+  // other real adapter in this repo. ----
+  app.post("/v1/webhooks/stripe-connect", async (request, reply) => {
+    const rawBody = (request as FastifyRequest & { rawBody?: Buffer }).rawBody ?? Buffer.from("");
+    const signature = request.headers["stripe-signature"] as string | undefined;
+
+    let event;
+    try {
+      event = tenantStripeProvider.constructEvent(rawBody, signature, stripeConnectWebhookSecret);
+    } catch (error) {
+      reply.status(400);
+      return { error: { code: "validation_error", message: error instanceof Error ? error.message : "invalid webhook payload" } };
+    }
+
+    const webhookDeps = { db, notifier: subscriptionNotifier, ownerEmail };
+
+    if (event.type === "checkout.session.completed") {
+      const object = event.data.object as {
+        id?: string;
+        mode?: string;
+        subscription?: string;
+        customer?: string;
+        customer_details?: { email?: string };
+        metadata?: { siteId?: string };
+      };
+      // Payment-mode (one-off) sessions are deliberately ignored here — see
+      // this route's own comment: that path has no real webhook consumer in
+      // self-host at all yet, and adding one is not this card's job.
+      if (object.mode === "subscription" && object.metadata?.siteId && object.id && object.subscription && object.customer) {
+        await applySubscriptionCheckoutCompleted(
+          event.id,
+          {
+            siteId: object.metadata.siteId,
+            stripeCheckoutSessionId: object.id,
+            stripeSubscriptionId: object.subscription,
+            stripeCustomerId: object.customer,
+            buyerEmail: object.customer_details?.email ?? null,
+            currentPeriodEnd: null,
+          },
+          webhookDeps,
+        );
+      }
+      reply.status(200);
+      return { ok: true };
+    }
+
+    if (event.type === "invoice.paid" || event.type === "invoice.payment_failed") {
+      const { siteId, stripeSubscriptionId } = extractSubscriptionEventContext(event.type, event.data.object);
+      if (siteId && stripeSubscriptionId) {
+        const apply = event.type === "invoice.paid" ? applyInvoicePaid : applyInvoicePaymentFailed;
+        await apply(event.id, { siteId, stripeSubscriptionId }, webhookDeps);
+      }
+      reply.status(200);
+      return { ok: true };
+    }
+
+    if (event.type === "customer.subscription.updated") {
+      const { siteId, stripeSubscriptionId } = extractSubscriptionEventContext(event.type, event.data.object);
+      const object = event.data.object as { status?: string; current_period_end?: number; cancel_at_period_end?: boolean; canceled_at?: number };
+      if (siteId && stripeSubscriptionId && object.status) {
+        await applySubscriptionUpdated(
+          event.id,
+          {
+            siteId,
+            stripeSubscriptionId,
+            status: object.status,
+            currentPeriodEnd: object.current_period_end ? new Date(object.current_period_end * 1000).toISOString() : null,
+            cancelAtPeriodEnd: object.cancel_at_period_end ?? false,
+            canceledAt: object.canceled_at ? new Date(object.canceled_at * 1000).toISOString() : null,
+          },
+          webhookDeps,
+        );
+      }
+      reply.status(200);
+      return { ok: true };
+    }
+
+    if (event.type === "customer.subscription.deleted") {
+      const { siteId, stripeSubscriptionId } = extractSubscriptionEventContext(event.type, event.data.object);
+      const object = event.data.object as { canceled_at?: number };
+      if (siteId && stripeSubscriptionId) {
+        await applySubscriptionDeleted(
+          event.id,
+          { siteId, stripeSubscriptionId, canceledAt: object.canceled_at ? new Date(object.canceled_at * 1000).toISOString() : new Date().toISOString() },
+          webhookDeps,
+        );
+      }
+      reply.status(200);
+      return { ok: true };
+    }
+
+    reply.status(200);
+    return { ok: true };
   });
 
   // ---- The runtime API (Slice 10 / KAN-1137) — same shape as apps/api's

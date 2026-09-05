@@ -144,7 +144,7 @@ export class RealTenantStripeProvider implements TenantStripeProvider {
     return { sessionId: result.id, url: result.url };
   }
 
-  /** KAN-1154 / ADR-0016 — mirrors apps/api's own copy exactly (mode: "subscription", price_data[recurring][interval], an optional subscription_data[trial_period_days]). UNVERIFIED against a live Stripe account. */
+  /** KAN-1154 / ADR-0016 — mirrors apps/api's own copy exactly (mode: "subscription", price_data[recurring][interval], an optional subscription_data[trial_period_days]). KAN-1154 part 2 addendum: `subscription_data[metadata]` is also always sent, mirroring apps/api's own copy's fully-documented reasoning — it's what lets this instance's own webhook route (see app.ts) resolve siteId from every subscription-lifecycle event after checkout.session.completed, since a self-hosted instance's own `subscription_records` row has no accounts/tenant table to look anything up in either. UNVERIFIED against a live Stripe account. */
   async createSubscriptionCheckoutSession(input: CreateSubscriptionCheckoutSessionInput): Promise<CheckoutSession> {
     const body = new URLSearchParams({
       mode: "subscription",
@@ -158,6 +158,8 @@ export class RealTenantStripeProvider implements TenantStripeProvider {
       client_reference_id: input.subscriptionRecordId,
       "metadata[siteId]": input.siteId,
       "metadata[subscriptionRecordId]": input.subscriptionRecordId,
+      "subscription_data[metadata][siteId]": input.siteId,
+      "subscription_data[metadata][subscriptionRecordId]": input.subscriptionRecordId,
     });
     if (input.trialPeriodDays > 0) {
       body.set("subscription_data[trial_period_days]", String(input.trialPeriodDays));
