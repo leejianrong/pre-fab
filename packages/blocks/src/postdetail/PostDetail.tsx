@@ -1,6 +1,6 @@
 import type { CSSProperties } from "react";
 import type { PostDocument } from "@prefab/schema";
-import { cssVar } from "../theme-css.js";
+import { cssVar, PROSE_MAX_MEASURE } from "../theme-css.js";
 import { ResponsiveStyle, type BlockRenderProps } from "../responsive.js";
 import { parseMarkdownLite } from "../markdown-lite.js";
 import type { PostDetailProps } from "./schema.js";
@@ -17,11 +17,29 @@ function formatDate(date: string): string {
 export function PostDetail(props: PostDetailProps & BlockRenderProps & PostDetailRenderProps) {
   const { post, blockId, responsive } = props;
 
-  const articleStyle: CSSProperties = { padding: `${cssVar("spacing", "section")} ${cssVar("spacing", "element")}` };
-  const titleStyle: CSSProperties = { fontSize: cssVar("fontSize", "heading"), margin: 0 };
-  const metaStyle: CSSProperties = { fontSize: cssVar("fontSize", "sm"), color: cssVar("color", "foreground"), opacity: 0.7, margin: `${cssVar("spacing", "xs")} 0 ${cssVar("spacing", "element")}` };
+  const articleStyle: CSSProperties = {
+    padding: `${cssVar("spacing", "section")} ${cssVar("spacing", "element")}`,
+    // KAN-1204 (docs/design-audit-2026-09.md §2): same measure cap as
+    // RichText — desktop long-form posts ran to ~152 characters/line with no
+    // container width constraint at all. See PROSE_MAX_MEASURE's doc comment.
+    maxWidth: PROSE_MAX_MEASURE,
+    marginLeft: "auto",
+    marginRight: "auto",
+  };
+  const titleStyle: CSSProperties = { fontSize: cssVar("fontSize", "heading"), lineHeight: cssVar("lineHeight", "heading"), margin: 0 };
+  const metaStyle: CSSProperties = {
+    fontSize: cssVar("fontSize", "sm"),
+    lineHeight: cssVar("lineHeight", "sm"),
+    color: cssVar("color", "foreground"),
+    opacity: 0.7,
+    margin: `${cssVar("spacing", "xs")} 0 ${cssVar("spacing", "element")}`,
+  };
   const coverStyle: CSSProperties = { width: "100%", borderRadius: cssVar("radius", "card"), margin: `0 0 ${cssVar("spacing", "element")}` };
-  const bodyTextStyle: CSSProperties = { fontSize: cssVar("fontSize", "body"), margin: `0 0 ${cssVar("spacing", "sm")}` };
+  const bodyTextStyle: CSSProperties = {
+    fontSize: cssVar("fontSize", "body"),
+    lineHeight: cssVar("lineHeight", "body"),
+    margin: `0 0 ${cssVar("spacing", "sm")}`,
+  };
 
   if (!post) {
     return (
@@ -51,7 +69,7 @@ export function PostDetail(props: PostDetailProps & BlockRenderProps & PostDetai
           if (block.kind === "heading") {
             const Tag = (`h${block.level + 1}` as "h2" | "h3" | "h4");
             return (
-              <Tag key={index} style={{ ...bodyTextStyle, fontSize: cssVar("fontSize", "lg") }}>
+              <Tag key={index} style={{ ...bodyTextStyle, fontSize: cssVar("fontSize", "lg"), lineHeight: cssVar("lineHeight", "lg") }}>
                 {block.text}
               </Tag>
             );

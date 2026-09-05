@@ -58,6 +58,26 @@ export function isUlid(value) {
 
 export const DEFAULT_THEME_TOKENS = ${JSON.stringify(DEFAULT_THEME_TOKENS, null, 2)};
 
+// KAN-1204: @prefab/blocks' theme-css.ts now imports \`resolveThemeTokens\` as
+// a runtime value from "@prefab/schema" (it used to be defined locally in
+// that file) so packages/db can share the same merge logic at the DB-read
+// boundary — see that function's own doc comment in the real
+// @prefab/schema package. The copied theme-css.ts (src/blocks, byte-for-byte
+// per this file's module comment) re-exports it, and \`[...slug].astro\`
+// (this file's own SITE_PAGE_ASTRO) calls it directly, so this shim needs a
+// real, working implementation, not just a type — the same reason
+// DEFAULT_THEME_TOKENS above is a real value and not \`import type\`.
+export function resolveThemeTokens(tokens, defaults = DEFAULT_THEME_TOKENS) {
+  return {
+    color: { ...defaults.color, ...tokens.color },
+    fontSize: { ...defaults.fontSize, ...tokens.fontSize },
+    spacing: { ...defaults.spacing, ...tokens.spacing },
+    radius: { ...defaults.radius, ...tokens.radius },
+    fontFamily: { ...defaults.fontFamily, ...tokens.fontFamily },
+    lineHeight: { ...defaults.lineHeight, ...tokens.lineHeight },
+  };
+}
+
 export class BlockRegistry {
   #definitions = new Map();
   register(definition) {
@@ -139,6 +159,16 @@ export interface ThemeTokens {
   fontSize: Record<string, string>;
   spacing: Record<string, string>;
   radius: Record<string, string>;
+  // KAN-1204: this shim had already fallen behind @prefab/schema's real
+  // ThemeTokensSchema by one group (fontFamily, added earlier) before this
+  // change added a second (lineHeight) — both added here now. The copied
+  // block sources (src/blocks, cp'd verbatim below) reference
+  // tokens.fontFamily/tokens.lineHeight (theme-css.ts's
+  // themeTokensToStyleVars/resolveThemeTokens), so an ejected project's own
+  // \`tsc\`/\`astro build\` needs both fields on this shim to type-check
+  // against, the same reason \`scrollReveal\` was added to \`BlockNode\` below.
+  fontFamily: Record<string, string>;
+  lineHeight: Record<string, string>;
 }
 
 export interface PostDocument {

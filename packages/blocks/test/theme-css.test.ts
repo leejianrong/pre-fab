@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { ThemeTokens } from "@prefab/schema";
 import { cssVar, resolveThemeTokens, themeRootStyle, themeTokensToStyleVars } from "../src/theme-css.js";
 
-const EMPTY_TOKENS: ThemeTokens = { color: {}, fontSize: {}, spacing: {}, radius: {}, fontFamily: {} };
+const EMPTY_TOKENS: ThemeTokens = { color: {}, fontSize: {}, spacing: {}, radius: {}, fontFamily: {}, lineHeight: {} };
 
 describe("cssVar", () => {
   it("builds a bare var() reference — no literal fallback baked into the block (invariant 2)", () => {
@@ -12,14 +12,21 @@ describe("cssVar", () => {
 
 describe("resolveThemeTokens", () => {
   it("fills in a token the theme is missing from the given defaults", () => {
-    const resolved = resolveThemeTokens(EMPTY_TOKENS, { color: { accent: "#4f46e5" }, fontSize: {}, spacing: {}, radius: {}, fontFamily: {} });
+    const resolved = resolveThemeTokens(EMPTY_TOKENS, {
+      color: { accent: "#4f46e5" },
+      fontSize: {},
+      spacing: {},
+      radius: {},
+      fontFamily: {},
+      lineHeight: {},
+    });
     expect(resolved.color.accent).toBe("#4f46e5");
   });
 
   it("lets a theme's own value win over the default for the same key", () => {
     const resolved = resolveThemeTokens(
-      { color: { accent: "#ff0000" }, fontSize: {}, spacing: {}, radius: {}, fontFamily: {} },
-      { color: { accent: "#4f46e5" }, fontSize: {}, spacing: {}, radius: {}, fontFamily: {} },
+      { color: { accent: "#ff0000" }, fontSize: {}, spacing: {}, radius: {}, fontFamily: {}, lineHeight: {} },
+      { color: { accent: "#4f46e5" }, fontSize: {}, spacing: {}, radius: {}, fontFamily: {}, lineHeight: {} },
     );
     expect(resolved.color.accent).toBe("#ff0000");
   });
@@ -31,6 +38,9 @@ describe("resolveThemeTokens", () => {
     expect(vars["--pf-color-background"]).toBeDefined();
     expect(vars["--pf-fontSize-heading"]).toBeDefined();
     expect(vars["--pf-fontFamily-heading"]).toBeDefined();
+    // KAN-1204: the 6th token group resolves the same way fontFamily does.
+    expect(vars["--pf-lineHeight-body"]).toBeDefined();
+    expect(vars["--pf-lineHeight-heading"]).toBeDefined();
   });
 });
 

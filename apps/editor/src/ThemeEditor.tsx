@@ -8,6 +8,7 @@ const GROUP_LABELS: Record<keyof ThemeTokens, string> = {
   spacing: "Spacing",
   radius: "Radii",
   fontFamily: "Font families",
+  lineHeight: "Line heights",
 };
 
 const GROUPS = Object.keys(GROUP_LABELS) as (keyof ThemeTokens)[];
@@ -19,6 +20,7 @@ function cloneTokens(tokens: ThemeTokens): ThemeTokens {
     spacing: { ...tokens.spacing },
     radius: { ...tokens.radius },
     fontFamily: { ...tokens.fontFamily },
+    lineHeight: { ...tokens.lineHeight },
   };
 }
 

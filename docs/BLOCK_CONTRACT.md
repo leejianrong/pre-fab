@@ -65,12 +65,14 @@ optional and a component must render sensibly with none set.
 
 ## Token-only styling (CLAUDE.md invariant 2, ADR-0002)
 
-Every color, spacing value, corner radius, font size and font family a block
-renders comes from `cssVar(group, name)` (`packages/blocks/src/theme-css.ts`)
-— never a literal. The five token groups today: `color`, `fontSize`,
-`spacing`, `radius`, `fontFamily`. This is what makes a template's
-`theme.json` swap the entire look of every page without touching a single
-block's props.
+Every color, spacing value, corner radius, font size, font family and line
+height a block renders comes from `cssVar(group, name)`
+(`packages/blocks/src/theme-css.ts`) — never a literal. The six token groups
+today: `color`, `fontSize`, `spacing`, `radius`, `fontFamily`, `lineHeight`
+(KAN-1204, docs/design-audit-2026-09.md §2 — the growth path this document
+already described below, exercised for real). This is what makes a
+template's `theme.json` swap the entire look of every page without touching
+a single block's props.
 
 **Now mechanically enforced**, not just written down:
 `checkNoRawColorsInBlocks` (`tools/checks/src/containment.ts`, run by
