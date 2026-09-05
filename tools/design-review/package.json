@@ -1,0 +1,22 @@
+{
+  "name": "@prefab/design-review",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "screenshots": "tsx src/cli.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@prefab/api-client": "workspace:*",
+    "@prefab/publish": "workspace:*",
+    "@prefab/schema": "workspace:*",
+    "@prefab/templates": "workspace:*",
+    "dotenv": "16.4.7",
+    "playwright": "1.62.1"
+  },
+  "devDependencies": {
+    "tsx": "4.19.2",
+    "typescript": "5.7.3"
+  }
+}

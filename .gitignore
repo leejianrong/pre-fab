@@ -6,6 +6,7 @@ build/
 .astro/
 .astro-workspace/
 .data/
+tools/design-review/output/
 *.tsbuildinfo
 .env
 .env.local
