@@ -44,7 +44,8 @@
         "ctaHref": "#contact",
         "background": "background"
       },
-      "responsive": {}
+      "responsive": {},
+      "scrollReveal": true
     },
     {
       "id": "01M136AM1MPDBM98V2G9NZNS5R",
