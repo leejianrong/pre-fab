@@ -76,16 +76,20 @@ export function responsiveStyleCss(
 }
 
 /**
- * Every first-party block component accepts these two on top of its own
- * typed props. Both are optional: the Puck canvas (packages/puck-adapter)
- * deliberately does not forward them — there is no per-breakpoint-override
- * widget in this slice's canvas UI, so a block rendered inside Puck simply
- * renders its unconditional base styling, identical to a plain call with
- * no id. The published page (@prefab/publish) always supplies both.
+ * Every first-party block component accepts these on top of its own typed
+ * props. All three are optional: the Puck canvas (packages/puck-adapter)
+ * deliberately does not forward any of them — there is no per-breakpoint-
+ * override widget in this slice's canvas UI, and scroll-reveal is
+ * deliberately published-output-only (ADR-0015) — so a block rendered
+ * inside Puck simply renders its unconditional base styling, identical to
+ * a plain call with none set. The published page (@prefab/publish) always
+ * supplies all three.
  */
 export interface BlockRenderProps {
   blockId?: string;
   responsive?: BlockResponsive;
+  /** ADR-0015 (KAN-1152): opt-in scroll-triggered reveal. See scroll-reveal.tsx. */
+  scrollReveal?: boolean;
 }
 
 /**

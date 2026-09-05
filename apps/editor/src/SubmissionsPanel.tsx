@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { ApiClientError, type PageDocument, type Submission } from "@prefab/api-client";
 import { api } from "./api.js";
+import { Card, FilledButton, OutlinedButton, SideSheet, TextButton, TextField } from "./ui/index.js";
 
 /**
  * SLICES.md Slice 6 demo: "the owner... sees the submission in their
@@ -16,39 +17,29 @@ export function SubmissionsPanel({ siteId, page, onClose }: { siteId: string; pa
   const [selectedFormId, setSelectedFormId] = useState<string | null>(formBlocks.length === 1 ? formBlocks[0]!.id : null);
 
   return (
-    <div role="dialog" aria-label="Form submissions" style={{ position: "fixed", inset: 0, background: "rgba(15, 23, 42, 0.4)", display: "flex", justifyContent: "flex-end", zIndex: 50 }}>
-      <div style={{ width: "480px", maxWidth: "100%", height: "100%", background: "white", overflowY: "auto", padding: "1rem", fontFamily: "system-ui, sans-serif", boxShadow: "-2px 0 12px rgba(0,0,0,0.1)" }}>
-        <div style={{ display: "flex", alignItems: "center", marginBottom: "1rem" }}>
-          <h2 style={{ fontSize: "1.125rem", margin: 0, flex: 1 }}>{selectedFormId ? "Submissions" : "Forms"}</h2>
-          <button onClick={onClose} aria-label="Close submissions panel" style={{ border: "none", background: "none", cursor: "pointer" }}>
-            ✕
-          </button>
-        </div>
-
-        {formBlocks.length === 0 ? (
-          <p style={{ color: "#64748b", fontSize: "0.875rem" }}>This page has no Form block yet — add one from the block library, publish, and submissions will show up here.</p>
-        ) : !selectedFormId ? (
-          <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "grid", gap: "0.5rem" }}>
-            {formBlocks.map((block) => (
-              <li key={block.id}>
-                <button
-                  onClick={() => setSelectedFormId(block.id)}
-                  style={{ width: "100%", textAlign: "left", padding: "0.6rem", border: "1px solid #e2e8f0", borderRadius: "0.5rem", background: "white", cursor: "pointer" }}
-                >
-                  {(block.props as { heading?: string }).heading || "Untitled form"}
-                </button>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <FormSubmissions
-            siteId={siteId}
-            formId={selectedFormId}
-            onBack={formBlocks.length > 1 ? () => setSelectedFormId(null) : undefined}
-          />
-        )}
-      </div>
-    </div>
+    <SideSheet
+      title={selectedFormId ? "Submissions" : "Forms"}
+      ariaLabel="Form submissions"
+      closeLabel="Close submissions panel"
+      onClose={onClose}
+      width={480}
+    >
+      {formBlocks.length === 0 ? (
+        <p className="pf-supporting-text">This page has no Form block yet — add one from the block library, publish, and submissions will show up here.</p>
+      ) : !selectedFormId ? (
+        <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "grid", gap: "0.5rem" }}>
+          {formBlocks.map((block) => (
+            <li key={block.id}>
+              <Card interactive onClick={() => setSelectedFormId(block.id)} style={{ padding: "0.6rem" }}>
+                {(block.props as { heading?: string }).heading || "Untitled form"}
+              </Card>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <FormSubmissions siteId={siteId} formId={selectedFormId} onBack={formBlocks.length > 1 ? () => setSelectedFormId(null) : undefined} />
+      )}
+    </SideSheet>
   );
 }
 
@@ -118,82 +109,62 @@ function FormSubmissions({ siteId, formId, onBack }: { siteId: string; formId: s
   }
 
   return (
-    <div>
+    <div style={{ display: "grid", gap: "1rem" }}>
       {onBack ? (
-        <button onClick={onBack} style={{ border: "none", background: "none", cursor: "pointer", padding: 0, marginBottom: "0.75rem", color: "#4f46e5" }}>
+        <TextButton onClick={onBack} style={{ justifySelf: "start" }}>
           ← All forms
-        </button>
+        </TextButton>
       ) : null}
 
-      <form onSubmit={saveSettings} style={{ display: "grid", gap: "0.5rem", marginBottom: "1.25rem", border: "1px solid #e2e8f0", borderRadius: "0.5rem", padding: "0.75rem" }}>
-        <h3 style={{ fontSize: "0.9375rem", margin: 0 }}>Notifications</h3>
-        <label style={{ fontSize: "0.8125rem", color: "#475569" }}>
-          Notify email
-          <input
-            type="email"
-            placeholder="you@example.com"
-            value={notifyEmail}
-            onChange={(e) => setNotifyEmail(e.target.value)}
-            style={{ display: "block", width: "100%", boxSizing: "border-box", padding: "0.4rem", border: "1px solid #e2e8f0", borderRadius: "0.375rem", marginTop: "0.2rem" }}
-          />
-        </label>
-        <label style={{ fontSize: "0.8125rem", color: "#475569" }}>
-          Webhook URL
-          <input
-            type="url"
-            placeholder="https://..."
-            value={webhookUrl}
-            onChange={(e) => setWebhookUrl(e.target.value)}
-            style={{ display: "block", width: "100%", boxSizing: "border-box", padding: "0.4rem", border: "1px solid #e2e8f0", borderRadius: "0.375rem", marginTop: "0.2rem" }}
-          />
-        </label>
-        <button type="submit" disabled={savingSettings} style={{ padding: "0.4rem", background: "#4f46e5", color: "white", border: "none", borderRadius: "0.375rem" }}>
-          {savingSettings ? "Saving…" : "Save"}
-        </button>
-      </form>
+      <Card style={{ display: "grid", gap: "0.5rem" }}>
+        <form onSubmit={saveSettings} style={{ display: "grid", gap: "0.5rem" }}>
+          <h3 className="pf-subsection-title">Notifications</h3>
+          <TextField label="Notify email" type="email" placeholder="you@example.com" value={notifyEmail} onChange={setNotifyEmail} />
+          <TextField label="Webhook URL" type="url" placeholder="https://…" value={webhookUrl} onChange={setWebhookUrl} />
+          <FilledButton type="submit" disabled={savingSettings}>
+            {savingSettings ? "Saving…" : "Save"}
+          </FilledButton>
+        </form>
+      </Card>
 
-      <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.75rem" }}>
-        <button onClick={exportCsv} style={{ padding: "0.3rem 0.6rem", fontSize: "0.8125rem" }}>
-          Export CSV
-        </button>
-        <button onClick={exportJson} style={{ padding: "0.3rem 0.6rem", fontSize: "0.8125rem" }}>
-          Export JSON
-        </button>
+      <div style={{ display: "flex", gap: "0.5rem" }}>
+        <OutlinedButton onClick={exportCsv}>Export CSV</OutlinedButton>
+        <OutlinedButton onClick={exportJson}>Export JSON</OutlinedButton>
       </div>
 
-      {error ? <p style={{ color: "#dc2626", fontSize: "0.8125rem" }}>{error}</p> : null}
+      {error ? <p className="pf-error-text">{error}</p> : null}
 
       {submissions === null ? (
-        <p>Loading…</p>
+        <p className="pf-supporting-text">Loading…</p>
       ) : submissions.length === 0 ? (
-        <p style={{ color: "#64748b", fontSize: "0.875rem" }}>No submissions yet.</p>
+        <p className="pf-supporting-text">No submissions yet.</p>
       ) : (
         <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "grid", gap: "0.5rem" }}>
           {submissions.map((submission) => (
-            <li key={submission.id} style={{ border: "1px solid #e2e8f0", borderRadius: "0.5rem", padding: "0.6rem" }}>
-              <div style={{ display: "flex", alignItems: "center", marginBottom: "0.3rem" }}>
-                <span style={{ fontSize: "0.75rem", color: "#64748b", flex: 1 }}>{new Date(submission.createdAt).toLocaleString()}</span>
-                {submission.notifyStatus === "failed" ? (
-                  <span style={{ fontSize: "0.75rem", color: "#dc2626" }} title={submission.notifyError ?? undefined}>
-                    email failed
+            <li key={submission.id}>
+              <Card style={{ padding: "0.6rem" }}>
+                <div style={{ display: "flex", alignItems: "center", marginBottom: "0.3rem" }}>
+                  <span className="pf-supporting-text" style={{ flex: 1 }}>
+                    {new Date(submission.createdAt).toLocaleString()}
                   </span>
-                ) : null}
-              </div>
-              <dl style={{ margin: "0 0 0.4rem 0", fontSize: "0.8125rem" }}>
-                {Object.entries(submission.values).map(([key, value]) => (
-                  <div key={key} style={{ display: "flex", gap: "0.4rem" }}>
-                    <dt style={{ color: "#64748b", minWidth: "5rem" }}>{key}</dt>
-                    <dd style={{ margin: 0, wordBreak: "break-word" }}>{String(value)}</dd>
-                  </div>
-                ))}
-              </dl>
-              <button
-                onClick={() => remove(submission.id)}
-                disabled={busySubmissionId === submission.id}
-                style={{ padding: "0.25rem 0.5rem", fontSize: "0.75rem", color: "#dc2626" }}
-              >
-                Delete
-              </button>
+                  {submission.notifyStatus === "failed" ? (
+                    <span className="pf-error-text" title={submission.notifyError ?? undefined}>
+                      email failed
+                    </span>
+                  ) : null}
+                </div>
+                <dl style={{ margin: "0 0 0.4rem 0" }} className="pf-supporting-text">
+                  {Object.entries(submission.values).map(([key, value]) => (
+                    <div key={key} style={{ display: "flex", gap: "0.4rem" }}>
+                      <dt style={{ minWidth: "5rem" }}>{key}</dt>
+                      <dd style={{ margin: 0, wordBreak: "break-word", color: "var(--md-sys-color-on-surface)" }}>{String(value)}</dd>
+                    </div>
+                  ))}
+                </dl>
+                <TextButton className="pf-destructive-button" onClick={() => remove(submission.id)} disabled={busySubmissionId === submission.id}>
+                  Delete
+                </TextButton>
+              </Card>
             </li>
           ))}
         </ul>

@@ -286,13 +286,16 @@ analytics/data jobs and AI/ML services later.
 
 ## Post-plan verification
 
-Two facts were recorded as unverified when the plan was written, and both were
-checked on 2026-08-27.
+Three facts were recorded as unverified when the plan was written. The first two
+were checked on 2026-08-27; the third — blocked at the time by this environment's
+egress proxy — was checked on 2026-09-03 (KAN-1141) once the proxy allowed
+`developers.cloudflare.com` through.
 
 | Question | Outcome |
 |---|---|
 | Does Puck's React version work with Astro's React island support? | **Yes.** `@puckeditor/core` 0.23.0 peers `react ^18 \|\| ^19`; `@astrojs/react` 6.0.4 peers `react`/`react-dom` `^17.0.2 \|\| ^18 \|\| ^19`. React 19 satisfies both. Recorded in ADR-0004 and ADR-0007 |
 | What is Cloudflare's per-custom-hostname cost, and what floor does it set? | **First 100 free, then $0.10/hostname/month**, PAYG to 50,000. Negligible against any plausible entry tier — SSL for SaaS is *not* the binding constraint, contrary to an earlier planning note. Recorded in ADR-0012 |
+| What is Workers for Platforms' per-tenant usage cost beyond the $25/month base? | **Negligible.** $25/month includes 1,000 scripts, 20M requests and 60M CPU-ms; overage is $0.02/script, $0.30/million requests, $0.02/million CPU-ms. Read directly from `developers.cloudflare.com/cloudflare-for-platforms/workers-for-platforms/platform/pricing/` and cross-checked against the page's raw HTML. Confirms, rather than revises, ADR-0012's conclusion that the $25 base — not per-tenant variable cost — sets the floor. Recorded in ADR-0012 |
 
 Incidental findings from the same check, both recorded in ADR-0004:
 
@@ -302,7 +305,4 @@ Incidental findings from the same check, both recorded in ADR-0004:
   decision stands, the version is pinned exactly, and the canvas-versus-published
   parity test gates upgrades.
 
-Still unverified, and now the only known gap: the per-tenant component of Workers
-for Platforms billing beyond its $25/month base. `developers.cloudflare.com` is
-blocked by this environment's egress proxy, so the primary pricing docs could not
-be read directly.
+No known gaps remain from the original plan-time unverified list.

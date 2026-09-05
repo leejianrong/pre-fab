@@ -1,0 +1,11 @@
+/**
+ * Registers every @material/web custom element the editor's ui/ kit uses.
+ * Side-effecting only — import once (main.tsx) before anything renders.
+ */
+import "@material/web/button/filled-button.js";
+import "@material/web/button/filled-tonal-button.js";
+import "@material/web/button/outlined-button.js";
+import "@material/web/button/text-button.js";
+import "@material/web/iconbutton/icon-button.js";
+import "@material/web/textfield/outlined-text-field.js";
+import "@material/web/progress/circular-progress.js";

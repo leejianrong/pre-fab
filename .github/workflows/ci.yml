@@ -138,3 +138,56 @@ jobs:
       - name: Install Playwright's Chromium
         run: pnpm --filter @prefab/e2e exec playwright install --with-deps chromium
       - run: pnpm --filter @prefab/e2e run test
+
+  # PR #25 added the Docker Compose + Makefile dev environment (`make dev`).
+  # Both real bugs it shipped with — containers writing root-owned files
+  # into the bind-mounted repo, and a Node ABI mismatch corrupting
+  # apps/self-host's native better-sqlite3 build — only ever surfaced by
+  # actually running the stack; validating docker-compose.yml/Dockerfile
+  # config wouldn't have caught either (see their comments for the fixes).
+  # This job is that: build the images for real, bring the stack up, hit
+  # it over HTTP, tear it down. Per dev-playbook's guidance on layering
+  # checks by cost, this is an infra/integration-level check — a fresh
+  # multi-container `docker compose up --build`, not a fast unit-test-layer
+  # assertion — so it gets its own job, same as fidelity and e2e above.
+  dev-environment:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Seed .env the same way `make dev` does
+        run: cp .env.example .env
+      - name: Build and start postgres, migrate, api, editor
+        run: docker compose up --build -d
+      - name: Wait for the API and the editor to answer
+        run: |
+          api_ok=""
+          editor_ok=""
+          for i in $(seq 1 120); do
+            if [ -z "$api_ok" ] && curl -sf http://localhost:8787/health | grep -q '"ok":true'; then
+              api_ok=1
+            fi
+            # No docker-compose.override.yml in a fresh checkout, so the
+            # editor is reached on its own directly-published port here —
+            # the Traefik-fronted http://pre-fab.localhost/ path
+            # (docker-compose.override.yml.example) is opt-in and has
+            # nothing to do with whether this stack itself is healthy.
+            if [ -z "$editor_ok" ] && curl -sf http://localhost:5173/ >/dev/null; then
+              editor_ok=1
+            fi
+            if [ -n "$api_ok" ] && [ -n "$editor_ok" ]; then
+              echo "api and editor are both up after $((i * 5))s"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::stack did not come up healthy within 10 minutes (api_ok=${api_ok:-no}, editor_ok=${editor_ok:-no})"
+          exit 1
+      - name: Dump container status and logs on failure
+        if: failure()
+        run: |
+          docker compose ps
+          docker compose logs
+      - name: Tear down
+        if: always()
+        run: docker compose down -v

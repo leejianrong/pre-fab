@@ -11,3 +11,6 @@ export * from "./busy.js";
 export * from "./ics.js";
 export * from "./book.js";
 export * from "./list-slots.js";
+export * from "./event-signup-types.js";
+export * from "./event-signup.js";
+export * from "./checkout.js";

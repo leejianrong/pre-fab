@@ -8,6 +8,7 @@ export function Heading(props: HeadingProps & BlockRenderProps) {
 
   const style: CSSProperties = {
     fontSize: cssVar("fontSize", size),
+    fontFamily: cssVar("fontFamily", "heading"),
     textAlign: align,
     margin: 0,
     padding: `${cssVar("spacing", "sm")} 0`,

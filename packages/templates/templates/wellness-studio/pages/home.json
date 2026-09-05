@@ -1,0 +1,208 @@
+{
+  "id": "01M1KXZJ7Q203XX6J8ZQRR43S9",
+  "siteId": "01M1KXZJ7Q38GET4W5C6BXVKZW",
+  "slug": "home",
+  "title": "Home",
+  "schemaVersion": 1,
+  "version": 0,
+  "blocks": [
+    {
+      "id": "01M1KXZJ7QS7T8R7HQBCH0409N",
+      "type": "nav",
+      "parent": null,
+      "order": 1000,
+      "schemaVersion": 1,
+      "props": {
+        "brand": "Still Water Yoga",
+        "links": [
+          {
+            "label": "Classes",
+            "href": "#classes"
+          },
+          {
+            "label": "Philosophy",
+            "href": "#philosophy"
+          },
+          {
+            "label": "Visit",
+            "href": "#contact"
+          }
+        ]
+      },
+      "responsive": {}
+    },
+    {
+      "id": "01M1KXZJ7QSPXXA4D6DH61CJ51",
+      "type": "hero",
+      "parent": null,
+      "order": 2000,
+      "schemaVersion": 1,
+      "props": {
+        "heading": "Slow down. Show up. Breathe.",
+        "subheading": "Vinyasa, restorative and breathwork classes in a small studio built for quiet attention.",
+        "ctaLabel": "See class times",
+        "ctaHref": "#classes",
+        "background": "background",
+        "backgroundImage": "https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?w=1200&q=70"
+      },
+      "responsive": {}
+    },
+    {
+      "id": "01M1KXZJ7QJ3WWJ5ANBNWRSAR3",
+      "type": "heading",
+      "parent": null,
+      "order": 3000,
+      "schemaVersion": 1,
+      "props": {
+        "text": "Our philosophy",
+        "level": "h2",
+        "size": "heading",
+        "align": "left"
+      },
+      "responsive": {}
+    },
+    {
+      "id": "01M1KXZJ7QW9VCRDMPZ0CFSPRX",
+      "type": "richtext",
+      "parent": null,
+      "order": 4000,
+      "schemaVersion": 1,
+      "props": {
+        "html": "We keep classes small and unhurried. No mirrors, no music you can't think over — just enough people in a room to notice each other's breathing.\n\nMost students start with one class a week and stay for years. There's no six-week transformation here, just a quiet, ongoing one.",
+        "size": "body",
+        "align": "left"
+      },
+      "responsive": {}
+    },
+    {
+      "id": "01M1KXZJ7QBMXP46SEKR5WBADS",
+      "type": "heading",
+      "parent": null,
+      "order": 5000,
+      "schemaVersion": 1,
+      "props": {
+        "text": "Classes",
+        "level": "h2",
+        "size": "heading",
+        "align": "left"
+      },
+      "responsive": {}
+    },
+    {
+      "id": "01M1KXZJ7Q011VWNAV2KR1VA2N",
+      "type": "cardgrid",
+      "parent": null,
+      "order": 6000,
+      "schemaVersion": 1,
+      "props": {
+        "columns": 3,
+        "cards": [
+          {
+            "title": "Vinyasa Flow",
+            "body": "A moving, breath-led practice. Mornings and early evenings, all levels.",
+            "href": ""
+          },
+          {
+            "title": "Restorative",
+            "body": "Long holds, blankets and bolsters — the class students describe as the best hour of their week.",
+            "href": ""
+          },
+          {
+            "title": "Breathwork & Meditation",
+            "body": "Twenty minutes of breathing, twenty minutes of stillness. No mat required.",
+            "href": ""
+          }
+        ]
+      },
+      "responsive": {}
+    },
+    {
+      "id": "01M1KXZJ7Q3N0JE9QMGEGZNYW1",
+      "type": "gallery",
+      "parent": null,
+      "order": 7000,
+      "schemaVersion": 1,
+      "props": {
+        "columns": 3,
+        "images": [
+          {
+            "src": "https://images.unsplash.com/photo-1545205597-3d9d02c29597?w=900&q=80",
+            "alt": "A group class in tree pose on the beach at low tide"
+          },
+          {
+            "src": "https://images.unsplash.com/photo-1506126613408-eca07ce68773?w=900&q=80",
+            "alt": "A student seated in meditation as the sun rises behind them"
+          },
+          {
+            "src": "https://images.unsplash.com/photo-1552196563-55cd4e45efb3?w=900&q=80",
+            "alt": "A student in a seated stretch on a sunlit wooden studio floor"
+          }
+        ]
+      },
+      "responsive": {}
+    },
+    {
+      "id": "01M1KXZJ7QKKR9397B00YC3CH4",
+      "type": "testimonial",
+      "parent": null,
+      "order": 8000,
+      "schemaVersion": 1,
+      "props": {
+        "quote": "I've tried a dozen studios in this city. This is the only one where I actually stopped checking the clock.",
+        "author": "Priya Nandan",
+        "role": "Student since 2019"
+      },
+      "responsive": {}
+    },
+    {
+      "id": "01M1KXZJ7Q5VTK59MD85XXMWBH",
+      "type": "faq",
+      "parent": null,
+      "order": 9000,
+      "schemaVersion": 1,
+      "props": {
+        "items": [
+          {
+            "question": "Do I need to bring my own mat?",
+            "answer": "No — mats, blankets and bolsters are all provided, freshly cleaned after every class."
+          },
+          {
+            "question": "I've never done yoga before. Is that a problem?",
+            "answer": "Most of our students hadn't either. Every class is taught to the person who's never been, not around them."
+          },
+          {
+            "question": "What should I wear?",
+            "answer": "Whatever you can move in. There's no dress code here."
+          }
+        ]
+      },
+      "responsive": {}
+    },
+    {
+      "id": "01M1KXZJ7QY0AW4SHAW0TDAXS6",
+      "type": "contactdetails",
+      "parent": null,
+      "order": 10000,
+      "schemaVersion": 1,
+      "props": {
+        "heading": "Visit the studio",
+        "email": "hello@stillwateryoga.example",
+        "phone": "+1 (555) 010-7733",
+        "address": "142 Birch Lane, Studio 2"
+      },
+      "responsive": {}
+    },
+    {
+      "id": "01M1KXZJ7Q53HGS8Y5TFDYEK4E",
+      "type": "footer",
+      "parent": null,
+      "order": 11000,
+      "schemaVersion": 1,
+      "props": {
+        "text": "© Still Water Yoga",
+        "links": []
+      },
+      "responsive": {}
+    }
+  ]
+}
