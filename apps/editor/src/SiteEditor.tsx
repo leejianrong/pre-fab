@@ -295,7 +295,17 @@ export function SiteEditor({
             key={page.id}
             config={config}
             data={initialPuckData}
-            overrides={{ preview: FreeCanvasPreview }}
+            overrides={{
+              preview: FreeCanvasPreview,
+              // KAN-1205: Puck ships its own header chrome — dark-leaning,
+              // styled from its own CSS namespace, unrelated to this app's
+              // --md-sys-color-* tokens (ui/tokens.css) — plus a built-in
+              // "Publish" button that isn't wired to handlePublish above.
+              // Suppressing it entirely leaves pre-fab's own TopAppBar (and
+              // its working FilledButton onClick={handlePublish}) as the
+              // only chrome above the canvas.
+              header: () => <></>,
+            }}
             onChange={(data) => {
               latestPuckData.current = data;
             }}
