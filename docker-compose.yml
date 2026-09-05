@@ -38,6 +38,7 @@ x-dev-service: &dev-service
     - node_modules_schema:/repo/packages/schema/node_modules
     - node_modules_templates:/repo/packages/templates/node_modules
     - node_modules_tools_checks:/repo/tools/checks/node_modules
+    - node_modules_tools_design_review:/repo/tools/design-review/node_modules
 
 services:
   postgres:
@@ -144,3 +145,4 @@ volumes:
   node_modules_schema:
   node_modules_templates:
   node_modules_tools_checks:
+  node_modules_tools_design_review:

@@ -217,6 +217,39 @@ pnpm run ci:fidelity        # hosted-vs-ejected pixel delta, per block
 Integration and e2e tests run against real Postgres and a real Astro
 build. Nothing here is mocked at the boundary CI actually cares about.
 
+## Design review screenshots
+
+A repeatable way to *see* what a template or the editor UI actually looks
+like — for an agent or a human, without opening a browser by hand
+(KAN-1202/KAN-1208). This is a design-review tool, not a correctness gate:
+it renders and screenshots, asserting nothing, and is deliberately **not**
+wired into `pnpm run ci` or `.github/workflows/ci.yml`.
+
+```bash
+pnpm run design:screenshots
+```
+
+What it does:
+
+- Builds each of the 9 templates through the same `buildSiteBundle` path
+  tools/checks' `ci:budgets`/`ci:fidelity` already use, and screenshots
+  each one's home page at 375px (mobile), 768px (tablet) and 1440px
+  (desktop).
+- Screenshots the editor's own template-picker screen and an open site's
+  editor canvas, at desktop width, by driving Playwright against a **live**
+  dev stack — start one first with `make dev` or `make up` (the seeded
+  `owner@example.com` account needs to exist; `make dev`/`make up` already
+  seed it, or run it by hand with `pnpm --filter @prefab/api run seed`).
+  If the API or editor isn't reachable, the tool fails with a message
+  telling you to start the dev stack, rather than hanging.
+
+Output lands under `tools/design-review/output/` (gitignored — generated
+artifacts, not committed): `templates/<templateId>--<viewport>.png` and
+`editor/template-picker.png` / `editor/editor-canvas.png`. Every file is a
+plain PNG, directly `Read`-able by an agent. Re-running the tool overwrites
+the same files and reuses the same demo site (named "Design Review
+Canvas") rather than creating a new one each time.
+
 ## CI
 
 `.github/workflows/ci.yml` runs eight jobs on every push and PR: a
