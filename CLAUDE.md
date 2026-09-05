@@ -4,16 +4,24 @@ A no-code website builder where the site is a portable, diffable artifact the
 customer owns. Competes with Wix and Squarespace on the thing neither can do:
 hand over a working site.
 
-**Status: Slices 1–9 built — milestone 1 complete.** One write path, the block
-library and theme tokens, templates/onboarding, custom domains/TLS,
-blog/collections, forms/submissions, self-host runtime/eject, accounts/plans/
-billing, and scheduling/bookings are done — see `README.md` for what each
-shipped. Slice 4 runs against a fake Cloudflare adapter, Slice 6's
-email/Turnstile/webhook and Slice 8's Stripe adapters are likewise unverified
-against real providers, and Slice 9's Google Calendar/Microsoft 365 adapters
-are the same: structurally complete, written from each provider's public
-docs, never exercised against a live account (no real accounts exist in this
-environment).
+**Status: Slices 1–9 (milestone 1) and milestone 2 both complete.** One write
+path, the block library and theme tokens, templates/onboarding, custom
+domains/TLS, blog/collections, forms/submissions, self-host runtime/eject,
+accounts/plans/billing, and scheduling/bookings shipped in milestone 1.
+Milestone 2 added one-off and recurring/subscription BYO-Stripe payment
+blocks (ADR-0005, ADR-0016) with full webhook lifecycle handling, event
+sign-up blocks, free-positioning canvas layout (ADR-0014), scroll-reveal
+animation (ADR-0015), a 9th template plus an editorial craft pass on the
+original 8, WFP per-tenant billing resolved, and a concurrency cap on the
+publish orchestrator — see `README.md` for what each shipped, and the pandan
+board's `pre-fab` project for the day-to-day backlog. Slice 4 runs against a
+fake Cloudflare adapter, Slice 6's email/Turnstile/webhook, Slice 8's Stripe
+billing, and Slice 10/KAN-1154's tenant Stripe Connect adapters are likewise
+unverified against real providers, and Slice 9's Google Calendar/Microsoft
+365 adapters are the same: structurally complete, written from each
+provider's public docs, never exercised against a live account (no real
+accounts exist in this environment — tracked as EPIC-153 on the board,
+deliberately deferred until real credentials are available).
 
 ## Read before changing anything
 
