@@ -1,4 +1,4 @@
-import { PageDocumentSchema, type PageDocument } from "./document.js";
+import { PageDocumentSchema, migrateLegacyPageDocument, type PageDocument } from "./document.js";
 import type { BlockNode } from "./block.js";
 import type { BlockRegistry } from "./registry.js";
 import { migrateBlockProps } from "./registry.js";
@@ -39,7 +39,13 @@ export function validatePageDocument(
   input: unknown,
   registry: BlockRegistry,
 ): DocumentValidationResult {
-  const envelope = PageDocumentSchema.safeParse(input);
+  // ADR-0014 / KAN-1129: a document that predates `layoutMode` is migrated
+  // to `"flow"` before the envelope is even parsed, so a legacy document
+  // that reaches this function through some path other than
+  // `PageDocumentSchema`'s own `.default()` (e.g. a raw object read off
+  // disk) still lands on the same result.
+  const migratedInput = migrateLegacyPageDocument(input);
+  const envelope = PageDocumentSchema.safeParse(migratedInput);
   if (!envelope.success) {
     return {
       ok: false,
@@ -51,6 +57,34 @@ export function validatePageDocument(
   const migratedBlocks: BlockNode[] = [];
 
   for (const block of envelope.data.blocks) {
+    // ADR-0014: `position` is required exactly when this block is
+    // root-level on a "free" page, and rejected everywhere else — a block
+    // never carries position data that nothing will read, and a "free"
+    // page's root blocks are never silently unplaced. Checked ahead of the
+    // per-block-type validation below since it's envelope-level, not
+    // dependent on the block's `type` being registered at all (R19: even
+    // an unrecognised block type must satisfy this).
+    const requiresPosition = envelope.data.layoutMode === "free" && block.parent === null;
+    if (requiresPosition && block.position === undefined) {
+      issues.push({
+        blockId: block.id,
+        path: ["position"],
+        message: `position is required for a root-level block on a "free" layoutMode page`,
+      });
+      continue;
+    }
+    if (!requiresPosition && block.position !== undefined) {
+      issues.push({
+        blockId: block.id,
+        path: ["position"],
+        message:
+          envelope.data.layoutMode === "flow"
+            ? `position must be absent on a "flow" layoutMode page`
+            : `position must be absent on a non-root block (only root-level blocks on a "free" page carry position)`,
+      });
+      continue;
+    }
+
     const definition = registry.get(block.type);
     if (!definition) {
       // Unknown block type: preserved as-is (R19). Renderer/editor decide

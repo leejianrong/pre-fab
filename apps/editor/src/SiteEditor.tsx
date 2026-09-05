@@ -1,20 +1,35 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Puck, type Data } from "@puckeditor/core";
 import {
+  applyFreePositions,
   createPuckConfig,
+  FreeCanvasContext,
+  FreeCanvasPreview,
+  initialPositionsFromBlocks,
   pageDocumentToPuckData,
   puckDataToPageDocument,
   PuckIdBridge,
   PUCK_KNOWN_TYPES,
 } from "@prefab/puck-adapter";
 import { ApiClientError, type PageDocument, type SiteSummary, type ThemeDocument, type ThemeTokens } from "@prefab/api-client";
-import type { BlockNode } from "@prefab/schema";
+import type { BlockNode, FreeRect, LayoutMode } from "@prefab/schema";
 import { UnknownBlockList } from "./UnknownBlockList.js";
 import { ThemeEditor } from "./ThemeEditor.js";
 import { DomainsPanel } from "./DomainsPanel.js";
 import { BlogPanel } from "./BlogPanel.js";
 import { SubmissionsPanel } from "./SubmissionsPanel.js";
 import { api } from "./api.js";
+import {
+  Dialog,
+  FilledButton,
+  IconButton,
+  LoadingIndicator,
+  OutlinedButton,
+  SelectField,
+  StatusBadge,
+  TextButton,
+  TopAppBar,
+} from "./ui/index.js";
 
 type Status = "idle" | "saving" | "saved" | "publishing" | "published";
 
@@ -53,6 +68,17 @@ export function SiteEditor({
   // placeholder in the editor") — the ref alone drives handleSave's
   // reconstruction of the document but doesn't itself trigger a re-render.
   const [unknownBlocks, setUnknownBlocks] = useState<BlockNode[]>([]);
+  // ADR-0014 / KAN-1129: local UI state only until Save is pressed, same as
+  // everything else Puck edits — `layoutMode` starts at the loaded page's
+  // own value, and `positions` starts pre-seeded from whatever `position`
+  // its root blocks already carry (initialPositionsFromBlocks), so toggling
+  // free -> flow -> free within one session doesn't lose a block's last
+  // rect even though nothing has been saved in between. The free-canvas
+  // overlay (packages/puck-adapter/src/free-canvas.tsx) reads and writes
+  // this same `positions` map live via FreeCanvasContext below; handleSave
+  // folds it into the saved document via applyFreePositions.
+  const [layoutMode, setLayoutMode] = useState<LayoutMode>("flow");
+  const [positions, setPositions] = useState<Map<string, FreeRect>>(new Map());
   const [themeEditorOpen, setThemeEditorOpen] = useState(false);
   const [domainsPanelOpen, setDomainsPanelOpen] = useState(false);
   const [blogPanelOpen, setBlogPanelOpen] = useState(false);
@@ -101,16 +127,56 @@ export function SiteEditor({
     setUnknownBlocks(unknownBlocksRef.current);
   }, [page?.id]);
 
+  // ADR-0014 / KAN-1129: (re-)seeds layoutMode/positions whenever a
+  // *different* page loads — deliberately keyed on page.id alone, same
+  // reasoning as initialPuckData above, so an in-progress toggle (not yet
+  // saved) survives whatever re-renders happen while editing this same
+  // page, and only resets when the editor actually navigates to another
+  // page's document.
+  useEffect(() => {
+    if (!page) return;
+    setLayoutMode(page.layoutMode);
+    setPositions(initialPositionsFromBlocks(page.blocks));
+  }, [page?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function handleRectChange(blockId: string, rect: FreeRect) {
+    setPositions((prev) => {
+      const next = new Map(prev);
+      next.set(blockId, rect);
+      return next;
+    });
+  }
+
   async function handleSave() {
-    if (!page || !latestPuckData.current) return;
+    // ADR-0014 / KAN-1129: `latestPuckData.current` is only ever populated
+    // by Puck's own `onChange` — which never fires for a session where the
+    // only edits were layoutMode/position (both live entirely in this
+    // component's own state, never routed through Puck, by design — see
+    // convert.ts's note on why position is kept out of Puck's props). A
+    // page opened and immediately repositioned without touching any Puck
+    // field would otherwise have `latestPuckData.current` still `null` and
+    // silently no-op Save. `initialPuckData` — what Puck was handed at
+    // mount and hasn't reported changing — is the correct fallback: nothing
+    // about Puck-owned content changed if Puck never said so.
+    const puckData = latestPuckData.current ?? initialPuckData;
+    if (!page || !puckData) return;
     setStatus("saving");
     setError(null);
     try {
-      const updatedDoc = puckDataToPageDocument(latestPuckData.current, page, unknownBlocksRef.current, idBridge);
+      const updatedDoc = puckDataToPageDocument(puckData, page, unknownBlocksRef.current, idBridge);
+      // ADR-0014 / KAN-1129: folds the free-canvas overlay's live
+      // `positions` into the blocks Puck's own editing produced — assigning
+      // a valid default to any root block that's never had a position (a
+      // page just switched to "free", or a block dragged in mid-session)
+      // when saving as "free", and stripping `position` from every block
+      // when saving as "flow", so this write is always something
+      // validatePageDocument accepts.
+      const blocks = applyFreePositions(updatedDoc.blocks, layoutMode, positions);
       const saved = await api.writePage(siteId, page.id, {
         title: updatedDoc.title,
         slug: updatedDoc.slug,
-        blocks: updatedDoc.blocks,
+        blocks,
+        layoutMode,
         expectedVersion: expectedVersionRef.current,
       });
       expectedVersionRef.current = saved.version;
@@ -152,59 +218,54 @@ export function SiteEditor({
 
   if (error) {
     return (
-      <div style={{ padding: "2rem", fontFamily: "system-ui, sans-serif" }}>
-        <p style={{ color: "#dc2626" }}>{error}</p>
-        <button onClick={onBack}>← Back</button>
+      <div style={{ padding: "2rem" }}>
+        <p className="pf-error-text">{error}</p>
+        <TextButton onClick={onBack}>← Back</TextButton>
       </div>
     );
   }
 
   if (!site || !theme || !page || !config || !initialPuckData) {
-    return <div style={{ padding: "2rem", fontFamily: "system-ui, sans-serif" }}>Loading…</div>;
+    return <LoadingIndicator label="Loading…" />;
   }
 
   return (
-    <div style={{ height: "100vh", display: "flex", flexDirection: "column", fontFamily: "system-ui, sans-serif" }}>
-      <header
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: "1rem",
-          padding: "0.5rem 1rem",
-          borderBottom: "1px solid #e2e8f0",
-          background: "white",
-        }}
-      >
-        <button onClick={onBack} style={{ border: "none", background: "none", cursor: "pointer" }}>
-          ← Sites
-        </button>
-        <strong>{site.name}</strong>
-        <div style={{ flex: 1 }} />
-        <button onClick={() => setThemeEditorOpen(true)} style={{ padding: "0.4rem 0.8rem" }}>
-          Theme
-        </button>
-        <button onClick={() => setDomainsPanelOpen(true)} style={{ padding: "0.4rem 0.8rem" }}>
-          Domains
-        </button>
-        <button onClick={() => setBlogPanelOpen(true)} style={{ padding: "0.4rem 0.8rem" }}>
-          Blog
-        </button>
-        <button onClick={() => setSubmissionsPanelOpen(true)} style={{ padding: "0.4rem 0.8rem" }}>
-          Submissions
-        </button>
-        <button onClick={handleSave} disabled={status === "saving"} style={{ padding: "0.4rem 0.8rem" }}>
-          {status === "saving" ? "Saving…" : "Save"}
-        </button>
-        <button
-          onClick={handlePublish}
-          disabled={status === "publishing"}
-          style={{ padding: "0.4rem 0.8rem", background: "#4f46e5", color: "white", border: "none", borderRadius: "0.25rem" }}
-        >
-          {status === "publishing" ? "Publishing…" : "Publish"}
-        </button>
-        {status === "saved" ? <span style={{ color: "#16a34a", fontSize: "0.875rem" }}>Saved</span> : null}
-        {status === "published" ? <span style={{ color: "#16a34a", fontSize: "0.875rem" }}>Live</span> : null}
-      </header>
+    <div style={{ height: "100vh", display: "flex", flexDirection: "column" }}>
+      <TopAppBar
+        leading={
+          <TextButton onClick={onBack}>← Sites</TextButton>
+        }
+        title={<strong>{site.name}</strong>}
+        actions={
+          <>
+            <OutlinedButton onClick={() => setThemeEditorOpen(true)}>Theme</OutlinedButton>
+            <OutlinedButton onClick={() => setDomainsPanelOpen(true)}>Domains</OutlinedButton>
+            <OutlinedButton onClick={() => setBlogPanelOpen(true)}>Blog</OutlinedButton>
+            <OutlinedButton onClick={() => setSubmissionsPanelOpen(true)}>Submissions</OutlinedButton>
+            {/* ADR-0014 / KAN-1129: local UI state only until Save — switching
+                to "free" (or back to "flow") never touches the document until
+                handleSave runs applyFreePositions over whatever this is set
+                to at that moment. */}
+            <SelectField
+              label="Layout"
+              id="layout-mode"
+              value={layoutMode}
+              onChange={(value) => setLayoutMode(value as LayoutMode)}
+            >
+              <option value="flow">Flow</option>
+              <option value="free">Free (canvas)</option>
+            </SelectField>
+            <OutlinedButton onClick={handleSave} disabled={status === "saving"}>
+              {status === "saving" ? "Saving…" : "Save"}
+            </OutlinedButton>
+            <FilledButton onClick={handlePublish} disabled={status === "publishing"}>
+              {status === "publishing" ? "Publishing…" : "Publish"}
+            </FilledButton>
+            {status === "saved" ? <StatusBadge tone="positive">Saved</StatusBadge> : null}
+            {status === "published" ? <StatusBadge tone="positive">Live</StatusBadge> : null}
+          </>
+        }
+      />
       {showFirstRunBanner ? (
         <div
           style={{
@@ -212,34 +273,34 @@ export function SiteEditor({
             alignItems: "center",
             gap: "0.75rem",
             padding: "0.5rem 1rem",
-            background: "#eef2ff",
-            borderBottom: "1px solid #c7d2fe",
-            fontSize: "0.875rem",
-            color: "#3730a3",
+            background: "var(--md-sys-color-tertiary-container)",
+            color: "var(--md-sys-color-on-tertiary-container)",
+            borderBottom: "1px solid var(--md-sys-color-outline-variant)",
+            fontFamily: "var(--md-ref-typeface-plain)",
+            fontSize: "var(--md-sys-typescale-body-medium-size)",
           }}
         >
           <span style={{ flex: 1 }}>
             👋 Try editing the heading below, then hit <strong>Publish</strong> to make your site live.
           </span>
-          <button
-            onClick={() => setShowFirstRunBanner(false)}
-            aria-label="Dismiss"
-            style={{ border: "none", background: "none", cursor: "pointer", color: "#3730a3" }}
-          >
+          <IconButton aria-label="Dismiss" onClick={() => setShowFirstRunBanner(false)}>
             ✕
-          </button>
+          </IconButton>
         </div>
       ) : null}
       <UnknownBlockList blocks={unknownBlocks} />
       <div style={{ flex: 1, minHeight: 0 }}>
-        <Puck
-          key={page.id}
-          config={config}
-          data={initialPuckData}
-          onChange={(data) => {
-            latestPuckData.current = data;
-          }}
-        />
+        <FreeCanvasContext.Provider value={{ layoutMode, positions, onRectChange: handleRectChange, idBridge }}>
+          <Puck
+            key={page.id}
+            config={config}
+            data={initialPuckData}
+            overrides={{ preview: FreeCanvasPreview }}
+            onChange={(data) => {
+              latestPuckData.current = data;
+            }}
+          />
+        </FreeCanvasContext.Provider>
       </div>
       {themeEditorOpen ? (
         <ThemeEditor tokens={theme.tokens} onSave={handleSaveTheme} onClose={() => setThemeEditorOpen(false)} />
@@ -247,36 +308,19 @@ export function SiteEditor({
       {domainsPanelOpen ? <DomainsPanel siteId={siteId} onClose={() => setDomainsPanelOpen(false)} /> : null}
       {blogPanelOpen ? <BlogPanel siteId={siteId} onClose={() => setBlogPanelOpen(false)} /> : null}
       {submissionsPanelOpen ? <SubmissionsPanel siteId={siteId} page={page} onClose={() => setSubmissionsPanelOpen(false)} /> : null}
-      {celebration ? (
-        <div
-          role="dialog"
-          aria-label="Site published"
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(15, 23, 42, 0.5)",
-            display: "grid",
-            placeItems: "center",
-            zIndex: 60,
-          }}
-        >
-          <div style={{ background: "white", borderRadius: "0.75rem", padding: "2rem", maxWidth: 420, textAlign: "center", display: "grid", gap: "0.75rem" }}>
-            <div style={{ fontSize: "2.5rem" }}>🎉</div>
-            <h2 style={{ margin: 0, fontSize: "1.25rem" }}>Your site is live!</h2>
-            <p style={{ margin: 0, color: "#64748b", fontSize: "0.9375rem" }}>
-              <a href={celebration.liveUrl} target="_blank" rel="noreferrer">
-                {celebration.liveUrl}
-              </a>
-            </p>
-            <button
-              onClick={() => setCelebration(null)}
-              style={{ padding: "0.5rem 1.5rem", background: "#4f46e5", color: "white", border: "none", borderRadius: "0.375rem", justifySelf: "center", cursor: "pointer" }}
-            >
-              Keep editing
-            </button>
-          </div>
+      <Dialog open={celebration !== null} onClose={() => setCelebration(null)} ariaLabel="Site published">
+        <h2 className="pf-dialog-headline">🎉 Your site is live!</h2>
+        <p className="pf-supporting-text">
+          {celebration ? (
+            <a href={celebration.liveUrl} target="_blank" rel="noreferrer">
+              {celebration.liveUrl}
+            </a>
+          ) : null}
+        </p>
+        <div className="pf-dialog-actions">
+          <FilledButton onClick={() => setCelebration(null)}>Keep editing</FilledButton>
         </div>
-      ) : null}
+      </Dialog>
     </div>
   );
 }

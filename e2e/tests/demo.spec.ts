@@ -11,8 +11,8 @@ test("editing the Hero heading in the canvas, publishing, and loading the live U
   await loginInBrowser(page);
 
   const siteName = `Demo ${Date.now()}`;
-  await page.getByPlaceholder("slug").fill(`demo-${Date.now()}`);
-  await page.getByPlaceholder("name").fill(siteName);
+  await page.getByLabel(/^slug$/i).fill(`demo-${Date.now()}`);
+  await page.getByLabel(/^name$/i).fill(siteName);
   await page.getByRole("button", { name: /create site/i }).click();
 
   await expect(page.locator("header").first()).toContainText(siteName, { timeout: 15_000 });

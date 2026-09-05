@@ -108,3 +108,132 @@ CREATE TABLE IF NOT EXISTS bookings (
 -- row per (site_id, starts_at) toward the constraint.
 CREATE UNIQUE INDEX IF NOT EXISTS bookings_site_id_starts_at_confirmed_idx ON bookings (site_id, starts_at) WHERE status = 'confirmed';
 CREATE INDEX IF NOT EXISTS bookings_site_id_widget_id_starts_at_idx ON bookings (site_id, widget_id, starts_at);
+
+-- KAN-1138 (R10): mirrors the shape of packages/db/migrations/0009_slice10_events.sql
+-- minus RLS/ulid/jsonb, same reasoning as every other table above. A
+-- self-hosted instance's whole "publish" step for EventSignup blocks is
+-- event-signup-seed.ts, seeding from the bundle's own
+-- `prefab-event-signups.json` exactly the way forms-seed.ts/booking-seed.ts
+-- already do. Capacity concurrency here needs no special handling at all:
+-- better-sqlite3 is synchronous, so a single JS process can never interleave
+-- two sign-ups for the same widget mid-transaction the way two concurrent
+-- Postgres connections can (see event-signup-adapters.ts's own comment).
+CREATE TABLE IF NOT EXISTS event_signup_widgets (
+  id TEXT PRIMARY KEY,
+  site_id TEXT NOT NULL,
+  heading TEXT NOT NULL DEFAULT '',
+  fields TEXT NOT NULL DEFAULT '[]',
+  capacity INTEGER,
+  waitlist_enabled INTEGER NOT NULL DEFAULT 1,
+  submit_label TEXT NOT NULL DEFAULT 'Reserve my spot'
+);
+
+CREATE TABLE IF NOT EXISTS event_signups (
+  id TEXT PRIMARY KEY,
+  widget_id TEXT NOT NULL REFERENCES event_signup_widgets (id) ON DELETE CASCADE,
+  site_id TEXT NOT NULL,
+  values_json TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'confirmed' CHECK (status IN ('confirmed', 'waitlisted')),
+  position INTEGER,
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS event_signups_widget_id_status_idx ON event_signups (widget_id, status);
+CREATE INDEX IF NOT EXISTS event_signups_site_id_widget_id_created_at_idx ON event_signups (site_id, widget_id, created_at DESC, id);
+
+-- Slice 10 / KAN-1137 (ADR-0005, R10): mirrors the shape of
+-- packages/db/migrations/0009_slice10_payments.sql minus RLS/ulid/jsonb,
+-- same reasoning as every other table above. Unlike calendar sync
+-- (deliberately unavailable in self-host — see runtime-adapters.ts's own
+-- comment), a one-off payment needs no platform dependency beyond the
+-- OAuth connect step itself (ADR-0005: it's the tenant's own Stripe) — so,
+-- unlike `calendar_connections`, this instance DOES get a `stripe_connections`
+-- table and a connect/disconnect/status HTTP surface (see app.ts).
+CREATE TABLE IF NOT EXISTS payment_blocks (
+  id TEXT PRIMARY KEY,
+  site_id TEXT NOT NULL,
+  heading TEXT NOT NULL DEFAULT '',
+  description TEXT NOT NULL DEFAULT '',
+  button_label TEXT NOT NULL DEFAULT 'Pay now',
+  amount INTEGER NOT NULL,
+  currency TEXT NOT NULL DEFAULT 'usd',
+  success_message TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS stripe_connections (
+  site_id TEXT PRIMARY KEY,
+  stripe_account_id TEXT NOT NULL,
+  access_token TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'connected' CHECK (status IN ('connected', 'error'))
+);
+
+CREATE TABLE IF NOT EXISTS payment_records (
+  id TEXT PRIMARY KEY,
+  site_id TEXT NOT NULL,
+  block_id TEXT NOT NULL REFERENCES payment_blocks (id) ON DELETE CASCADE,
+  stripe_session_id TEXT NOT NULL UNIQUE,
+  stripe_payment_intent_id TEXT,
+  amount INTEGER NOT NULL,
+  currency TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'completed', 'failed')),
+  buyer_email TEXT,
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS payment_records_site_id_block_id_idx ON payment_records (site_id, block_id, created_at DESC);
+
+-- KAN-1154 / ADR-0016 (R10): mirrors the shape of
+-- packages/db/migrations/0012_kan1154_subscriptions.sql minus RLS/ulid, same
+-- reasoning as every other table above. `stripe_connections` above is
+-- reused unchanged — a connected Stripe account is the same account
+-- whether it's charged once or on a schedule. Part 1 only ever wrote
+-- 'incomplete' rows here; every other status value and every lifecycle
+-- column below is written by part 2's webhook consumer
+-- (subscription-webhook.ts) and its dev-advance route (app.ts).
+CREATE TABLE IF NOT EXISTS subscription_blocks (
+  id TEXT PRIMARY KEY,
+  site_id TEXT NOT NULL,
+  heading TEXT NOT NULL DEFAULT '',
+  description TEXT NOT NULL DEFAULT '',
+  button_label TEXT NOT NULL DEFAULT 'Subscribe',
+  price INTEGER NOT NULL,
+  currency TEXT NOT NULL DEFAULT 'usd',
+  interval TEXT NOT NULL DEFAULT 'month' CHECK (interval IN ('month', 'year')),
+  trial_period_days INTEGER NOT NULL DEFAULT 0,
+  success_message TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS subscription_records (
+  id TEXT PRIMARY KEY,
+  site_id TEXT NOT NULL,
+  block_id TEXT NOT NULL REFERENCES subscription_blocks (id) ON DELETE CASCADE,
+  stripe_checkout_session_id TEXT NOT NULL UNIQUE,
+  stripe_subscription_id TEXT,
+  stripe_customer_id TEXT,
+  price INTEGER NOT NULL,
+  currency TEXT NOT NULL,
+  interval TEXT NOT NULL CHECK (interval IN ('month', 'year')),
+  trial_period_days INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'incomplete'
+    CHECK (status IN ('incomplete', 'incomplete_expired', 'trialing', 'active', 'past_due', 'canceled', 'unpaid', 'paused')),
+  current_period_end TEXT,
+  cancel_at_period_end INTEGER NOT NULL DEFAULT 0,
+  canceled_at TEXT,
+  buyer_email TEXT,
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS subscription_records_site_id_block_id_idx ON subscription_records (site_id, block_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS subscription_records_stripe_subscription_id_idx ON subscription_records (stripe_subscription_id);
+
+-- KAN-1154 part 2 / ADR-0016: mirrors packages/db/migrations/0007_slice8.sql's
+-- own `stripe_webhook_events` table exactly (Stripe event ids are globally
+-- unique regardless of which integration receives them, so one table
+-- serves every webhook consumer this instance ever grows) — a self-hosted
+-- instance's own webhook route (app.ts) uses this to guard against Stripe's
+-- own retry-on-no-2xx redelivering the same event twice.
+CREATE TABLE IF NOT EXISTS stripe_webhook_events (
+  id TEXT PRIMARY KEY,
+  type TEXT NOT NULL,
+  processed_at TEXT NOT NULL
+);
