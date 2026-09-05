@@ -25,12 +25,16 @@
       "sm": "0.75rem",
       "element": "1rem",
       "lg": "2rem",
-      "section": "4rem"
+      "section": "5rem"
     },
     "radius": {
       "control": "0.25rem",
       "card": "0.25rem",
       "full": "9999px"
+    },
+    "fontFamily": {
+      "heading": "system-ui, sans-serif",
+      "body": "system-ui, sans-serif"
     }
   }
 }

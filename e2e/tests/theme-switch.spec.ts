@@ -27,7 +27,12 @@ test("switching theme restyles the canvas with no page document mutation", async
 
   await page.getByRole("button", { name: /^theme$/i }).click();
   const newAccent = "#ff00aa";
-  const accentInput = page.locator('input[data-pf-token-input="color.accent"]');
+  // The real <input> lives inside md-outlined-text-field's shadow DOM —
+  // Playwright's locator pierces it, but the tag-qualified selector below
+  // wouldn't match an element that isn't literally an <input>, so the
+  // data attribute (set on the host, see ui/TextField.tsx) anchors the
+  // outer element and the descendant combinator reaches the real control.
+  const accentInput = page.locator('[data-pf-token-input="color.accent"] input');
   await accentInput.fill(newAccent);
   await page.getByRole("button", { name: /save theme/i }).click();
   await expect(page.getByRole("dialog", { name: /theme editor/i })).toHaveCount(0, { timeout: 10_000 });
