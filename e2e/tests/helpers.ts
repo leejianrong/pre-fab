@@ -114,7 +114,7 @@ export async function gotoLiveSite(page: Page, hostname: string): Promise<void> 
 
 /** Default props for every first-party block type, keyed by block type — for building test documents that exercise the whole library at once. */
 export const ALL_BLOCK_TYPE_PROPS: Record<string, Record<string, unknown>> = {
-  hero: { heading: "Hero heading", subheading: "Hero subheading", ctaLabel: "Go", ctaHref: "#", background: "background" },
+  hero: { heading: "Hero heading", subheading: "Hero subheading", ctaLabel: "Go", ctaHref: "#", background: "background", backgroundImage: "" },
   heading: { text: "Section heading", level: "h2", size: "heading", align: "left" },
   richtext: { html: "Some rich text content.", size: "body", align: "left" },
   image: { src: "https://placehold.co/800x400", alt: "placeholder", caption: "", radius: "card" },
@@ -155,6 +155,14 @@ export const ALL_BLOCK_TYPE_PROPS: Record<string, Record<string, unknown>> = {
     description: "Pick a slot that works for you.",
     confirmLabel: "Confirm booking",
     successMessage: "You're booked — check your email for details.",
+  },
+  payment: {
+    heading: "Buy now",
+    description: "One-time purchase.",
+    buttonLabel: "Pay now",
+    amount: 1000,
+    currency: "usd",
+    successMessage: "Thank you — your payment was received.",
   },
 };
 

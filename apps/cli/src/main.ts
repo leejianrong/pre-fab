@@ -22,6 +22,10 @@ import {
   domainVerify,
   domainRemove,
   eject,
+  eventSignupWidgetGet,
+  eventSignupList,
+  eventSignupExport,
+  eventSignupDelete,
   exportBundle,
   exportSite,
   formConfigure,
@@ -52,6 +56,9 @@ import {
   siteGet,
   siteList,
   siteOutline,
+  stripeConnect,
+  stripeDisconnect,
+  stripeStatus,
   submissionDelete,
   submissionExport,
   submissionList,
@@ -337,6 +344,42 @@ submission
     runCommand(globalOptions(), async () => submissionDelete.run(await resolveContext(), { siteId, formId, submissionId })),
   );
 
+const eventSignupWidget = program.command("event-signup-widget").description("Inspect an event sign-up (RSVP) block's published widget (KAN-1138)");
+eventSignupWidget
+  .command("get <siteId> <widgetId>")
+  .description("Show an event sign-up widget's published manifest (heading/fields/capacity/waitlist)")
+  .action((siteId, widgetId) => runCommand(globalOptions(), async () => eventSignupWidgetGet.run(await resolveContext(), { siteId, widgetId })));
+
+const eventSignup = program.command("event-signup").description("Manage an event sign-up widget's sign-ups (KAN-1138)");
+eventSignup
+  .command("list <siteId> <widgetId>")
+  .description("List an event sign-up widget's sign-ups")
+  .option("--limit <limit>", "page size")
+  .option("--offset <offset>")
+  .action((siteId, widgetId, options: { limit?: string; offset?: string }) =>
+    runCommand(globalOptions(), async () =>
+      eventSignupList.run(await resolveContext(), {
+        siteId,
+        widgetId,
+        limit: options.limit ? Number(options.limit) : undefined,
+        offset: options.offset ? Number(options.offset) : undefined,
+      }),
+    ),
+  );
+eventSignup
+  .command("export <siteId> <widgetId>")
+  .description("Export an event sign-up widget's sign-ups — CSV by default")
+  .option("--format <format>", "csv or json", "csv")
+  .action((siteId, widgetId, options: { format?: "csv" | "json" }) =>
+    runCommand(globalOptions(), async () => eventSignupExport.run(await resolveContext(), { siteId, widgetId, format: options.format })),
+  );
+eventSignup
+  .command("delete <siteId> <widgetId> <signupId>")
+  .description("Delete a single event sign-up — PDPA/GDPR per-record deletion")
+  .action((siteId, widgetId, signupId) =>
+    runCommand(globalOptions(), async () => eventSignupDelete.run(await resolveContext(), { siteId, widgetId, signupId })),
+  );
+
 const asset = program.command("asset").description("Manage site assets (content-addressed uploads)");
 asset
   .command("upload <siteId> <filePath>")
@@ -431,6 +474,20 @@ calendar
   .command("status <siteId>")
   .description("Show a site's calendar connection status")
   .action((siteId) => runCommand(globalOptions(), async () => calendarStatus.run(await resolveContext(), { siteId })));
+
+const stripe = program.command("stripe").description("Manage a site's own bring-your-own Stripe account for one-off payment blocks (Slice 10 / KAN-1137, ADR-0005)");
+stripe
+  .command("connect <siteId> <authorizationCode>")
+  .description("Connect a site's own Stripe account — authorizationCode is a pre-obtained OAuth code (real providers only; the fake accepts any string)")
+  .action((siteId, authorizationCode) => runCommand(globalOptions(), async () => stripeConnect.run(await resolveContext(), { siteId, authorizationCode })));
+stripe
+  .command("disconnect <siteId>")
+  .description("Disconnect a site's own Stripe account")
+  .action((siteId) => runCommand(globalOptions(), async () => stripeDisconnect.run(await resolveContext(), { siteId })));
+stripe
+  .command("status <siteId>")
+  .description("Show a site's Stripe connection status")
+  .action((siteId) => runCommand(globalOptions(), async () => stripeStatus.run(await resolveContext(), { siteId })));
 
 program
   .command("token-create <siteId> <name>")

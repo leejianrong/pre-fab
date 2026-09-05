@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { BlockListSchema, PostStatusSchema, ThemeTokensSchema } from "@prefab/schema";
+import { BlockListSchema, LayoutModeSchema, PostStatusSchema, ThemeTokensSchema } from "@prefab/schema";
 
 export const CreateSiteBodySchema = z.object({
   slug: z.string().min(1).max(64),
@@ -19,6 +19,10 @@ export const WritePageBodySchema = z.object({
   title: z.string().min(1).max(200),
   slug: z.string().min(1).max(64),
   blocks: BlockListSchema,
+  // ADR-0014 / KAN-1129: defaults to "flow" so a caller that predates free
+  // positioning (an old CLI, a pushed pre-migration export) writes exactly
+  // as it always has — never dropped silently, never forced into "free".
+  layoutMode: LayoutModeSchema.default("flow"),
   expectedVersion: z.number().int().nonnegative(),
 });
 
@@ -134,6 +138,26 @@ export const SubmitFormBodySchema = z.object({
   turnstileToken: z.string().max(4096).optional(),
 });
 
+// ---- KAN-1138: event sign-ups ----
+export const ListEventSignupsQuerySchema = z.object({
+  limit: z.coerce.number().int().optional(),
+  offset: z.coerce.number().int().optional(),
+});
+
+export const ExportEventSignupsQuerySchema = z.object({
+  format: z.enum(["csv", "json"]).default("csv"),
+});
+
+/**
+ * The runtime API's own sign-up body — deliberately loose (`z.record`, not
+ * per-field validation), same reasoning as SubmitFormBodySchema: field-shape
+ * validation is @prefab/runtime's job (validateSubmissionValues, checked
+ * against the widget's own manifest), not this route's.
+ */
+export const SignUpForEventBodySchema = z.object({
+  values: z.record(z.string(), z.union([z.string(), z.boolean()])).default({}),
+});
+
 // ---- Slice 8: accounts, plans and billing (ADR-0005, ADR-0012) ----
 const SiteRoleSchema = z.enum(["editor", "viewer"]);
 
@@ -218,4 +242,55 @@ export const ConnectCalendarBodySchema = z.object({
 export const AdvanceFakeCalendarBodySchema = z.object({
   busy: z.array(z.object({ startMs: z.number(), endMs: z.number() })).optional(),
   unavailable: z.boolean().optional(),
+});
+
+// ---- Slice 10 / KAN-1137: one-off payment blocks, bring-your-own Stripe (ADR-0005) ----
+export const ConnectStripeBodySchema = z.object({
+  authorizationCode: z.string().min(1),
+});
+
+/** Dev-only (see `/v1/dev/stripe-connect/:siteId/advance`) — drives the FakeTenantStripeProvider forward the same way a real checkout.session.completed webhook would, keyed by the session id a runtime checkout call already handed back. */
+export const AdvanceFakeStripeConnectBodySchema = z.object({
+  sessionId: z.string().min(1),
+  buyerEmail: z.string().email().optional(),
+});
+
+export const ListPaymentsQuerySchema = z.object({
+  limit: z.coerce.number().int().optional(),
+  offset: z.coerce.number().int().optional(),
+});
+
+// ---- KAN-1154 part 2 / ADR-0016: subscription lifecycle webhook
+// consumption — dev-only advance route, and the owner-facing read. ----
+
+/**
+ * Dev-only (see `/v1/dev/stripe-connect/:siteId/subscriptions/advance`) —
+ * one flexible route, not five, keyed by `event` — drives the exact same
+ * state machine (apps/api/src/lib/subscription-webhook.ts) a real webhook
+ * would, for whichever Stripe event this call simulates. `eventId` is the
+ * dedup key `recordStripeWebhookEvent` uses (mirrors a real Stripe
+ * `event.id`) — defaults to a fresh ulid per call (so repeated calls with
+ * no `eventId` simulate distinct real-world events); a test proving exact
+ * redelivery-is-a-no-op passes the SAME `eventId` twice on purpose.
+ */
+export const AdvanceFakeSubscriptionBodySchema = z.object({
+  event: z.enum(["checkout_completed", "invoice_paid", "invoice_payment_failed", "subscription_updated", "subscription_deleted"]),
+  eventId: z.string().min(1).optional(),
+  /** checkout_completed only — the row's own stripe_checkout_session_id (what part 1's checkout-creation call snapshotted). */
+  stripeCheckoutSessionId: z.string().min(1).optional(),
+  /** Every event but checkout_completed keys by this instead (the Subscription id checkout_completed itself establishes). */
+  stripeSubscriptionId: z.string().min(1).optional(),
+  /** checkout_completed only. */
+  stripeCustomerId: z.string().min(1).optional(),
+  buyerEmail: z.string().email().optional(),
+  /** subscription_updated only — Stripe's own status string, stored verbatim (ADR-0016's question 2). */
+  status: z.enum(["incomplete", "incomplete_expired", "trialing", "active", "past_due", "canceled", "unpaid", "paused"]).optional(),
+  currentPeriodEnd: z.coerce.date().optional(),
+  /** subscription_updated only. */
+  cancelAtPeriodEnd: z.boolean().optional(),
+});
+
+export const ListSubscriptionsQuerySchema = z.object({
+  limit: z.coerce.number().int().optional(),
+  offset: z.coerce.number().int().optional(),
 });

@@ -133,6 +133,9 @@ importers:
       '@prefab/schema':
         specifier: workspace:*
         version: link:../../packages/schema
+      '@prefab/templates':
+        specifier: workspace:*
+        version: link:../../packages/templates
       '@puckeditor/core':
         specifier: 0.23.0
         version: 0.23.0(@floating-ui/dom@1.8.0)(@types/react-dom@19.0.3(@types/react@19.0.7))(@types/react@19.0.7)(react-dom@19.0.0(react@19.0.0))(react@19.0.0)(use-sync-external-store@1.6.0(react@19.0.0))

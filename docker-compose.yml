@@ -75,9 +75,12 @@ services:
     environment:
       DATABASE_URL: postgres://prefab_app:prefab_app@postgres:5432/prefab_dev
       DATABASE_URL_TEST: postgres://prefab_app:prefab_app@postgres:5432/prefab_test
-      # Host-facing origin: the browser reaches the editor through nginx's
-      # pre-fab.localhost, not a bare localhost:port, so CORS must allow that.
-      EDITOR_ORIGIN: http://pre-fab.localhost:${PREFAB_PROXY_PORT:-5170}
+      # Host-facing origin: whatever the browser actually reaches the editor
+      # at, so CORS allows it. Default matches editor's own directly-
+      # published port below; docker-compose.override.yml.example
+      # overrides this to http://pre-fab.localhost when a machine-wide
+      # Traefik instance fronts it there instead (see that file).
+      EDITOR_ORIGIN: http://localhost:${PREFAB_EDITOR_HOST_PORT:-5173}
       API_PORT: "8787"
     ports:
       - "${PREFAB_API_HOST_PORT:-8787}:8787"
@@ -102,11 +105,17 @@ services:
     environment:
       # Container-network hostname: Vite's dev-server proxy runs server-side
       # (in this container), so it reaches `api` by service name, while the
-      # browser on the host talks to it only through the nginx service below.
+      # browser on the host talks to it over whichever host port/hostname
+      # is actually published below.
       PREFAB_API_PROXY_TARGET: http://api:8787
-    # No host port published here on purpose — reachable only via nginx's
-    # pre-fab.localhost, so editor's port (5173, a very common Vite default)
-    # can never collide with another project's dev server on this laptop.
+    # Published directly here (5173 is a very common Vite default, hence
+    # scripts/dev-ports.sh auto-picking around a collision the same way it
+    # does for the other two host ports) — a per-project reverse-proxy
+    # container isn't worth it just to give one project a stable hostname;
+    # see docker-compose.override.yml.example for the machine-wide
+    # alternative (one Traefik instance, every project on this laptop).
+    ports:
+      - "${PREFAB_EDITOR_HOST_PORT:-5173}:5173"
     # condition: service_healthy, not the default service_started — api's
     # healthcheck above only turns healthy once its own `pnpm install` has
     # finished, which is what actually serializes the two installs (see the
@@ -115,19 +124,6 @@ services:
       api:
         condition: service_healthy
     command: sh -c "pnpm install --filter '!@prefab/self-host' --frozen-lockfile --config.confirmModulesPurge=false --store-dir=/pnpm-store && pnpm --filter @prefab/editor run dev"
-
-  # The only service that publishes a host port for the browser-facing UI —
-  # fronts editor at a stable hostname (docker/nginx.conf) so a laptop
-  # running several projects' dev stacks only needs nginx's own port free,
-  # not editor's.
-  nginx:
-    image: nginx:1.27-alpine
-    volumes:
-      - ./docker/nginx.conf:/etc/nginx/conf.d/default.conf:ro
-    ports:
-      - "${PREFAB_PROXY_PORT:-5170}:80"
-    depends_on:
-      - editor
 
 volumes:
   pgdata:

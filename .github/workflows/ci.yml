@@ -157,9 +157,9 @@ jobs:
       - uses: actions/checkout@v4
       - name: Seed .env the same way `make dev` does
         run: cp .env.example .env
-      - name: Build and start postgres, migrate, api, editor, nginx
+      - name: Build and start postgres, migrate, api, editor
         run: docker compose up --build -d
-      - name: Wait for the API and the editor (through nginx) to answer
+      - name: Wait for the API and the editor to answer
         run: |
           api_ok=""
           editor_ok=""
@@ -167,12 +167,12 @@ jobs:
             if [ -z "$api_ok" ] && curl -sf http://localhost:8787/health | grep -q '"ok":true'; then
               api_ok=1
             fi
-            # --resolve, not a DNS lookup: README's "*.localhost needs no
-            # /etc/hosts entry" claim is a browser behavior (RFC 6761), and
-            # curl on the runner shouldn't depend on that resolving the
-            # same way — this hits nginx on 127.0.0.1 while still sending
-            # the real Host header nginx.conf's server_name matches on.
-            if [ -z "$editor_ok" ] && curl -sf --resolve pre-fab.localhost:5170:127.0.0.1 http://pre-fab.localhost:5170/ >/dev/null; then
+            # No docker-compose.override.yml in a fresh checkout, so the
+            # editor is reached on its own directly-published port here —
+            # the Traefik-fronted http://pre-fab.localhost/ path
+            # (docker-compose.override.yml.example) is opt-in and has
+            # nothing to do with whether this stack itself is healthy.
+            if [ -z "$editor_ok" ] && curl -sf http://localhost:5173/ >/dev/null; then
               editor_ok=1
             fi
             if [ -n "$api_ok" ] && [ -n "$editor_ok" ]; then

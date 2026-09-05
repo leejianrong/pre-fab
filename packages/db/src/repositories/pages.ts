@@ -1,5 +1,5 @@
 import type { PoolClient } from "pg";
-import type { BlockNode, BlockResponsive, PageDocument } from "@prefab/schema";
+import type { BlockNode, BlockResponsive, FreePosition, LayoutMode, PageDocument } from "@prefab/schema";
 
 interface RawPageRow {
   id: string;
@@ -8,6 +8,7 @@ interface RawPageRow {
   title: string;
   schema_version: number;
   version: number;
+  layout_mode: LayoutMode;
 }
 
 interface RawBlockRow {
@@ -18,6 +19,9 @@ interface RawBlockRow {
   schema_version: number;
   props: Record<string, unknown>;
   responsive: BlockResponsive;
+  position: FreePosition | null;
+  /** ADR-0015 / KAN-1152. Nullable, mirroring `position` above — see 0011_kan1152_scroll_reveal.sql. */
+  scroll_reveal: boolean | null;
 }
 
 function rowToBlockNode(row: RawBlockRow): BlockNode {
@@ -29,6 +33,11 @@ function rowToBlockNode(row: RawBlockRow): BlockNode {
     schemaVersion: row.schema_version,
     props: row.props,
     responsive: row.responsive,
+    ...(row.position ? { position: row.position } : {}),
+    // `!== null`, not a truthy check: a stored `false` (an explicit opt-out
+    // written back after being on) must round-trip as `false`, not vanish
+    // the same way a genuinely-absent value does.
+    ...(row.scroll_reveal !== null ? { scrollReveal: row.scroll_reveal } : {}),
   };
 }
 
@@ -48,6 +57,7 @@ export async function createPage(
     title: row.title,
     schemaVersion: row.schema_version,
     version: row.version,
+    layoutMode: row.layout_mode,
     blocks: [],
   };
 }
@@ -68,6 +78,7 @@ export async function getPageDocument(client: PoolClient, pageId: string): Promi
     title: pageRow.title,
     schemaVersion: pageRow.schema_version,
     version: pageRow.version,
+    layoutMode: pageRow.layout_mode,
     blocks: blocksResult.rows.map(rowToBlockNode),
   };
 }
@@ -127,22 +138,32 @@ export async function writePageDocument(
     slug: string;
     blocks: BlockNode[];
     expectedVersion: number;
+    /**
+     * ADR-0014 / KAN-1129. Optional and defaulted to `"flow"` here (rather
+     * than required) so every call site that predates free positioning —
+     * site.create's default home page, template fork-on-use — keeps
+     * working with no change of its own; a caller that cares (page.write)
+     * passes the validated document's own `layoutMode` through explicitly.
+     */
+    layoutMode?: LayoutMode;
   },
 ): Promise<WritePageResult> {
+  const layoutMode: LayoutMode = input.layoutMode ?? "flow";
   const before = await getPageDocument(client, input.pageId);
   if (
     before &&
     before.title === input.title &&
     before.slug === input.slug &&
+    before.layoutMode === layoutMode &&
     blocksEqual(before.blocks, input.blocks)
   ) {
     return { ok: true, document: before };
   }
 
   const updateResult = await client.query(
-    `UPDATE pages SET title = $1, slug = $2, version = version + 1, updated_at = now()
-     WHERE id = $3 AND site_id = $4 AND version = $5`,
-    [input.title, input.slug, input.pageId, input.siteId, input.expectedVersion],
+    `UPDATE pages SET title = $1, slug = $2, layout_mode = $3, version = version + 1, updated_at = now()
+     WHERE id = $4 AND site_id = $5 AND version = $6`,
+    [input.title, input.slug, layoutMode, input.pageId, input.siteId, input.expectedVersion],
   );
 
   if (updateResult.rowCount === 0) {
@@ -154,8 +175,8 @@ export async function writePageDocument(
   await client.query(`DELETE FROM blocks WHERE page_id = $1`, [input.pageId]);
   for (const block of input.blocks) {
     await client.query(
-      `INSERT INTO blocks (id, page_id, site_id, type, parent, "order", schema_version, props, responsive)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      `INSERT INTO blocks (id, page_id, site_id, type, parent, "order", schema_version, props, responsive, position, scroll_reveal)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
       [
         block.id,
         input.pageId,
@@ -166,6 +187,8 @@ export async function writePageDocument(
         block.schemaVersion,
         JSON.stringify(block.props),
         JSON.stringify(block.responsive),
+        block.position ? JSON.stringify(block.position) : null,
+        block.scrollReveal ?? null,
       ],
     );
   }
