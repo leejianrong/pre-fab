@@ -9,6 +9,7 @@ build/
 *.tsbuildinfo
 .env
 .env.local
+docker-compose.override.yml
 coverage/
 playwright-report/
 test-results/

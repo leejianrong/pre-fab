@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { api } from "./api.js";
+import { FilledButton, TextButton, TextField } from "./ui/index.js";
 
 type Step = { kind: "email" } | { kind: "code"; email: string };
 
@@ -47,61 +48,38 @@ export function SignupScreen({ onSignedUp, onBackToLogin }: { onSignedUp: () => 
   }
 
   return (
-    <div style={{ display: "grid", placeItems: "center", height: "100vh", fontFamily: "system-ui, sans-serif" }}>
+    <div className="pf-centered-page">
       {step.kind === "email" ? (
-        <form onSubmit={submitEmail} style={{ display: "grid", gap: "0.75rem", width: 320 }}>
-          <h1 style={{ fontSize: "1.25rem", margin: 0 }}>Create your account</h1>
-          <p style={{ margin: 0, fontSize: "0.875rem", color: "#64748b" }}>We'll email you a 6-digit code — no password to remember.</p>
-          <label style={{ display: "grid", gap: "0.25rem", fontSize: "0.875rem" }}>
-            Email address
-            <input
-              type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              style={{ padding: "0.5rem", border: "1px solid #cbd5e1", borderRadius: "0.375rem" }}
-            />
-          </label>
-          <button
-            type="submit"
-            disabled={pending}
-            style={{ padding: "0.5rem", background: "#4f46e5", color: "white", border: "none", borderRadius: "0.375rem" }}
-          >
+        <form onSubmit={submitEmail} className="pf-form">
+          <h1 className="pf-headline">Create your account</h1>
+          <p className="pf-supporting-text">We'll email you a 6-digit code — no password to remember.</p>
+          <TextField label="Email address" type="email" required value={email} onChange={setEmail} />
+          <FilledButton type="submit" disabled={pending}>
             {pending ? "Sending code…" : "Send me a code"}
-          </button>
-          {error ? <p style={{ color: "#dc2626", fontSize: "0.875rem" }}>{error}</p> : null}
-          <button
-            type="button"
-            onClick={onBackToLogin}
-            style={{ background: "none", border: "none", color: "#4f46e5", cursor: "pointer", fontSize: "0.875rem", padding: 0, justifySelf: "start" }}
-          >
+          </FilledButton>
+          {error ? <p className="pf-error-text">{error}</p> : null}
+          <TextButton type="button" onClick={onBackToLogin} style={{ justifySelf: "start" }}>
             Already have an account? Sign in
-          </button>
+          </TextButton>
         </form>
       ) : (
-        <form onSubmit={submitCode} style={{ display: "grid", gap: "0.75rem", width: 320 }}>
-          <h1 style={{ fontSize: "1.25rem", margin: 0 }}>Check your email</h1>
-          <p style={{ margin: 0, fontSize: "0.875rem", color: "#64748b" }}>
+        <form onSubmit={submitCode} className="pf-form">
+          <h1 className="pf-headline">Check your email</h1>
+          <p className="pf-supporting-text">
             We sent a 6-digit code to <strong>{step.email}</strong>.
           </p>
-          <label style={{ display: "grid", gap: "0.25rem", fontSize: "0.875rem" }}>
-            Verification code
-            <input
-              value={code}
-              onChange={(e) => setCode(e.target.value)}
-              maxLength={6}
-              inputMode="numeric"
-              style={{ padding: "0.5rem", border: "1px solid #cbd5e1", borderRadius: "0.375rem", letterSpacing: "0.25rem", fontSize: "1.125rem" }}
-            />
-          </label>
-          <button
-            type="submit"
-            disabled={pending || code.length !== 6}
-            style={{ padding: "0.5rem", background: "#4f46e5", color: "white", border: "none", borderRadius: "0.375rem" }}
-          >
+          <TextField
+            label="Verification code"
+            value={code}
+            onChange={setCode}
+            maxLength={6}
+            inputMode="numeric"
+            style={{ letterSpacing: "0.25rem", fontSize: "1.125rem" }}
+          />
+          <FilledButton type="submit" disabled={pending || code.length !== 6}>
             {pending ? "Verifying…" : "Verify and continue"}
-          </button>
-          {error ? <p style={{ color: "#dc2626", fontSize: "0.875rem" }}>{error}</p> : null}
+          </FilledButton>
+          {error ? <p className="pf-error-text">{error}</p> : null}
         </form>
       )}
     </div>

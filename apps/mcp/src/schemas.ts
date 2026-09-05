@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { BlockListSchema, PostStatusSchema, ThemeTokensSchema } from "@prefab/schema";
+import { BlockListSchema, LayoutModeSchema, PostStatusSchema, ThemeTokensSchema } from "@prefab/schema";
 
 /**
  * MCP tool input shapes — one per command in @prefab/commands' registry.
@@ -38,6 +38,10 @@ export const schemas = {
     title: z.string(),
     slug: z.string(),
     blocks: BlockListSchema,
+    // ADR-0014 / KAN-1129: optional, defaults to "flow" — an agent calling
+    // this tool without ever hearing about free positioning behaves exactly
+    // as before.
+    layoutMode: LayoutModeSchema.optional(),
     expectedVersion: z.number().int().nonnegative(),
   },
 
@@ -89,6 +93,11 @@ export const schemas = {
   "submission.list": { siteId: z.string(), formId: z.string(), limit: z.number().int().optional(), offset: z.number().int().optional() },
   "submission.export": { siteId: z.string(), formId: z.string(), format: z.enum(["csv", "json"]).optional() },
   "submission.delete": { siteId: z.string(), formId: z.string(), submissionId: z.string() },
+
+  "eventSignupWidget.get": { siteId: z.string(), widgetId: z.string() },
+  "eventSignup.list": { siteId: z.string(), widgetId: z.string(), limit: z.number().int().optional(), offset: z.number().int().optional() },
+  "eventSignup.export": { siteId: z.string(), widgetId: z.string(), format: z.enum(["csv", "json"]).optional() },
+  "eventSignup.delete": { siteId: z.string(), widgetId: z.string(), signupId: z.string() },
 
   "asset.upload": { siteId: z.string(), filePath: z.string().min(1) },
   "asset.list": { siteId: z.string() },
@@ -143,6 +152,10 @@ export const schemas = {
   "calendar.connect": { siteId: z.string(), provider: z.enum(["google", "microsoft"]), authorizationCode: z.string().optional(), redirectUri: z.string().optional() },
   "calendar.disconnect": { siteId: z.string() },
   "calendar.status": { siteId: z.string() },
+
+  "stripe.connect": { siteId: z.string(), authorizationCode: z.string() },
+  "stripe.disconnect": { siteId: z.string() },
+  "stripe.status": { siteId: z.string() },
 
   "export-bundle": {
     siteId: z.string(),

@@ -25,12 +25,16 @@
       "sm": "0.75rem",
       "element": "1rem",
       "lg": "2rem",
-      "section": "4rem"
+      "section": "5rem"
     },
     "radius": {
       "control": "0.5rem",
-      "card": "0.75rem",
+      "card": "1rem",
       "full": "9999px"
+    },
+    "fontFamily": {
+      "heading": "Charter, Cambria, Georgia, serif",
+      "body": "-apple-system, 'Segoe UI', system-ui, sans-serif"
     }
   }
 }

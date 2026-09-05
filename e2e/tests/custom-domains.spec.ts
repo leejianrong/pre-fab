@@ -14,8 +14,8 @@ async function sessionCookieHeader(page: import("@playwright/test").Page): Promi
 /** Creates, opens and publishes a site — every domain test below eventually checks host-based routing, which only ever serves a site that has gone live at least once. Returns the site's slug. */
 async function createSiteAndOpen(page: import("@playwright/test").Page, name: string): Promise<string> {
   const slug = `${name.toLowerCase().replace(/\s+/g, "-")}-${Date.now()}`;
-  await page.getByPlaceholder("slug").fill(slug);
-  await page.getByPlaceholder("name").fill(name);
+  await page.getByLabel(/^slug$/i).fill(slug);
+  await page.getByLabel(/^name$/i).fill(name);
   await page.getByRole("button", { name: /^create site$/i }).click();
   const header = page.locator("header").first();
   await expect(header).toContainText(name, { timeout: 15_000 });
@@ -60,7 +60,7 @@ test("adding a domain shows DNS instructions, and the domain serves the site onc
   await expect(page.getByRole("dialog", { name: /custom domains/i })).toBeVisible();
 
   const hostname = `www.e2e-domain-${Date.now()}.test`;
-  await page.getByPlaceholder("www.yourbusiness.com").fill(hostname);
+  await page.getByRole("textbox", { name: /^domain$/i }).fill(hostname);
   await page.getByRole("button", { name: /^add domain$/i }).click();
 
   await expect(page.getByText(hostname)).toBeVisible({ timeout: 10_000 });
@@ -100,7 +100,7 @@ test("a failed DNS/certificate check shows a specific, actionable error, not a g
 
   await page.getByRole("button", { name: /^domains$/i }).click();
   const hostname = `www.e2e-domain-fail-${Date.now()}.test`;
-  await page.getByPlaceholder("www.yourbusiness.com").fill(hostname);
+  await page.getByRole("textbox", { name: /^domain$/i }).fill(hostname);
   await page.getByRole("button", { name: /^add domain$/i }).click();
   await expect(page.getByText(hostname)).toBeVisible({ timeout: 10_000 });
 
@@ -125,7 +125,7 @@ test("removing a domain stops serving it immediately", async ({ page, request })
 
   await page.getByRole("button", { name: /^domains$/i }).click();
   const hostname = `www.e2e-domain-remove-${Date.now()}.test`;
-  await page.getByPlaceholder("www.yourbusiness.com").fill(hostname);
+  await page.getByRole("textbox", { name: /^domain$/i }).fill(hostname);
   await page.getByRole("button", { name: /^add domain$/i }).click();
   await expect(page.getByText(hostname)).toBeVisible({ timeout: 10_000 });
 

@@ -38,9 +38,11 @@
         "subheading": "One day, three stages, food trucks and a river view. All ages welcome.",
         "ctaLabel": "Get tickets",
         "ctaHref": "#contact",
-        "background": "background"
+        "background": "background",
+        "backgroundImage": "https://images.unsplash.com/photo-1470229722913-7c0e2dbbafd3?w=1000&q=55"
       },
-      "responsive": {}
+      "responsive": {},
+      "scrollReveal": true
     },
     {
       "id": "01M136AM1P6VN8PEVVC06PG6FS",

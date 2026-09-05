@@ -22,6 +22,9 @@ export function themeTokensToStyleVars(tokens: ThemeTokens): Record<string, stri
   for (const [name, value] of Object.entries(tokens.radius)) {
     vars[`--pf-radius-${name}`] = value;
   }
+  for (const [name, value] of Object.entries(tokens.fontFamily)) {
+    vars[`--pf-fontFamily-${name}`] = value;
+  }
   return vars;
 }
 
@@ -43,6 +46,7 @@ export function themeRootStyle(tokens: ThemeTokens): Record<string, string> {
     ...themeTokensToStyleVars(tokens),
     background: cssVar("color", "background"),
     color: cssVar("color", "foreground"),
+    fontFamily: cssVar("fontFamily", "body"),
   };
 }
 
@@ -70,5 +74,6 @@ export function resolveThemeTokens(tokens: ThemeTokens, defaults: ThemeTokens = 
     fontSize: { ...defaults.fontSize, ...tokens.fontSize },
     spacing: { ...defaults.spacing, ...tokens.spacing },
     radius: { ...defaults.radius, ...tokens.radius },
+    fontFamily: { ...defaults.fontFamily, ...tokens.fontFamily },
   };
 }

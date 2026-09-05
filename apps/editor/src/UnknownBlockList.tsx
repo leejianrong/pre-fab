@@ -9,6 +9,11 @@ import type { BlockNode } from "@prefab/schema";
  * unmodified on every save. This is the "shown as a placeholder" half:
  * listed above the canvas rather than inline in the drop zone, since
  * Puck's canvas has no slot for a component type it can't render at all.
+ *
+ * Tertiary container, not error — base M3 has no dedicated "warning"
+ * family, and tertiary's own spec purpose ("bring heightened attention to
+ * an element") fits an unusual-but-not-broken state better than borrowing
+ * error semantics for something that isn't a failure.
  */
 export function UnknownBlockList({ blocks }: { blocks: BlockNode[] }) {
   if (blocks.length === 0) return null;
@@ -17,10 +22,11 @@ export function UnknownBlockList({ blocks }: { blocks: BlockNode[] }) {
     <div
       style={{
         padding: "0.5rem 1rem",
-        background: "#fef3c7",
-        borderBottom: "1px solid #fde68a",
-        fontSize: "0.875rem",
-        color: "#92400e",
+        background: "var(--md-sys-color-tertiary-container)",
+        color: "var(--md-sys-color-on-tertiary-container)",
+        borderBottom: "1px solid var(--md-sys-color-outline-variant)",
+        fontFamily: "var(--md-ref-typeface-plain)",
+        fontSize: "var(--md-sys-typescale-body-medium-size)",
       }}
     >
       {blocks.map((block) => (

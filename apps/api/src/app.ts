@@ -71,6 +71,20 @@ import {
   getCalendarConnection,
   upsertCalendarConnection,
   deleteCalendarConnection,
+  upsertPublishedEventSignupWidget,
+  getEventSignupWidget,
+  listEventSignups,
+  listAllEventSignupsForExport,
+  getEventSignup,
+  deleteEventSignup,
+  upsertPublishedPaymentBlock,
+  getStripeConnection,
+  createStripeConnection,
+  deleteStripeConnection,
+  updatePaymentRecordStatus,
+  listPaymentRecordsForSite,
+  upsertPublishedSubscriptionBlock,
+  listSubscriptionRecordsForSite,
   type Pool,
   type PoolClient,
   type SiteRow,
@@ -90,7 +104,21 @@ import {
   type PostDocument,
   type SiteManifest,
 } from "@prefab/schema";
-import { blockSchemaRegistry, HERO_BLOCK_TYPE, heroDefaultProps, FORM_BLOCK_TYPE, BOOKING_BLOCK_TYPE, type FormProps, type BookingProps } from "@prefab/blocks";
+import {
+  blockSchemaRegistry,
+  HERO_BLOCK_TYPE,
+  heroDefaultProps,
+  FORM_BLOCK_TYPE,
+  BOOKING_BLOCK_TYPE,
+  EVENTSIGNUP_BLOCK_TYPE,
+  PAYMENT_BLOCK_TYPE,
+  SUBSCRIPTION_BLOCK_TYPE,
+  type FormProps,
+  type BookingProps,
+  type EventSignupProps,
+  type PaymentProps,
+  type SubscriptionProps,
+} from "@prefab/blocks";
 import { buildSiteBundle } from "@prefab/publish";
 import { TEMPLATE_MANIFESTS, loadTemplateCheckout } from "@prefab/templates/server";
 import {
@@ -102,6 +130,9 @@ import {
   cancelBookingAsOwner,
   cancelBookingByToken,
   rescheduleBookingByToken,
+  signUpForEvent,
+  createPaymentCheckout,
+  createSubscriptionCheckout,
   type TurnstileVerifier,
 } from "@prefab/runtime";
 import { ApiError, conflict, forbidden, notFound, planRequired, rateLimited, unauthorized, validationError } from "./errors.js";
@@ -129,7 +160,9 @@ import {
 } from "./lib/domain-provider.js";
 import { createTurnstileVerifier } from "./lib/turnstile.js";
 import { EmailFormNotifier } from "./lib/form-notifier.js";
+import { EmailEventSignupNotifier } from "./lib/event-signup-notifier.js";
 import { createPostgresFormManifestStore, createPostgresFormSettingsStore, createPostgresSubmissionStore } from "./lib/runtime-adapters.js";
+import { createPostgresEventSignupWidgetStore, createPostgresEventSignupStore } from "./lib/event-signup-adapters.js";
 import { createPostgresWebhookQueue, retryDueWebhookDeliveries } from "./lib/webhooks.js";
 import { createCalendarProvider, FakeCalendarProvider, type CalendarProvider } from "./lib/calendar-provider.js";
 import {
@@ -140,6 +173,23 @@ import {
 } from "./lib/booking-adapters.js";
 import { EmailBookingNotifier } from "./lib/booking-notifier.js";
 import { renderManageBookingPage } from "./lib/booking-manage-page.js";
+import { createTenantStripeProvider, FakeTenantStripeProvider, type TenantStripeProvider } from "./lib/tenant-stripe-provider.js";
+import {
+  createPostgresPaymentBlockStore,
+  createPostgresStripeConnectionStore,
+  createPostgresPaymentRecordStore,
+} from "./lib/payment-adapters.js";
+import { EmailPaymentNotifier } from "./lib/payment-notifier.js";
+import { EmailSubscriptionNotifier } from "./lib/subscription-notifier.js";
+import {
+  applySubscriptionCheckoutCompleted,
+  applyInvoicePaid,
+  applyInvoicePaymentFailed,
+  applySubscriptionUpdated,
+  applySubscriptionDeleted,
+  extractSubscriptionEventContext,
+} from "./lib/subscription-webhook.js";
+import { createPostgresSubscriptionBlockStore, createPostgresSubscriptionRecordStore } from "./lib/subscription-adapters.js";
 import {
   CreatePageBodySchema,
   CreatePostBodySchema,
@@ -172,6 +222,14 @@ import {
   RescheduleBookingBodySchema,
   ConnectCalendarBodySchema,
   AdvanceFakeCalendarBodySchema,
+  ListEventSignupsQuerySchema,
+  ExportEventSignupsQuerySchema,
+  SignUpForEventBodySchema,
+  ConnectStripeBodySchema,
+  AdvanceFakeStripeConnectBodySchema,
+  ListPaymentsQuerySchema,
+  AdvanceFakeSubscriptionBodySchema,
+  ListSubscriptionsQuerySchema,
 } from "./schemas.js";
 
 export interface AppDeps {
@@ -199,6 +257,16 @@ export interface AppDeps {
   calendarProviders?: Record<"google" | "microsoft", CalendarProvider>;
   /** Slice 9 — the sender used for booking confirmation/cancellation/reschedule emails specifically, same reasoning as formEmailSender. Defaults to createEmailSender()'s env-based choice. */
   bookingEmailSender?: EmailSender;
+  /** KAN-1138 — the sender used for event sign-up owner-notification emails specifically, same reasoning as formEmailSender/bookingEmailSender. Defaults to createEmailSender()'s env-based choice. */
+  eventSignupEmailSender?: EmailSender;
+  /** Slice 10 / KAN-1137 (ADR-0005) — a tenant's OWN Stripe, never the platform's (see stripeProvider above, a completely different integration). Defaults to createTenantStripeProvider()'s env-based choice (the fake unless STRIPE_CONNECT_CLIENT_ID and STRIPE_SECRET_KEY are both configured). Injectable so a test (or the dev-only advance endpoint) can reach the exact same fake instance the routes use. */
+  tenantStripeProvider?: TenantStripeProvider;
+  /** Stripe Connect's own webhook signing secret — a separate registration/secret from stripeWebhookSecret above. Defaults to STRIPE_CONNECT_WEBHOOK_SECRET. */
+  stripeConnectWebhookSecret?: string;
+  /** Slice 10 — the sender used for "you've been paid" owner notifications specifically, same reasoning as formEmailSender/bookingEmailSender. Defaults to createEmailSender()'s env-based choice. */
+  paymentEmailSender?: EmailSender;
+  /** KAN-1154 part 2 — the sender used for subscription-lifecycle owner notifications (new subscriber/past-due/canceled) specifically, same reasoning as paymentEmailSender. Defaults to createEmailSender()'s env-based choice. */
+  subscriptionEmailSender?: EmailSender;
 }
 
 function parseBody<T>(schema: z.ZodType<T>, body: unknown): T {
@@ -333,6 +401,40 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   const calendarSyncPort = createPostgresCalendarSyncPort(pool, calendarProviders);
   const bookingRateLimiter = createInMemoryRateLimiter({ limit: 20, windowMs: 60_000 });
   const bookingRuntimeDeps = { widgets: bookingWidgetStore, availability: availabilityStore, bookings: bookingStore, calendarSync: calendarSyncPort };
+  // KAN-1138's runtime API (ADR-0007/ADR-0010) — same "apps/api is the one
+  // place allowed to wire @prefab/runtime's storage interfaces to
+  // Postgres" discipline as forms/bookings.
+  const eventSignupWidgetStore = createPostgresEventSignupWidgetStore(pool);
+  const eventSignupStore = createPostgresEventSignupStore(pool);
+  const eventSignupSiteRateLimiter = createInMemoryRateLimiter({ limit: 20, windowMs: 60_000 });
+  const eventSignupIpRateLimiter = createInMemoryRateLimiter({ limit: 5, windowMs: 60_000 });
+  const eventSignupRateLimiter = {
+    consume(key: string) {
+      return key.startsWith("site:") ? eventSignupSiteRateLimiter.consume(key) : eventSignupIpRateLimiter.consume(key);
+    },
+  };
+  // Slice 10 / KAN-1137's runtime API (ADR-0005/ADR-0007/ADR-0010) — the
+  // same "apps/api is the one place allowed to wire @prefab/runtime's
+  // storage interfaces to Postgres (and a real payment provider)"
+  // discipline as forms/bookings above.
+  const tenantStripeProvider = deps.tenantStripeProvider ?? createTenantStripeProvider();
+  const stripeConnectWebhookSecret = deps.stripeConnectWebhookSecret ?? process.env.STRIPE_CONNECT_WEBHOOK_SECRET ?? "";
+  const paymentBlockStore = createPostgresPaymentBlockStore(pool);
+  const stripeConnectionStore = createPostgresStripeConnectionStore(pool);
+  const paymentRecordStore = createPostgresPaymentRecordStore(pool);
+  const paymentCheckoutDeps = { paymentBlocks: paymentBlockStore, stripeConnections: stripeConnectionStore, paymentRecords: paymentRecordStore, tenantStripe: tenantStripeProvider };
+  // KAN-1154 / ADR-0016 — creation only (see that ADR): `stripeConnections`
+  // is the exact same store instance the one-off payment path above uses,
+  // never a second one, since a connected Stripe account is the same
+  // account either way.
+  const subscriptionBlockStore = createPostgresSubscriptionBlockStore(pool);
+  const subscriptionRecordStore = createPostgresSubscriptionRecordStore(pool);
+  const subscriptionCheckoutDeps = {
+    subscriptionBlocks: subscriptionBlockStore,
+    stripeConnections: stripeConnectionStore,
+    subscriptionRecords: subscriptionRecordStore,
+    tenantStripe: tenantStripeProvider,
+  };
   // Default is 1 MiB — too small for asset.upload's JSON+base64 body (up
   // to ~10.9 MiB for an 8 MiB file at base64's ~4/3 expansion). Comfortably
   // above that so a legitimately-sized upload never hits Fastify's own
@@ -344,6 +446,12 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   const formNotifier = new EmailFormNotifier(formEmailSender);
   const bookingEmailSender = deps.bookingEmailSender ?? createEmailSender(email);
   const bookingNotifier = new EmailBookingNotifier(bookingEmailSender);
+  const eventSignupEmailSender = deps.eventSignupEmailSender ?? createEmailSender(email);
+  const eventSignupNotifier = new EmailEventSignupNotifier(eventSignupEmailSender);
+  const paymentEmailSender = deps.paymentEmailSender ?? createEmailSender(email);
+  const paymentNotifier = new EmailPaymentNotifier(paymentEmailSender);
+  const subscriptionEmailSender = deps.subscriptionEmailSender ?? createEmailSender(email);
+  const subscriptionNotifier = new EmailSubscriptionNotifier(subscriptionEmailSender);
 
   // Stripe webhook signature verification needs the exact raw request
   // bytes (Stripe-Signature is an HMAC over the literal body, not the
@@ -568,6 +676,13 @@ export function buildApp(deps: AppDeps): FastifyInstance {
           title: rekeyed.title,
           slug: rekeyed.slug,
           blocks: rekeyed.blocks,
+          // Template checkout files on disk are read as a plain, unvalidated
+          // cast to PageDocument (packages/templates/src/server.ts) rather
+          // than through PageDocumentSchema, so a template authored before
+          // ADR-0014 has no `layoutMode` key at runtime despite the type
+          // saying otherwise — default it the same way every other
+          // pre-migration document defaults, rather than trust the cast.
+          layoutMode: rekeyed.layoutMode ?? "flow",
           expectedVersion: 0,
         });
         if (!written.ok) throw new Error("unreachable: brand-new page cannot already be at a later version");
@@ -649,6 +764,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
       title: body.title,
       schemaVersion: 1,
       version: body.expectedVersion,
+      layoutMode: body.layoutMode,
       blocks: body.blocks,
     };
 
@@ -674,6 +790,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
         title: validated.document.title,
         slug: validated.document.slug,
         blocks: validated.document.blocks,
+        layoutMode: validated.document.layoutMode,
         expectedVersion: body.expectedVersion,
       });
 
@@ -1416,6 +1533,389 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     return { ok: true };
   });
 
+  // ---- KAN-1138: event sign-ups — owner-authenticated, dashboard-facing
+  // reads/mutation. The visitor-facing runtime API (sign-up create) lives
+  // further below, alongside the runtime form/booking routes it mirrors. ----
+
+  // ---- eventSignupWidget.get: the published widget's own manifest (heading/fields/capacity/waitlistEnabled), for the dashboard — mirrors form.get, minus a separate settings row (there is none: see 0009_slice10_events.sql's own header comment). ----
+  app.get<{ Params: { siteId: string; widgetId: string } }>("/v1/sites/:siteId/event-signups/:widgetId", async (request) => {
+    const principal = await requirePrincipal(request);
+    const { siteId } = await authorizeSite(pool, principal, request.params.siteId);
+    const widget = await withTenantContext(pool, { siteId }, (client) => getEventSignupWidget(client, siteId, request.params.widgetId));
+    if (!widget) throw notFound("event sign-up widget not found");
+    return widget;
+  });
+
+  // ---- eventSignup.list ----
+  app.get<{ Params: { siteId: string; widgetId: string } }>("/v1/sites/:siteId/event-signups/:widgetId/signups", async (request) => {
+    const principal = await requirePrincipal(request);
+    const { siteId } = await authorizeSite(pool, principal, request.params.siteId);
+    const query = parseQuery(ListEventSignupsQuerySchema, request.query);
+    return withTenantContext(pool, { siteId }, (client) => listEventSignups(client, siteId, request.params.widgetId, query));
+  });
+
+  // ---- eventSignup.export: CSV/JSON, one column per declared field plus status/position/submitted-at (mirrors submission.export) ----
+  app.get<{ Params: { siteId: string; widgetId: string } }>(
+    "/v1/sites/:siteId/event-signups/:widgetId/signups/export",
+    async (request, reply) => {
+      const principal = await requirePrincipal(request);
+      const { siteId } = await authorizeSite(pool, principal, request.params.siteId, { minRole: "editor" });
+      const { widgetId } = request.params;
+      const query = parseQuery(ExportEventSignupsQuerySchema, request.query);
+
+      const { widget, signups } = await withTenantContext(pool, { siteId }, async (client) => {
+        const widget = await getEventSignupWidget(client, siteId, widgetId);
+        const signups = await listAllEventSignupsForExport(client, siteId, widgetId);
+        return { widget, signups };
+      });
+      if (!widget) throw notFound("event sign-up widget not found");
+
+      if (query.format === "json") {
+        return signups.map((s) => ({ id: s.id, createdAt: s.createdAt, status: s.status, position: s.position, values: s.values }));
+      }
+
+      const columns = ["id", "createdAt", "status", "position", ...widget.fields.map((f) => f.name)];
+      const rows = signups.map((s) => ({
+        id: s.id,
+        createdAt: s.createdAt.toISOString(),
+        status: s.status,
+        position: s.position === null ? "" : String(s.position),
+        ...Object.fromEntries(Object.entries(s.values).map(([k, v]) => [k, String(v)])),
+      }));
+      reply.type("text/csv; charset=utf-8");
+      reply.header("content-disposition", `attachment; filename="${widgetId}-signups.csv"`);
+      return reply.send(toCsv(columns, rows));
+    },
+  );
+
+  // ---- eventSignup.delete: per-record deletion for PDPA/GDPR (mirrors submission.delete) ----
+  app.delete<{ Params: { siteId: string; widgetId: string; signupId: string } }>(
+    "/v1/sites/:siteId/event-signups/:widgetId/signups/:signupId",
+    async (request) => {
+      const principal = await requirePrincipal(request);
+      const { siteId } = await authorizeSite(pool, principal, request.params.siteId, { minRole: "editor" });
+      const { signupId } = request.params;
+      const existing = await withTenantContext(pool, { siteId }, (client) => getEventSignup(client, siteId, signupId));
+      if (!existing || existing.widgetId !== request.params.widgetId) throw notFound("event sign-up not found");
+      await withTenantContext(pool, { siteId }, (client) => deleteEventSignup(client, siteId, signupId));
+      return { removed: true };
+    },
+  );
+
+  // ---- stripe.connect / stripe.disconnect / stripe.status (Slice 10 /
+  // KAN-1137, ADR-0005) — owner-only (billing-adjacent credential
+  // management, same minRole as calendar.connect/token.create). This is
+  // the TENANT's own Stripe account (bring-your-own), never the platform's
+  // (Slice 8's stripeProvider above) — "connect" hands back a real access
+  // token only for a RealTenantStripeProvider (UNVERIFIED — see
+  // tenant-stripe-provider.ts's module comment); the fake always succeeds
+  // synchronously, no real OAuth consent screen required. ----
+  app.post<{ Params: { siteId: string } }>("/v1/sites/:siteId/stripe", async (request) => {
+    const principal = await requirePrincipal(request);
+    const { siteId } = await authorizeSite(pool, principal, request.params.siteId, { minRole: "owner" });
+    const body = parseBody(ConnectStripeBodySchema, request.body);
+    const tokens = await tenantStripeProvider.connect({ authorizationCode: body.authorizationCode });
+    const connection = await withTenantContext(pool, { siteId }, (client) =>
+      createStripeConnection(client, { id: newUlid(), siteId, stripeAccountId: tokens.stripeAccountId, accessToken: tokens.accessToken }),
+    );
+    return { id: connection.id, stripeAccountId: connection.stripeAccountId, status: connection.status };
+  });
+
+  app.delete<{ Params: { siteId: string } }>("/v1/sites/:siteId/stripe", async (request) => {
+    const principal = await requirePrincipal(request);
+    const { siteId } = await authorizeSite(pool, principal, request.params.siteId, { minRole: "owner" });
+    await withTenantContext(pool, { siteId }, (client) => deleteStripeConnection(client, siteId));
+    return { removed: true };
+  });
+
+  // Never returns the access token — the dashboard only needs
+  // stripeAccountId/status to render a connected/disconnected badge, same
+  // discipline as calendar.status.
+  app.get<{ Params: { siteId: string } }>("/v1/sites/:siteId/stripe", async (request) => {
+    const principal = await requirePrincipal(request);
+    const { siteId } = await authorizeSite(pool, principal, request.params.siteId);
+    const connection = await withTenantContext(pool, { siteId }, (client) => getStripeConnection(client, siteId));
+    if (!connection) return null;
+    return { id: connection.id, stripeAccountId: connection.stripeAccountId, status: connection.status };
+  });
+
+  // ---- payment.list: owner-facing read of a Payment block's own checkout
+  // history — mirrors submission.list exactly. ----
+  app.get<{ Params: { siteId: string; blockId: string } }>("/v1/sites/:siteId/payment-blocks/:blockId/payments", async (request) => {
+    const principal = await requirePrincipal(request);
+    const { siteId } = await authorizeSite(pool, principal, request.params.siteId);
+    const query = parseQuery(ListPaymentsQuerySchema, request.query);
+    return withTenantContext(pool, { siteId }, (client) => listPaymentRecordsForSite(client, siteId, request.params.blockId, query));
+  });
+
+  // ---- subscription.list (KAN-1154 part 2): owner-facing read of a
+  // Subscription block's own lifecycle history — mirrors payment.list
+  // exactly (point 3 of this card's own scope: a data-access surface
+  // consistent with the existing one-off pattern, not a new dashboard
+  // screen). Every column this part 2 populates (status, current_period_end,
+  // cancel_at_period_end, canceled_at, stripe_subscription_id) is already on
+  // the row `listSubscriptionRecordsForSite` returns — no separate
+  // projection needed. ----
+  app.get<{ Params: { siteId: string; blockId: string } }>("/v1/sites/:siteId/subscription-blocks/:blockId/subscriptions", async (request) => {
+    const principal = await requirePrincipal(request);
+    const { siteId } = await authorizeSite(pool, principal, request.params.siteId);
+    const query = parseQuery(ListSubscriptionsQuerySchema, request.query);
+    return withTenantContext(pool, { siteId }, (client) => listSubscriptionRecordsForSite(client, siteId, request.params.blockId, query));
+  });
+
+  // ---- Dev-only: drive the fake tenant-Stripe provider's state, the same
+  // "dev-only bootstrap, not a product mutation" pattern as
+  // /v1/dev/calendar/:siteId/advance and the EXISTING (unrelated)
+  // /v1/dev/stripe/:accountId/advance — simulates a checkout.session.
+  // completed webhook arriving, with no real Stripe account in this
+  // environment. Keyed by siteId (not by session id) so a test already
+  // holding a siteId can drive this with no extra lookup, exactly like
+  // calendar's own advance route. ----
+  app.post<{ Params: { siteId: string } }>("/v1/dev/stripe-connect/:siteId/advance", async (request) => {
+    if (!(tenantStripeProvider instanceof FakeTenantStripeProvider)) {
+      throw notFound("the fake tenant-Stripe provider is not in use — nothing to advance");
+    }
+    const { siteId } = request.params;
+    const body = parseBody(AdvanceFakeStripeConnectBodySchema, request.body);
+
+    const updated = await withTenantContext(pool, { siteId }, (client) =>
+      updatePaymentRecordStatus(client, siteId, body.sessionId, {
+        status: "completed",
+        stripePaymentIntentId: `fake_pi_${newUlid()}`,
+        buyerEmail: body.buyerEmail ?? null,
+      }),
+    );
+    if (!updated) throw notFound("no payment record for that session id on this site");
+
+    const site = await withTenantContext(pool, { siteId }, (client) => getSite(client, siteId));
+    const owner = site ? await withTenantContext(pool, {}, (client) => getAccount(client, site.ownerId)) : null;
+    if (owner?.email) {
+      await paymentNotifier
+        .notifyCompleted({ ownerEmail: owner.email, amount: updated.amount, currency: updated.currency, buyerEmail: updated.buyerEmail })
+        .catch(() => {});
+    }
+
+    return { record: updated };
+  });
+
+  // ---- Dev-only: drive the subscription lifecycle state machine
+  // (KAN-1154 part 2 / ADR-0016) the same way advance-stripe-connect above
+  // drives one-off payments — one flexible route keyed by `event` rather
+  // than five, since every event this state machine handles shares the
+  // same "resolve siteId (already known — this route is keyed by it, no
+  // webhook payload to parse), apply one guarded transition, notify
+  // best-effort" shape; see subscription-webhook.ts, which this route
+  // calls into UNCHANGED from what the real webhook below calls — the two
+  // can never disagree about what a given event does. ----
+  app.post<{ Params: { siteId: string } }>("/v1/dev/stripe-connect/:siteId/subscriptions/advance", async (request) => {
+    if (!(tenantStripeProvider instanceof FakeTenantStripeProvider)) {
+      throw notFound("the fake tenant-Stripe provider is not in use — nothing to advance");
+    }
+    const { siteId } = request.params;
+    const body = parseBody(AdvanceFakeSubscriptionBodySchema, request.body);
+    const eventId = body.eventId ?? newUlid();
+    const deps = { pool, notifier: subscriptionNotifier };
+
+    switch (body.event) {
+      case "checkout_completed": {
+        if (!body.stripeCheckoutSessionId || !body.stripeSubscriptionId || !body.stripeCustomerId) {
+          throw validationError("checkout_completed needs stripeCheckoutSessionId, stripeSubscriptionId and stripeCustomerId");
+        }
+        const outcome = await applySubscriptionCheckoutCompleted(
+          eventId,
+          {
+            siteId,
+            stripeCheckoutSessionId: body.stripeCheckoutSessionId,
+            stripeSubscriptionId: body.stripeSubscriptionId,
+            stripeCustomerId: body.stripeCustomerId,
+            buyerEmail: body.buyerEmail ?? null,
+            currentPeriodEnd: body.currentPeriodEnd ?? null,
+          },
+          deps,
+        );
+        if (outcome.status === "no_match") throw notFound("no subscription record for that checkout session id on this site (or it is no longer 'incomplete')");
+        return outcome;
+      }
+      case "invoice_paid": {
+        if (!body.stripeSubscriptionId) throw validationError("invoice_paid needs stripeSubscriptionId");
+        const outcome = await applyInvoicePaid(eventId, { siteId, stripeSubscriptionId: body.stripeSubscriptionId }, deps);
+        if (outcome.status === "no_match") throw notFound("no subscription record in a state invoice.paid can apply to");
+        return outcome;
+      }
+      case "invoice_payment_failed": {
+        if (!body.stripeSubscriptionId) throw validationError("invoice_payment_failed needs stripeSubscriptionId");
+        const outcome = await applyInvoicePaymentFailed(eventId, { siteId, stripeSubscriptionId: body.stripeSubscriptionId }, deps);
+        if (outcome.status === "no_match") throw notFound("no subscription record in a state invoice.payment_failed can apply to");
+        return outcome;
+      }
+      case "subscription_updated": {
+        if (!body.stripeSubscriptionId || !body.status) throw validationError("subscription_updated needs stripeSubscriptionId and status");
+        const outcome = await applySubscriptionUpdated(
+          eventId,
+          {
+            siteId,
+            stripeSubscriptionId: body.stripeSubscriptionId,
+            status: body.status,
+            currentPeriodEnd: body.currentPeriodEnd ?? null,
+            cancelAtPeriodEnd: body.cancelAtPeriodEnd ?? false,
+            canceledAt: body.status === "canceled" ? new Date() : null,
+          },
+          deps,
+        );
+        if (outcome.status === "no_match") throw notFound("no subscription record in a state customer.subscription.updated can apply to");
+        return outcome;
+      }
+      case "subscription_deleted": {
+        if (!body.stripeSubscriptionId) throw validationError("subscription_deleted needs stripeSubscriptionId");
+        const outcome = await applySubscriptionDeleted(eventId, { siteId, stripeSubscriptionId: body.stripeSubscriptionId, canceledAt: new Date() }, deps);
+        if (outcome.status === "no_match") throw notFound("no subscription record in a state customer.subscription.deleted can apply to");
+        return outcome;
+      }
+    }
+  });
+
+  // ---- Real Stripe Connect webhooks (Slice 10 / KAN-1137): the real,
+  // signature-verified inbound path — UNVERIFIED against a live Stripe
+  // account (see tenant-stripe-provider.ts's module comment). Distinct
+  // registration/secret from Slice 8's own /v1/webhooks/stripe (a
+  // completely different Stripe integration — see that route's own
+  // comment). No tenant context and no siteId in this route's own URL at
+  // all (unlike the dev-advance route above), so this relies on
+  // `client_reference_id`/`metadata.siteId`, which
+  // RealTenantStripeProvider.createCheckoutSession threads through
+  // Checkout for exactly this reason (see CreateCheckoutSessionInput's own
+  // comment) — the same "carry an identifier through the event you'll
+  // need it back from" mechanism Slice 8's own webhook already uses for
+  // `accountId`. ----
+  app.post("/v1/webhooks/stripe-connect", async (request, reply) => {
+    const rawBody = (request as FastifyRequest & { rawBody?: Buffer }).rawBody ?? Buffer.from("");
+    const signature = request.headers["stripe-signature"] as string | undefined;
+
+    let event;
+    try {
+      event = tenantStripeProvider.constructEvent(rawBody, signature, stripeConnectWebhookSecret);
+    } catch (error) {
+      throw validationError(error instanceof Error ? error.message : "invalid webhook payload");
+    }
+
+    if (event.type === "checkout.session.completed") {
+      const object = event.data.object as {
+        id?: string;
+        mode?: string;
+        payment_intent?: string;
+        subscription?: string;
+        customer?: string;
+        customer_details?: { email?: string };
+        metadata?: { siteId?: string };
+      };
+
+      // KAN-1154 part 2 / ADR-0016: a subscription-mode Checkout session —
+      // dispatched to its own handler and returned early, entirely before
+      // the one-off payment branch immediately below, whose own code is
+      // untouched by this part. Discriminated by Checkout's own `mode`
+      // field (always present on a real Checkout Session, and not
+      // something a tampered client ever influences — this event comes
+      // from Stripe, signature-verified above, not from a visitor).
+      if (object.mode === "subscription") {
+        const siteId = object.metadata?.siteId;
+        if (siteId && object.id && object.subscription && object.customer) {
+          await applySubscriptionCheckoutCompleted(
+            event.id,
+            {
+              siteId,
+              stripeCheckoutSessionId: object.id,
+              stripeSubscriptionId: object.subscription,
+              stripeCustomerId: object.customer,
+              buyerEmail: object.customer_details?.email ?? null,
+              currentPeriodEnd: null,
+            },
+            { pool, notifier: subscriptionNotifier },
+          );
+        }
+        reply.status(200);
+        return { ok: true };
+      }
+
+      const siteId = object.metadata?.siteId;
+      if (siteId && object.id) {
+        const updated = await withTenantContext(pool, { siteId }, (client) =>
+          updatePaymentRecordStatus(client, siteId, object.id!, {
+            status: "completed",
+            stripePaymentIntentId: object.payment_intent ?? null,
+            buyerEmail: object.customer_details?.email ?? null,
+          }),
+        );
+        if (updated) {
+          const site = await withTenantContext(pool, { siteId }, (client) => getSite(client, siteId));
+          const owner = site ? await withTenantContext(pool, {}, (client) => getAccount(client, site.ownerId)) : null;
+          if (owner?.email) {
+            await paymentNotifier
+              .notifyCompleted({ ownerEmail: owner.email, amount: updated.amount, currency: updated.currency, buyerEmail: updated.buyerEmail })
+              .catch(() => {});
+          }
+        }
+      }
+      reply.status(200);
+      return { ok: true };
+    }
+
+    // ---- KAN-1154 part 2 / ADR-0016: subscription lifecycle events —
+    // see subscription-webhook.ts for the state machine these funnel into
+    // (the same functions the dev-advance route above calls, so the two
+    // can never disagree about what a given event does). siteId/subscription
+    // id are resolved from Stripe's own payload via
+    // extractSubscriptionEventContext — see that function's own comment for
+    // exactly which (UNVERIFIED, more than one Stripe API version's shape
+    // considered) fields this reads. ----
+    if (event.type === "invoice.paid" || event.type === "invoice.payment_failed") {
+      const { siteId, stripeSubscriptionId } = extractSubscriptionEventContext(event.type, event.data.object);
+      if (siteId && stripeSubscriptionId) {
+        const apply = event.type === "invoice.paid" ? applyInvoicePaid : applyInvoicePaymentFailed;
+        await apply(event.id, { siteId, stripeSubscriptionId }, { pool, notifier: subscriptionNotifier });
+      }
+      reply.status(200);
+      return { ok: true };
+    }
+
+    if (event.type === "customer.subscription.updated") {
+      const { siteId, stripeSubscriptionId } = extractSubscriptionEventContext(event.type, event.data.object);
+      const object = event.data.object as { status?: string; current_period_end?: number; cancel_at_period_end?: boolean; canceled_at?: number };
+      if (siteId && stripeSubscriptionId && object.status) {
+        await applySubscriptionUpdated(
+          event.id,
+          {
+            siteId,
+            stripeSubscriptionId,
+            status: object.status,
+            currentPeriodEnd: object.current_period_end ? new Date(object.current_period_end * 1000) : null,
+            cancelAtPeriodEnd: object.cancel_at_period_end ?? false,
+            canceledAt: object.canceled_at ? new Date(object.canceled_at * 1000) : null,
+          },
+          { pool, notifier: subscriptionNotifier },
+        );
+      }
+      reply.status(200);
+      return { ok: true };
+    }
+
+    if (event.type === "customer.subscription.deleted") {
+      const { siteId, stripeSubscriptionId } = extractSubscriptionEventContext(event.type, event.data.object);
+      const object = event.data.object as { canceled_at?: number };
+      if (siteId && stripeSubscriptionId) {
+        await applySubscriptionDeleted(
+          event.id,
+          { siteId, stripeSubscriptionId, canceledAt: object.canceled_at ? new Date(object.canceled_at * 1000) : new Date() },
+          { pool, notifier: subscriptionNotifier },
+        );
+      }
+      reply.status(200);
+      return { ok: true };
+    }
+
+    reply.status(200);
+    return { ok: true };
+  });
+
   // ---- site.outline (R14) ----
   app.get<{ Params: { siteId: string } }>("/v1/sites/:siteId/outline", async (request) => {
     const principal = await requirePrincipal(request);
@@ -1480,6 +1980,60 @@ export function buildApp(deps: AppDeps): FastifyInstance {
               heading: props.heading,
               description: props.description,
               confirmLabel: props.confirmLabel,
+              successMessage: props.successMessage,
+            });
+          } else if (block.type === EVENTSIGNUP_BLOCK_TYPE) {
+            // KAN-1138: snapshot every EventSignup block's field manifest
+            // and capacity into `event_signup_widgets` — mirrors the Form
+            // and Booking loops immediately above, and for the identical
+            // reason (the runtime resolves a widgetId with no tenant
+            // context at all).
+            const props = block.props as EventSignupProps;
+            await upsertPublishedEventSignupWidget(client, {
+              id: block.id,
+              siteId,
+              heading: props.heading,
+              fields: props.fields,
+              capacity: props.capacity,
+              waitlistEnabled: props.waitlistEnabled,
+              submitLabel: props.submitLabel,
+            });
+          } else if (block.type === PAYMENT_BLOCK_TYPE) {
+            // Slice 10 / KAN-1137: snapshot every Payment block's own props
+            // into `payment_blocks` — mirrors the Form/Booking loops above,
+            // and for the identical reason (the runtime resolves a blockId
+            // with no tenant context at all, and must never trust a
+            // visitor-supplied amount — see 0009_slice10_payments.sql's
+            // header comment).
+            const props = block.props as PaymentProps;
+            await upsertPublishedPaymentBlock(client, {
+              id: block.id,
+              siteId,
+              heading: props.heading,
+              description: props.description,
+              buttonLabel: props.buttonLabel,
+              amount: props.amount,
+              currency: props.currency,
+              successMessage: props.successMessage,
+            });
+          } else if (block.type === SUBSCRIPTION_BLOCK_TYPE) {
+            // KAN-1154 / ADR-0016: snapshot every Subscription block's own
+            // props into `subscription_blocks` — mirrors the Payment loop
+            // immediately above, and for the identical reason (the runtime
+            // resolves a blockId with no tenant context, and must never
+            // trust a visitor-supplied price/interval/trial — see
+            // 0012_kan1154_subscriptions.sql's header comment).
+            const props = block.props as SubscriptionProps;
+            await upsertPublishedSubscriptionBlock(client, {
+              id: block.id,
+              siteId,
+              heading: props.heading,
+              description: props.description,
+              buttonLabel: props.buttonLabel,
+              price: props.price,
+              currency: props.currency,
+              interval: props.interval,
+              trialPeriodDays: props.trialPeriodDays,
               successMessage: props.successMessage,
             });
           }
@@ -1829,6 +2383,155 @@ export function buildApp(deps: AppDeps): FastifyInstance {
         throw conflict("that slot is no longer available");
       case "invalid":
         throw validationError("invalid reschedule request", result.issues);
+    }
+  });
+
+  // ---- The runtime API (KAN-1138, ADR-0007/ADR-0010): event sign-ups' own
+  // visitor-facing surface, the same shape as the Form/Booking routes above
+  // — no principal, CORS opened explicitly since a published site's own
+  // origin is never known in advance. Every storage decision lives in
+  // @prefab/runtime's signUpForEvent; this route is just the HTTP-and-CORS
+  // shell around it, exactly what apps/self-host reimplements in its own
+  // shell for R10. ----
+  app.options("/v1/runtime/event-signups/:widgetId/signups", async (_request, reply) => {
+    reply
+      .header("access-control-allow-origin", "*")
+      .header("access-control-allow-methods", "POST, OPTIONS")
+      .header("access-control-allow-headers", "content-type")
+      .status(204)
+      .send();
+  });
+
+  app.post<{ Params: { widgetId: string } }>("/v1/runtime/event-signups/:widgetId/signups", async (request, reply) => {
+    reply.header("access-control-allow-origin", "*");
+    const body = parseBody(SignUpForEventBodySchema, request.body);
+
+    const widget = await eventSignupWidgetStore.getWidget(request.params.widgetId);
+    const site = widget ? await withTenantContext(pool, { siteId: widget.siteId }, (client) => getSite(client, widget.siteId)) : null;
+    const owner = site ? await withTenantContext(pool, {}, (client) => getAccount(client, site.ownerId)) : null;
+
+    const result = await signUpForEvent(
+      { id: newUlid(), widgetId: request.params.widgetId, values: body.values, ip: request.ip, ownerEmail: owner?.email ?? null },
+      { widgets: eventSignupWidgetStore, signups: eventSignupStore, rateLimiter: eventSignupRateLimiter, notifier: eventSignupNotifier },
+    );
+
+    switch (result.status) {
+      case "confirmed":
+        reply.status(201);
+        return { status: "confirmed", id: result.signupId };
+      case "waitlisted":
+        reply.status(201);
+        return { status: "waitlisted", id: result.signupId, position: result.position };
+      case "full":
+        throw conflict("this event is full");
+      case "not_found":
+        throw notFound("event sign-up widget not found");
+      case "invalid":
+        throw validationError("sign-up failed validation", result.issues);
+      case "rate_limited":
+        reply.header("retry-after", String(Math.ceil(result.retryAfterMs / 1000)));
+        throw rateLimited("too many sign-up requests — try again shortly");
+    }
+  });
+
+  // ---- The runtime API (Slice 10 / KAN-1137, ADR-0005/ADR-0007/ADR-0010):
+  // the Payment block's own visitor-facing surface, the same shape as the
+  // Form/Booking routes above — no principal, CORS opened explicitly since
+  // a published site's own origin is never known in advance. No request
+  // body at all: amount/currency are resolved from the block's own
+  // publish-safe snapshot (`payment_blocks`), never from the visitor's own
+  // request, or a tampered request could pay whatever it wants. Every
+  // storage and provider decision lives in @prefab/runtime's
+  // createPaymentCheckout; this route is just the HTTP-and-CORS shell
+  // around it, exactly what apps/self-host reimplements in its own shell
+  // for R10. successUrl/cancelUrl are derived from the visitor's own
+  // Referer header (the page the checkout button was clicked from) rather
+  // than accepted as body input, for the same "never trust visitor input
+  // for anything this route acts on" reasoning as the missing amount. ----
+  app.options("/v1/runtime/payment-blocks/:blockId/checkout", async (_request, reply) => {
+    reply.header("access-control-allow-origin", "*").header("access-control-allow-methods", "POST, OPTIONS").status(204).send();
+  });
+
+  app.post<{ Params: { blockId: string } }>("/v1/runtime/payment-blocks/:blockId/checkout", async (request, reply) => {
+    reply.header("access-control-allow-origin", "*");
+    const { blockId } = request.params;
+    const referer = (request.headers.referer as string | undefined) ?? (request.headers.origin as string | undefined) ?? runtimeApiUrl ?? "http://localhost/";
+
+    function returnUrl(outcome: "success" | "cancel"): string {
+      let url: URL;
+      try {
+        url = new URL(referer);
+      } catch {
+        url = new URL("http://localhost/");
+      }
+      url.searchParams.set("pf_payment", outcome);
+      url.searchParams.set("pf_payment_block", blockId);
+      return url.toString();
+    }
+
+    const result = await createPaymentCheckout(
+      { id: newUlid(), blockId, successUrl: returnUrl("success"), cancelUrl: returnUrl("cancel") },
+      paymentCheckoutDeps,
+    );
+
+    switch (result.status) {
+      case "created":
+        reply.status(201);
+        return { url: result.url };
+      case "not_found":
+        throw notFound("payment block not found");
+      case "no_connection":
+        throw notFound("this site has not connected a Stripe account");
+      case "provider_error":
+        throw new ApiError("internal", "the payment provider could not create a checkout session");
+    }
+  });
+
+  // ---- The runtime API (KAN-1154 / ADR-0016, part 1 — creation only): the
+  // Subscription block's own visitor-facing surface, the same shape as the
+  // Payment route immediately above — no principal, CORS opened explicitly,
+  // no request body, price/currency/interval/trialPeriodDays resolved from
+  // the block's own publish-safe snapshot (`subscription_blocks`), never
+  // from the visitor's own request. This route does not, and cannot yet,
+  // reflect what happens to the subscription after Stripe Checkout
+  // completes — see ADR-0016 for what part 2's webhook consumer still
+  // owes the record this creates. ----
+  app.options("/v1/runtime/subscription-blocks/:blockId/checkout", async (_request, reply) => {
+    reply.header("access-control-allow-origin", "*").header("access-control-allow-methods", "POST, OPTIONS").status(204).send();
+  });
+
+  app.post<{ Params: { blockId: string } }>("/v1/runtime/subscription-blocks/:blockId/checkout", async (request, reply) => {
+    reply.header("access-control-allow-origin", "*");
+    const { blockId } = request.params;
+    const referer = (request.headers.referer as string | undefined) ?? (request.headers.origin as string | undefined) ?? runtimeApiUrl ?? "http://localhost/";
+
+    function returnUrl(outcome: "success" | "cancel"): string {
+      let url: URL;
+      try {
+        url = new URL(referer);
+      } catch {
+        url = new URL("http://localhost/");
+      }
+      url.searchParams.set("pf_subscription", outcome);
+      url.searchParams.set("pf_subscription_block", blockId);
+      return url.toString();
+    }
+
+    const result = await createSubscriptionCheckout(
+      { id: newUlid(), blockId, successUrl: returnUrl("success"), cancelUrl: returnUrl("cancel") },
+      subscriptionCheckoutDeps,
+    );
+
+    switch (result.status) {
+      case "created":
+        reply.status(201);
+        return { url: result.url };
+      case "not_found":
+        throw notFound("subscription block not found");
+      case "no_connection":
+        throw notFound("this site has not connected a Stripe account");
+      case "provider_error":
+        throw new ApiError("internal", "the payment provider could not create a checkout session");
     }
   });
 
