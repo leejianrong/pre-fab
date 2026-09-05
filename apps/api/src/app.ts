@@ -83,6 +83,7 @@ import {
   deleteStripeConnection,
   updatePaymentRecordStatus,
   listPaymentRecordsForSite,
+  upsertPublishedSubscriptionBlock,
   type Pool,
   type PoolClient,
   type SiteRow,
@@ -110,10 +111,12 @@ import {
   BOOKING_BLOCK_TYPE,
   EVENTSIGNUP_BLOCK_TYPE,
   PAYMENT_BLOCK_TYPE,
+  SUBSCRIPTION_BLOCK_TYPE,
   type FormProps,
   type BookingProps,
   type EventSignupProps,
   type PaymentProps,
+  type SubscriptionProps,
 } from "@prefab/blocks";
 import { buildSiteBundle } from "@prefab/publish";
 import { TEMPLATE_MANIFESTS, loadTemplateCheckout } from "@prefab/templates/server";
@@ -128,6 +131,7 @@ import {
   rescheduleBookingByToken,
   signUpForEvent,
   createPaymentCheckout,
+  createSubscriptionCheckout,
   type TurnstileVerifier,
 } from "@prefab/runtime";
 import { ApiError, conflict, forbidden, notFound, planRequired, rateLimited, unauthorized, validationError } from "./errors.js";
@@ -175,6 +179,7 @@ import {
   createPostgresPaymentRecordStore,
 } from "./lib/payment-adapters.js";
 import { EmailPaymentNotifier } from "./lib/payment-notifier.js";
+import { createPostgresSubscriptionBlockStore, createPostgresSubscriptionRecordStore } from "./lib/subscription-adapters.js";
 import {
   CreatePageBodySchema,
   CreatePostBodySchema,
@@ -404,6 +409,18 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   const stripeConnectionStore = createPostgresStripeConnectionStore(pool);
   const paymentRecordStore = createPostgresPaymentRecordStore(pool);
   const paymentCheckoutDeps = { paymentBlocks: paymentBlockStore, stripeConnections: stripeConnectionStore, paymentRecords: paymentRecordStore, tenantStripe: tenantStripeProvider };
+  // KAN-1154 / ADR-0016 — creation only (see that ADR): `stripeConnections`
+  // is the exact same store instance the one-off payment path above uses,
+  // never a second one, since a connected Stripe account is the same
+  // account either way.
+  const subscriptionBlockStore = createPostgresSubscriptionBlockStore(pool);
+  const subscriptionRecordStore = createPostgresSubscriptionRecordStore(pool);
+  const subscriptionCheckoutDeps = {
+    subscriptionBlocks: subscriptionBlockStore,
+    stripeConnections: stripeConnectionStore,
+    subscriptionRecords: subscriptionRecordStore,
+    tenantStripe: tenantStripeProvider,
+  };
   // Default is 1 MiB — too small for asset.upload's JSON+base64 body (up
   // to ~10.9 MiB for an 8 MiB file at base64's ~4/3 expansion). Comfortably
   // above that so a legitimately-sized upload never hits Fastify's own
@@ -1808,6 +1825,26 @@ export function buildApp(deps: AppDeps): FastifyInstance {
               currency: props.currency,
               successMessage: props.successMessage,
             });
+          } else if (block.type === SUBSCRIPTION_BLOCK_TYPE) {
+            // KAN-1154 / ADR-0016: snapshot every Subscription block's own
+            // props into `subscription_blocks` — mirrors the Payment loop
+            // immediately above, and for the identical reason (the runtime
+            // resolves a blockId with no tenant context, and must never
+            // trust a visitor-supplied price/interval/trial — see
+            // 0012_kan1154_subscriptions.sql's header comment).
+            const props = block.props as SubscriptionProps;
+            await upsertPublishedSubscriptionBlock(client, {
+              id: block.id,
+              siteId,
+              heading: props.heading,
+              description: props.description,
+              buttonLabel: props.buttonLabel,
+              price: props.price,
+              currency: props.currency,
+              interval: props.interval,
+              trialPeriodDays: props.trialPeriodDays,
+              successMessage: props.successMessage,
+            });
           }
         }
       }
@@ -2252,6 +2289,54 @@ export function buildApp(deps: AppDeps): FastifyInstance {
         return { url: result.url };
       case "not_found":
         throw notFound("payment block not found");
+      case "no_connection":
+        throw notFound("this site has not connected a Stripe account");
+      case "provider_error":
+        throw new ApiError("internal", "the payment provider could not create a checkout session");
+    }
+  });
+
+  // ---- The runtime API (KAN-1154 / ADR-0016, part 1 — creation only): the
+  // Subscription block's own visitor-facing surface, the same shape as the
+  // Payment route immediately above — no principal, CORS opened explicitly,
+  // no request body, price/currency/interval/trialPeriodDays resolved from
+  // the block's own publish-safe snapshot (`subscription_blocks`), never
+  // from the visitor's own request. This route does not, and cannot yet,
+  // reflect what happens to the subscription after Stripe Checkout
+  // completes — see ADR-0016 for what part 2's webhook consumer still
+  // owes the record this creates. ----
+  app.options("/v1/runtime/subscription-blocks/:blockId/checkout", async (_request, reply) => {
+    reply.header("access-control-allow-origin", "*").header("access-control-allow-methods", "POST, OPTIONS").status(204).send();
+  });
+
+  app.post<{ Params: { blockId: string } }>("/v1/runtime/subscription-blocks/:blockId/checkout", async (request, reply) => {
+    reply.header("access-control-allow-origin", "*");
+    const { blockId } = request.params;
+    const referer = (request.headers.referer as string | undefined) ?? (request.headers.origin as string | undefined) ?? runtimeApiUrl ?? "http://localhost/";
+
+    function returnUrl(outcome: "success" | "cancel"): string {
+      let url: URL;
+      try {
+        url = new URL(referer);
+      } catch {
+        url = new URL("http://localhost/");
+      }
+      url.searchParams.set("pf_subscription", outcome);
+      url.searchParams.set("pf_subscription_block", blockId);
+      return url.toString();
+    }
+
+    const result = await createSubscriptionCheckout(
+      { id: newUlid(), blockId, successUrl: returnUrl("success"), cancelUrl: returnUrl("cancel") },
+      subscriptionCheckoutDeps,
+    );
+
+    switch (result.status) {
+      case "created":
+        reply.status(201);
+        return { url: result.url };
+      case "not_found":
+        throw notFound("subscription block not found");
       case "no_connection":
         throw notFound("this site has not connected a Stripe account");
       case "provider_error":

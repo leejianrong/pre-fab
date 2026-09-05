@@ -25,4 +25,5 @@ export * from "./form/index.js";
 export * from "./booking/index.js";
 export * from "./eventsignup/index.js";
 export * from "./payment/index.js";
+export * from "./subscription/index.js";
 export * from "./markdown-lite.js";
