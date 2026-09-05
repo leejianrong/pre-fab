@@ -181,3 +181,46 @@ CREATE TABLE IF NOT EXISTS payment_records (
 );
 
 CREATE INDEX IF NOT EXISTS payment_records_site_id_block_id_idx ON payment_records (site_id, block_id, created_at DESC);
+
+-- KAN-1154 / ADR-0016 (R10): mirrors the shape of
+-- packages/db/migrations/0012_kan1154_subscriptions.sql minus RLS/ulid, same
+-- reasoning as every other table above. `stripe_connections` above is
+-- reused unchanged — a connected Stripe account is the same account
+-- whether it's charged once or on a schedule. Part 1 (this card) only ever
+-- writes 'incomplete' rows here; every other status value and every
+-- lifecycle column below is written only by a follow-up card's webhook
+-- consumer, which does not exist in self-host either yet.
+CREATE TABLE IF NOT EXISTS subscription_blocks (
+  id TEXT PRIMARY KEY,
+  site_id TEXT NOT NULL,
+  heading TEXT NOT NULL DEFAULT '',
+  description TEXT NOT NULL DEFAULT '',
+  button_label TEXT NOT NULL DEFAULT 'Subscribe',
+  price INTEGER NOT NULL,
+  currency TEXT NOT NULL DEFAULT 'usd',
+  interval TEXT NOT NULL DEFAULT 'month' CHECK (interval IN ('month', 'year')),
+  trial_period_days INTEGER NOT NULL DEFAULT 0,
+  success_message TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS subscription_records (
+  id TEXT PRIMARY KEY,
+  site_id TEXT NOT NULL,
+  block_id TEXT NOT NULL REFERENCES subscription_blocks (id) ON DELETE CASCADE,
+  stripe_checkout_session_id TEXT NOT NULL UNIQUE,
+  stripe_subscription_id TEXT,
+  stripe_customer_id TEXT,
+  price INTEGER NOT NULL,
+  currency TEXT NOT NULL,
+  interval TEXT NOT NULL CHECK (interval IN ('month', 'year')),
+  trial_period_days INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'incomplete'
+    CHECK (status IN ('incomplete', 'incomplete_expired', 'trialing', 'active', 'past_due', 'canceled', 'unpaid', 'paused')),
+  current_period_end TEXT,
+  cancel_at_period_end INTEGER NOT NULL DEFAULT 0,
+  canceled_at TEXT,
+  buyer_email TEXT,
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS subscription_records_site_id_block_id_idx ON subscription_records (site_id, block_id, created_at DESC);

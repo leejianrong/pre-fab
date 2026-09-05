@@ -21,6 +21,7 @@ import { PostDetail, POSTDETAIL_BLOCK_TYPE, postDetailDefaultProps } from "@pref
 import { Form, FORM_BLOCK_TYPE, formDefaultProps } from "@prefab/blocks";
 import { EventSignup, EVENTSIGNUP_BLOCK_TYPE, eventSignupDefaultProps } from "@prefab/blocks";
 import { Payment, PAYMENT_BLOCK_TYPE, paymentDefaultProps } from "@prefab/blocks";
+import { Subscription, SUBSCRIPTION_BLOCK_TYPE, subscriptionDefaultProps } from "@prefab/blocks";
 import type { ThemeTokens } from "@prefab/schema";
 import { heroFields } from "./hero-fields.js";
 import { headingFields } from "./heading-fields.js";
@@ -43,6 +44,7 @@ import { postDetailFields } from "./postdetail-fields.js";
 import { formFields } from "./form-fields.js";
 import { eventSignupFields } from "./eventsignup-fields.js";
 import { paymentFields } from "./payment-fields.js";
+import { subscriptionFields } from "./subscription-fields.js";
 
 /**
  * The only file besides apps/editor allowed to import @puckeditor/core
@@ -180,6 +182,7 @@ const BLOCK_ENTRIES: BlockEntry<any>[] = [
     Component: EventSignup,
   },
   { type: PAYMENT_BLOCK_TYPE, label: "Payment", fields: paymentFields, defaultProps: paymentDefaultProps, Component: Payment },
+  { type: SUBSCRIPTION_BLOCK_TYPE, label: "Subscription", fields: subscriptionFields, defaultProps: subscriptionDefaultProps, Component: Subscription },
 ];
 
 // Puck's ComponentConfig<P> constrains P more tightly than a plain object

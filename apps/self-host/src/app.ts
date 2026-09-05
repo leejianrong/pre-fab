@@ -9,6 +9,7 @@ import {
   rescheduleBookingByToken,
   signUpForEvent,
   createPaymentCheckout,
+  createSubscriptionCheckout,
   type TurnstileVerifier,
 } from "@prefab/runtime";
 import { newUlid } from "@prefab/schema";
@@ -25,6 +26,7 @@ import { createNullCalendarSyncPort, createSqliteAvailabilityStore, createSqlite
 import { createSqliteEventSignupWidgetStore, createSqliteEventSignupStore } from "./event-signup-adapters.js";
 import { renderManageBookingPage } from "./booking-manage-page.js";
 import { createSqlitePaymentBlockStore, createSqliteStripeConnectionStore, createSqlitePaymentRecordStore } from "./payment-adapters.js";
+import { createSqliteSubscriptionBlockStore, createSqliteSubscriptionRecordStore } from "./subscription-adapters.js";
 import { createTenantStripeProvider, FakeTenantStripeProvider, type TenantStripeProvider } from "./lib/tenant-stripe.js";
 
 const SubmitFormBodySchema = z.object({
@@ -126,6 +128,16 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   const stripeConnectionStore = createSqliteStripeConnectionStore(db);
   const paymentRecordStore = createSqlitePaymentRecordStore(db);
   const paymentCheckoutDeps = { paymentBlocks: paymentBlockStore, stripeConnections: stripeConnectionStore, paymentRecords: paymentRecordStore, tenantStripe: tenantStripeProvider };
+
+  // KAN-1154 / ADR-0016 (R10) — creation only (see that ADR); `stripeConnectionStore` is the exact same instance the one-off payment path above uses.
+  const subscriptionBlockStore = createSqliteSubscriptionBlockStore(db);
+  const subscriptionRecordStore = createSqliteSubscriptionRecordStore(db);
+  const subscriptionCheckoutDeps = {
+    subscriptionBlocks: subscriptionBlockStore,
+    stripeConnections: stripeConnectionStore,
+    subscriptionRecords: subscriptionRecordStore,
+    tenantStripe: tenantStripeProvider,
+  };
 
   // Same limits as apps/api's own runtime route (app.ts): 20/min per site,
   // 5/min per visitor IP — a self-hosted instance is one site, so "per
@@ -517,6 +529,54 @@ export function buildApp(deps: AppDeps): FastifyInstance {
       case "not_found":
         reply.status(404);
         return { error: { code: "not_found", message: "payment block not found" } };
+      case "no_connection":
+        reply.status(404);
+        return { error: { code: "not_found", message: "this site has not connected a Stripe account" } };
+      case "provider_error":
+        reply.status(500);
+        return { error: { code: "internal", message: "the payment provider could not create a checkout session" } };
+    }
+  });
+
+  // ---- The runtime API (KAN-1154 / ADR-0016, part 1 — creation only) —
+  // same shape as apps/api's own equivalent route, calling the exact same
+  // @prefab/runtime function unchanged; only what's behind
+  // SubscriptionBlockStore/StripeConnectionStore/SubscriptionRecordStore/
+  // TenantStripeProvider differs (SQLite, and this file's own trimmed
+  // tenant-stripe.ts). ----
+  app.options("/v1/runtime/subscription-blocks/:blockId/checkout", async (_request, reply) => {
+    reply.header("access-control-allow-origin", "*").header("access-control-allow-methods", "POST, OPTIONS").status(204).send();
+  });
+
+  app.post<{ Params: { blockId: string } }>("/v1/runtime/subscription-blocks/:blockId/checkout", async (request, reply) => {
+    reply.header("access-control-allow-origin", "*");
+    const { blockId } = request.params;
+    const referer = (request.headers.referer as string | undefined) ?? runtimeApiUrl;
+
+    function returnUrl(outcome: "success" | "cancel"): string {
+      let url: URL;
+      try {
+        url = new URL(referer);
+      } catch {
+        url = new URL(runtimeApiUrl);
+      }
+      url.searchParams.set("pf_subscription", outcome);
+      url.searchParams.set("pf_subscription_block", blockId);
+      return url.toString();
+    }
+
+    const result = await createSubscriptionCheckout(
+      { id: newUlid(), blockId, successUrl: returnUrl("success"), cancelUrl: returnUrl("cancel") },
+      subscriptionCheckoutDeps,
+    );
+
+    switch (result.status) {
+      case "created":
+        reply.status(201);
+        return { url: result.url };
+      case "not_found":
+        reply.status(404);
+        return { error: { code: "not_found", message: "subscription block not found" } };
       case "no_connection":
         reply.status(404);
         return { error: { code: "not_found", message: "this site has not connected a Stripe account" } };

@@ -28,6 +28,7 @@ import { extractPublishSafeForms } from "./form-manifest.js";
 import { extractPublishSafeBookingWidgets } from "./booking-manifest.js";
 import { extractPublishSafeEventSignups } from "./event-signup-manifest.js";
 import { extractPublishSafePaymentBlocks } from "./payment-manifest.js";
+import { extractPublishSafeSubscriptionBlocks } from "./subscription-manifest.js";
 import type { PublishableAvailabilityRule } from "./build.js";
 
 interface WorkerInput {
@@ -156,6 +157,16 @@ async function main(): Promise<void> {
     await writeFile(
       path.join(workspace.outDir, "prefab-payment-blocks.json"),
       JSON.stringify(extractPublishSafePaymentBlocks(input.site.id, input.pages)),
+      "utf8",
+    );
+
+    // KAN-1154 / ADR-0016: every Subscription block's publish-safe
+    // manifest, the identical reasoning as prefab-payment-blocks.json
+    // immediately above — a distinct file for a distinct block type/table,
+    // never folded into the Payment one.
+    await writeFile(
+      path.join(workspace.outDir, "prefab-subscription-blocks.json"),
+      JSON.stringify(extractPublishSafeSubscriptionBlocks(input.site.id, input.pages)),
       "utf8",
     );
 

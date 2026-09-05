@@ -17,10 +17,11 @@
  * `blockComponents[block.type]` (a runtime lookup into a plain object) has
  * no such static import to point at, so it fails with "No matching import
  * has been found" for any dynamically-resolved component. `Form`,
- * `Booking`, `EventSignup` and `Payment` are imported directly below for
- * exactly this reason, and rendered on their own branch rather than
- * through `blockComponents`. This file, plus @prefab/publish, is the only
- * place in the repo allowed to import Astro (enforced by tools/checks).
+ * `Booking`, `EventSignup`, `Payment` and (KAN-1154 / ADR-0016) `Subscription`
+ * are imported directly below for exactly this reason, and rendered on
+ * their own branch rather than through `blockComponents`. This file, plus
+ * @prefab/publish, is the only place in the repo allowed to import Astro
+ * (enforced by tools/checks).
  *
  * ADR-0014 (KAN-1129): a `"free"` page's root-level blocks each carry a
  * `position` instead of relying on document flow. `freePositionBaseStyle`/
@@ -51,6 +52,7 @@ import {
   Booking,
   EventSignup,
   Payment,
+  Subscription,
   FreePositionStyle,
   freePositionBaseStyle,
   rankRootBlocksForStacking,
@@ -219,6 +221,19 @@ const themeVars = themeRootStyle(resolveThemeTokens(theme.tokens));
         if (block.type === "payment") {
           return (
             <Payment
+              client:load
+              {...block.props}
+              blockId={block.id}
+              responsive={block.responsive}
+              scrollReveal={block.scrollReveal}
+              runtimeApiUrl={data.runtimeApiUrl}
+            />
+          );
+        }
+
+        if (block.type === "subscription") {
+          return (
+            <Subscription
               client:load
               {...block.props}
               blockId={block.id}

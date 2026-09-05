@@ -44,6 +44,8 @@ import { EventSignup } from "./eventsignup/EventSignup.js";
 import { eventSignupBlockDefinition, type EventSignupProps } from "./eventsignup/schema.js";
 import { Payment } from "./payment/Payment.js";
 import { paymentBlockDefinition, type PaymentProps } from "./payment/schema.js";
+import { Subscription } from "./subscription/Subscription.js";
+import { subscriptionBlockDefinition, type SubscriptionProps } from "./subscription/schema.js";
 
 /**
  * One entry per first-party block: its schema-half definition
@@ -139,6 +141,12 @@ const BLOCK_ENTRIES: BlockEntry[] = [
     definition: paymentBlockDefinition,
     Component: Payment,
     summary: (props: PaymentProps) => `${props.heading} (${(props.amount / 100).toFixed(2)} ${props.currency.toUpperCase()})`,
+  },
+  {
+    definition: subscriptionBlockDefinition,
+    Component: Subscription,
+    summary: (props: SubscriptionProps) =>
+      `${props.heading} (${(props.price / 100).toFixed(2)} ${props.currency.toUpperCase()}/${props.interval})`,
   },
 ];
 
