@@ -108,3 +108,42 @@ export function ResponsiveStyle({
   if (!css) return null;
   return <style>{css}</style>;
 }
+
+/**
+ * KAN-1204 (docs/design-audit-2026-09.md §5): a built-in mobile column
+ * fallback for grid-shaped blocks (CardGrid, Gallery) — root-caused there as
+ * the actual reason 4 of 9 templates overflowed at 375px. Every template
+ * hard-codes a fixed `columns` (typically 3) with no per-breakpoint override
+ * (`responsive: {}` on every block, in every template), so a card's title
+ * text was left with ~77px of usable width at 375px — comfortably narrower
+ * than an ordinary 8+ character word.
+ *
+ * This is deliberately *not* built on the `responsive`-prop mechanism above:
+ * that schema's `base` breakpoint (below `md`'s 640px) has no override slot
+ * of its own (@prefab/schema/responsive.ts: "base... has no override slot of
+ * its own"), so there was previously no way to give the *unconfigured*
+ * mobile case a sane default at all — a template or a customer's own card
+ * edit would have to opt in to a `responsive.md.columns` override that
+ * nothing sets today. Emitting this unconditionally, keyed off the block's
+ * own static class name rather than a per-instance `blockId`, is what makes
+ * it a real default instead of one more per-template patch: every
+ * CardGrid/Gallery instance gets it, authored or not, present blockId or not
+ * (the Puck canvas preview, block library tests).
+ *
+ * `!important` for the same reason every `responsiveStyleCss` declaration
+ * needs it (see this module's own doc comment): a block's inline base style
+ * (`repeat(columns, minmax(0,1fr))`) always wins specificity over a plain
+ * stylesheet rule otherwise. No conflict with an explicit `responsive.md`/
+ * `.lg` override: those only ever emit `min-width` rules at 640px/1024px,
+ * strictly above this rule's `max-width` range, so the two mechanisms never
+ * target the same viewport.
+ */
+export function intrinsicGridFallbackCss(className: string, minTrackPx: number): string {
+  const mobileMaxWidth = Number.parseInt(BREAKPOINT_MIN_WIDTH.md, 10) - 1;
+  return `@media (max-width:${mobileMaxWidth}px){.${className}{grid-template-columns:repeat(auto-fit, minmax(${minTrackPx}px, 1fr)) !important;}}`;
+}
+
+/** React wrapper over `intrinsicGridFallbackCss` — see that function's doc comment. */
+export function IntrinsicGridFallback({ className, minTrackPx }: { className: string; minTrackPx: number }) {
+  return <style>{intrinsicGridFallbackCss(className, minTrackPx)}</style>;
+}

@@ -1,4 +1,13 @@
-import { DEFAULT_THEME_TOKENS, type ThemeTokens } from "@prefab/schema";
+import { resolveThemeTokens, type ThemeTokens } from "@prefab/schema";
+
+/**
+ * Re-exported for every existing block/test import (`from "../theme-css.js"`
+ * / `from "./theme-css.js"`) — the implementation itself now lives in
+ * @prefab/schema (see that file's own comment on `resolveThemeTokens` for
+ * why: packages/db needs it too, at the DB-read boundary, and must never
+ * depend on this React/JSX package).
+ */
+export { resolveThemeTokens };
 
 /**
  * Blocks reference theme tokens, never raw values (CLAUDE.md invariant 2 /
@@ -25,6 +34,9 @@ export function themeTokensToStyleVars(tokens: ThemeTokens): Record<string, stri
   for (const [name, value] of Object.entries(tokens.fontFamily)) {
     vars[`--pf-fontFamily-${name}`] = value;
   }
+  for (const [name, value] of Object.entries(tokens.lineHeight)) {
+    vars[`--pf-lineHeight-${name}`] = value;
+  }
   return vars;
 }
 
@@ -40,6 +52,14 @@ export function themeTokensToStyleVars(tokens: ThemeTokens): Record<string, stri
  * between blocks — and any block that inherits rather than sets its own
  * colors — renders correctly in both places identically (ADR-0004's WYSIWYG
  * guarantee), not just wherever a block happens to declare its own.
+ *
+ * KAN-1204 (docs/design-audit-2026-09.md §1): `margin: 0` closes the actual
+ * root cause of the page's left edge landing at an incidental 8px — the
+ * browser's own UA `<body>` margin, "not a design decision, not
+ * theme-controlled, not consistent" per the audit. A no-op for the Puck
+ * canvas root (already a plain `<div>`, already 0 by default); a real fix
+ * for `<body>`, replaced by the explicit, token-driven gutter
+ * @prefab/publish's page-template.ts now applies around flow content.
  */
 export function themeRootStyle(tokens: ThemeTokens): Record<string, string> {
   return {
@@ -47,33 +67,29 @@ export function themeRootStyle(tokens: ThemeTokens): Record<string, string> {
     background: cssVar("color", "background"),
     color: cssVar("color", "foreground"),
     fontFamily: cssVar("fontFamily", "body"),
+    margin: "0",
   };
 }
 
 export type ThemeTokenGroup = keyof ThemeTokens;
 
-/** The call every block makes instead of writing `var(--pf-<group>-<name>)` by hand. No fallback argument — CLAUDE.md invariant 2 forbids a raw value anywhere in a block, including as a CSS var() fallback, so resolution happens once, centrally, in `resolveThemeTokens` below, not per call site. */
+/** The call every block makes instead of writing `var(--pf-<group>-<name>)` by hand. No fallback argument — CLAUDE.md invariant 2 forbids a raw value anywhere in a block, including as a CSS var() fallback, so resolution happens once, centrally, in `resolveThemeTokens` (@prefab/schema), not per call site. */
 export function cssVar(group: ThemeTokenGroup, name: string): string {
   return `var(--pf-${group}-${name})`;
 }
 
 /**
- * A block referencing a token name a given theme doesn't define (an older
- * theme predating a newer block, a hand-edited theme.json missing a key)
- * must still resolve to *something* — but that something has to come from
- * another token, never a literal written into a block file. This merges
- * the platform's own default theme underneath whatever the site's theme
- * defines, group by group, so every var() a first-party block emits is
- * guaranteed to be set by the time `themeTokensToStyleVars` runs. Callers
- * that turn a theme document into page styles (@prefab/puck-adapter's
- * canvas root, @prefab/publish's page template) call this first.
+ * KAN-1204 (docs/design-audit-2026-09.md §2): the "structural CSS constant
+ * that isn't a themeable design decision" carve-out docs/BLOCK_CONTRACT.md
+ * already documents (a border width, an em-ratio padding) — a readable prose
+ * measure (~45–75 characters/line; this targets the middle of that range)
+ * isn't a per-template brand choice the way color/spacing/radius are, so it
+ * stays a shared constant here rather than a 7th token group. `ch` is
+ * deliberately unitless-relative rather than a `px`/`rem` cap: it scales with
+ * whatever `font-size` the element it's applied to actually renders at,
+ * which is the whole point of a *measure* constraint (character count per
+ * line, not a fixed box width). Used by RichText and PostDetail, the two
+ * blocks the audit measured running to ~152 characters/line on desktop with
+ * no cap.
  */
-export function resolveThemeTokens(tokens: ThemeTokens, defaults: ThemeTokens = DEFAULT_THEME_TOKENS): ThemeTokens {
-  return {
-    color: { ...defaults.color, ...tokens.color },
-    fontSize: { ...defaults.fontSize, ...tokens.fontSize },
-    spacing: { ...defaults.spacing, ...tokens.spacing },
-    radius: { ...defaults.radius, ...tokens.radius },
-    fontFamily: { ...defaults.fontFamily, ...tokens.fontFamily },
-  };
-}
+export const PROSE_MAX_MEASURE = "65ch";

@@ -6,6 +6,7 @@ import type { ContactDetailsProps } from "./schema.js";
 const rowStyle: CSSProperties = {
   padding: `${cssVar("spacing", "xs")} 0`,
   color: cssVar("color", "foreground"),
+  lineHeight: cssVar("lineHeight", "body"),
 };
 
 export function ContactDetails(props: ContactDetailsProps & BlockRenderProps) {
@@ -20,7 +21,12 @@ export function ContactDetails(props: ContactDetailsProps & BlockRenderProps) {
       <ResponsiveStyle blockId={blockId ?? ""} responsive={responsive ?? {}} />
       <h3
         className="pf-contactdetails-heading"
-        style={{ fontSize: cssVar("fontSize", "lg"), color: cssVar("color", "foreground"), margin: 0 }}
+        style={{
+          fontSize: cssVar("fontSize", "lg"),
+          lineHeight: cssVar("lineHeight", "lg"),
+          color: cssVar("color", "foreground"),
+          margin: 0,
+        }}
       >
         {heading}
       </h3>

@@ -1,7 +1,14 @@
 import type { CSSProperties } from "react";
 import { cssVar } from "../theme-css.js";
-import { ResponsiveStyle, type BlockRenderProps } from "../responsive.js";
+import { IntrinsicGridFallback, ResponsiveStyle, type BlockRenderProps } from "../responsive.js";
 import type { GalleryProps } from "./schema.js";
+
+// KAN-1204 (docs/design-audit-2026-09.md §5): same built-in mobile column
+// fallback as CardGrid — see IntrinsicGridFallback's own doc comment.
+// Gallery has no title/body text to overflow, but a fixed `columns:3` at
+// 375px still squeezes every image into the same ~77px-wide track CardGrid's
+// cards did, which is exactly as un-intentional here.
+const MOBILE_MIN_IMAGE_PX = 140;
 
 export function Gallery(props: GalleryProps & BlockRenderProps) {
   const { images, columns, blockId, responsive } = props;
@@ -22,6 +29,7 @@ export function Gallery(props: GalleryProps & BlockRenderProps) {
         naturalDisplay="grid"
         columnsProperty="grid-template-columns"
       />
+      <IntrinsicGridFallback className="pf-gallery" minTrackPx={MOBILE_MIN_IMAGE_PX} />
       {images.map((image, index) => (
         <img
           key={index}

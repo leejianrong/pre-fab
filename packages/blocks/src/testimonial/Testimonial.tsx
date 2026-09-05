@@ -22,7 +22,10 @@ export function Testimonial(props: TestimonialProps & BlockRenderProps) {
       data-pf-block-id={blockId}
     >
       <ResponsiveStyle blockId={blockId ?? ""} responsive={responsive ?? {}} />
-      <p className="pf-testimonial-quote" style={{ fontSize: cssVar("fontSize", "lg"), margin: 0 }}>
+      <p
+        className="pf-testimonial-quote"
+        style={{ fontSize: cssVar("fontSize", "lg"), lineHeight: cssVar("lineHeight", "lg"), margin: 0 }}
+      >
         {quote}
       </p>
       <footer

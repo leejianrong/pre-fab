@@ -113,5 +113,9 @@ export function stylePresetToThemeTokens(preset: StylePreset): ThemeTokens {
     fontSize: DEFAULT_THEME_TOKENS.fontSize,
     spacing: DEFAULT_THEME_TOKENS.spacing,
     radius: DEFAULT_THEME_TOKENS.radius,
+    // KAN-1204: no preset customizes line-height (it isn't a (palette, font
+    // pairing) concern the way color/fontFamily are) — every preset inherits
+    // the platform default, same as fontSize/spacing/radius above.
+    lineHeight: DEFAULT_THEME_TOKENS.lineHeight,
   };
 }

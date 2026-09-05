@@ -5,6 +5,7 @@ import type { FaqProps } from "./schema.js";
 
 const summaryStyle: CSSProperties = {
   fontSize: cssVar("fontSize", "body"),
+  lineHeight: cssVar("lineHeight", "body"),
   fontWeight: "600",
   color: cssVar("color", "foreground"),
   cursor: "pointer",
@@ -13,6 +14,7 @@ const summaryStyle: CSSProperties = {
 const answerStyle: CSSProperties = {
   color: cssVar("color", "muted-foreground"),
   fontSize: cssVar("fontSize", "sm"),
+  lineHeight: cssVar("lineHeight", "sm"),
 };
 
 const itemStyle: CSSProperties = {

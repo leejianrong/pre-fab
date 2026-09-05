@@ -135,6 +135,23 @@ export function getStaticPaths() {
 
 const { page, theme, site, detailPost, listBlockId, listPageNumber, listTotalPages } = Astro.props;
 const themeVars = themeRootStyle(resolveThemeTokens(theme.tokens));
+
+// KAN-1204 (docs/design-audit-2026-09.md §1): the page-level horizontal
+// gutter + content max-width the audit found missing entirely — \`gutter\`
+// is a real spacing token (packages/schema's DEFAULT_THEME_TOKENS, same
+// value as \`element\`, which every block that already pads itself
+// horizontally already uses — see that token's own comment for why), so
+// this composes with rather than duplicates the existing spacing language.
+// The max-width (90rem / 1440px, matching this project's own widest
+// screenshot viewport) is a structural layout constant, not a themeable
+// design decision, the same "not a token" carve-out docs/BLOCK_CONTRACT.md
+// already documents for a block's own structural CSS.
+const pageGutterStyle = {
+  padding: "0 var(--pf-spacing-gutter)",
+  maxWidth: "90rem",
+  marginLeft: "auto",
+  marginRight: "auto",
+};
 ---
 <html lang="en">
   <head>
@@ -268,7 +285,20 @@ const themeVars = themeRootStyle(resolveThemeTokens(theme.tokens));
 
       const rendered = page.blocks.map((block) => wrapIfFree(block, renderBlockInner(block)));
 
-      if (!isFreeLayout) return rendered;
+      // KAN-1204 (docs/design-audit-2026-09.md §1): a real, token-driven
+      // page-level horizontal gutter, replacing what used to be an
+      // incidental reliance on the browser's own UA \`<body>\` margin (now
+      // reset to 0 — see themeRootStyle's own comment) plus whichever
+      // individual block happened to add its own horizontal padding.
+      // \`pageGutterStyle\` only wraps the "flow" (default, non-free-layout)
+      // case: a "free" page's percentage-based block positions resolve
+      // against \`freeCanvasRootStyle\`'s own root (ADR-0014) — wrapping that
+      // in an additional padded/max-width container would shift every
+      // free-positioned block's coordinate basis, which is out of scope
+      // here and not what this fix is for.
+      if (!isFreeLayout) {
+        return <div style={pageGutterStyle}>{rendered}</div>;
+      }
 
       // The positioned canvas root every wrapped block's percentage
       // \`left\`/\`top\`/\`width\`/\`height\` resolves against (ADR-0014's

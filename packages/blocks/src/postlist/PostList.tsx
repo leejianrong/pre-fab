@@ -35,11 +35,24 @@ export function PostList(props: PostListProps & BlockRenderProps & PostListRende
   const sectionStyle: CSSProperties = {
     padding: `${cssVar("spacing", "section")} ${cssVar("spacing", "element")}`,
   };
-  const headingStyle: CSSProperties = { fontSize: cssVar("fontSize", "heading"), margin: `0 0 ${cssVar("spacing", "element")}` };
+  const headingStyle: CSSProperties = {
+    fontSize: cssVar("fontSize", "heading"),
+    lineHeight: cssVar("lineHeight", "heading"),
+    margin: `0 0 ${cssVar("spacing", "element")}`,
+  };
   const listStyle: CSSProperties = { listStyle: "none", margin: 0, padding: 0, display: "grid", gap: cssVar("spacing", "element") };
-  const titleStyle: CSSProperties = { fontSize: cssVar("fontSize", "lg"), color: cssVar("color", "foreground") };
-  const metaStyle: CSSProperties = { fontSize: cssVar("fontSize", "sm"), color: cssVar("color", "foreground"), opacity: 0.7 };
-  const excerptStyle: CSSProperties = { fontSize: cssVar("fontSize", "body"), color: cssVar("color", "foreground") };
+  const titleStyle: CSSProperties = { fontSize: cssVar("fontSize", "lg"), lineHeight: cssVar("lineHeight", "lg"), color: cssVar("color", "foreground") };
+  const metaStyle: CSSProperties = {
+    fontSize: cssVar("fontSize", "sm"),
+    lineHeight: cssVar("lineHeight", "sm"),
+    color: cssVar("color", "foreground"),
+    opacity: 0.7,
+  };
+  const excerptStyle: CSSProperties = {
+    fontSize: cssVar("fontSize", "body"),
+    lineHeight: cssVar("lineHeight", "body"),
+    color: cssVar("color", "foreground"),
+  };
   const paginationStyle: CSSProperties = {
     display: "flex",
     justifyContent: "space-between",
