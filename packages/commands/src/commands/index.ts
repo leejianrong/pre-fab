@@ -8,6 +8,7 @@ import { themeGet, themeSet } from "./theme.js";
 import { pageCreate, pageGet, pageList, pageWrite } from "./page.js";
 import { postCreate, postGet, postList, postWrite } from "./post.js";
 import { formConfigure, formGet, submissionList, submissionExport, submissionDelete } from "./form.js";
+import { eventSignupWidgetGet, eventSignupList, eventSignupExport, eventSignupDelete } from "./event-signup.js";
 import { assetUpload, assetList } from "./asset.js";
 import { tokenCreate } from "./token.js";
 import { siteOutline } from "./outline.js";
@@ -24,6 +25,7 @@ import { subscriptionGet, planUpgrade, planCancel } from "./plan.js";
 import { availabilitySet, availabilityGet } from "./availability.js";
 import { bookingList, bookingCancel } from "./booking.js";
 import { calendarConnect, calendarDisconnect, calendarStatus } from "./calendar.js";
+import { stripeConnect, stripeDisconnect, stripeStatus } from "./stripe-connect.js";
 
 /**
  * Every command apps/cli and apps/mcp expose, in one place. Both wrap this
@@ -58,6 +60,10 @@ export const commandRegistry = defineRegistry([
   submissionList,
   submissionExport,
   submissionDelete,
+  eventSignupWidgetGet,
+  eventSignupList,
+  eventSignupExport,
+  eventSignupDelete,
   assetUpload,
   assetList,
   tokenCreate,
@@ -88,6 +94,9 @@ export const commandRegistry = defineRegistry([
   calendarConnect,
   calendarDisconnect,
   calendarStatus,
+  stripeConnect,
+  stripeDisconnect,
+  stripeStatus,
 ]);
 
 export {
@@ -118,6 +127,10 @@ export {
   submissionList,
   submissionExport,
   submissionDelete,
+  eventSignupWidgetGet,
+  eventSignupList,
+  eventSignupExport,
+  eventSignupDelete,
   assetUpload,
   assetList,
   tokenCreate,
@@ -148,4 +161,7 @@ export {
   calendarConnect,
   calendarDisconnect,
   calendarStatus,
+  stripeConnect,
+  stripeDisconnect,
+  stripeStatus,
 };

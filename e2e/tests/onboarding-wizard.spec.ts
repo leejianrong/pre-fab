@@ -30,7 +30,7 @@ test("the onboarding wizard forks the recommended template and applies the recom
   await expect(page.getByText("Recommended:")).toContainText("Warm & Welcoming");
 
   const siteName = `Wizard Site ${Date.now()}`;
-  await page.getByPlaceholder("name").fill(siteName);
+  await page.getByLabel(/^name$/i).fill(siteName);
   await page.getByRole("button", { name: /^create my site$/i }).click();
 
   const header = page.locator("header").first();
