@@ -1,7 +1,7 @@
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { newUlid, DEFAULT_THEME_TOKENS } from "@prefab/schema";
 import { HERO_BLOCK_TYPE, heroDefaultProps } from "@prefab/blocks";
 import { buildSiteBundle } from "../src/build.js";
@@ -102,4 +102,62 @@ describe("buildSiteBundle", () => {
     expect(html).toContain("Publish pipeline works");
     expect(html).not.toContain("vendor.widget");
   }, 60_000);
+});
+
+// KAN-1153: proves the concurrency cap is actually wired into
+// `buildSiteBundle`'s real call path (the one apps/api's publish.create and
+// preview routes hit), not merely available as an unused utility
+// (concurrency-gate.test.ts covers the gate's own mechanics in isolation).
+//
+// `PREFAB_BUILD_CONCURRENCY` is read once, at module-load time (see
+// build.ts), so the override has to be in place *before* the module is
+// (re-)imported — hence `vi.resetModules()` plus a dynamic `import()` here
+// rather than the top-of-file static import.
+describe("buildSiteBundle — concurrency cap wired into the real build path (KAN-1153)", () => {
+  it("caps real concurrent builds at the configured limit and still resolves every one of them", async () => {
+    const previous = process.env.PREFAB_BUILD_CONCURRENCY;
+    process.env.PREFAB_BUILD_CONCURRENCY = "2";
+    vi.resetModules();
+    const { buildSiteBundle: gatedBuildSiteBundle, getBuildConcurrencyGate } = await import("../src/build.js");
+    const gate = getBuildConcurrencyGate();
+
+    try {
+      bundleStoreDir = await mkdtemp(path.join(tmpdir(), "pf-bundles-"));
+
+      // Poll the *actual* gate this module's buildSiteBundle routes through
+      // while real builds run — this is what proves the wiring, not merely
+      // that the ConcurrencyGate primitive behaves (concurrency-gate.test.ts
+      // already covers that in isolation).
+      let maxActive = 0;
+      let sawQueuing = false;
+      const poll = setInterval(() => {
+        maxActive = Math.max(maxActive, gate.active);
+        if (gate.pending > 0) sawQueuing = true;
+      }, 5);
+
+      const runOne = (i: number) => {
+        const { site, theme, pages } = testSite();
+        // Distinct content per run so each produces a distinct content hash
+        // and a genuinely separate build — nothing here can shortcut on an
+        // already-built bundle (see content-hash.ts).
+        pages[0]!.blocks[0]!.props = { ...pages[0]!.blocks[0]!.props, heading: `Publish pipeline works ${i}` };
+        return gatedBuildSiteBundle({ site, theme, pages, bundleStoreDir });
+      };
+
+      // 4 concurrent real builds against a cap of 2: the cap must bite (2
+      // queue behind the first 2), and all 4 must still eventually succeed.
+      const results = await Promise.all([runOne(0), runOne(1), runOne(2), runOne(3)]);
+      clearInterval(poll);
+
+      expect(results).toHaveLength(4);
+      expect(maxActive).toBeLessThanOrEqual(2);
+      expect(sawQueuing).toBe(true);
+      expect(gate.active).toBe(0);
+      expect(gate.pending).toBe(0);
+    } finally {
+      if (previous === undefined) delete process.env.PREFAB_BUILD_CONCURRENCY;
+      else process.env.PREFAB_BUILD_CONCURRENCY = previous;
+      vi.resetModules();
+    }
+  }, 180_000);
 });

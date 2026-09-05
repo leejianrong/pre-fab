@@ -9,7 +9,7 @@ import { buildApp } from "@prefab/api";
 import { withTenantContext, runMigrations, createAccount } from "@prefab/db";
 import { newUlid } from "@prefab/schema";
 import { createContext } from "../src/context.js";
-import { build, diff, exportSite, preview, publishCreate, pull, push, siteCreate } from "../src/commands/index.js";
+import { build, diff, exportSite, pageWrite, preview, publishCreate, pull, push, siteCreate } from "../src/commands/index.js";
 import type { CommandContext } from "../src/context.js";
 
 const { Pool } = pg;
@@ -139,5 +139,56 @@ describe("packages/commands — the slice 1 demo script end to end", () => {
     const theme1 = await readFile(path.join(dir1, "theme.json"), "utf8");
     const theme2 = await readFile(path.join(dir2, "theme.json"), "utf8");
     expect(theme2).toBe(theme1);
+  }, 30_000);
+
+  // ADR-0014 / KAN-1129: `layoutMode` and a root block's `position` must
+  // survive the exact same CLI round trip every other field does — through
+  // the real API, real Postgres and the file-tree checkout, not just
+  // @prefab/schema's in-memory validation.
+  it('export -> push (no-op re-import) -> export is byte-identical for a "free" page with positioned blocks (R8, ADR-0014/KAN-1129)', async () => {
+    const ctx = await loggedInContext(`kan1129-${newUlid()}@example.com`);
+    const created = await siteCreate.run(ctx, { slug: `kan1129-${newUlid()}`, name: "KAN-1129" });
+    const page = created.page;
+    const heroBlock = page.blocks[0]!;
+
+    const written = await pageWrite.run(ctx, {
+      siteId: created.site.id,
+      pageId: page.id,
+      title: page.title,
+      slug: page.slug,
+      layoutMode: "free",
+      blocks: [
+        {
+          ...heroBlock,
+          position: { base: { x: 10, y: 15, w: 80, h: 30, rotate: 5, opacity: 1 } },
+        },
+      ],
+      expectedVersion: page.version,
+    });
+    expect(written.layoutMode).toBe("free");
+
+    const dir1 = await tempDir();
+    await exportSite.run(ctx, { siteId: created.site.id, dir: dir1 });
+
+    // Re-importing an unmodified export must be a true no-op, exactly like
+    // the "flow" R8 test above — layoutMode "free" is not a special case.
+    await push.run(ctx, { dir: dir1 });
+
+    const dir2 = await tempDir();
+    await exportSite.run(ctx, { siteId: created.site.id, dir: dir2 });
+
+    const files1 = (await readdir(path.join(dir1, "pages"))).sort();
+    const files2 = (await readdir(path.join(dir2, "pages"))).sort();
+    expect(files2).toEqual(files1);
+
+    for (const file of files1) {
+      const a = await readFile(path.join(dir1, "pages", file), "utf8");
+      const b = await readFile(path.join(dir2, "pages", file), "utf8");
+      expect(b).toBe(a);
+    }
+
+    const exported = JSON.parse(await readFile(path.join(dir1, "pages", `${page.slug}.json`), "utf8"));
+    expect(exported.layoutMode).toBe("free");
+    expect(exported.blocks[0].position).toEqual({ base: { x: 10, y: 15, w: 80, h: 30, rotate: 5, opacity: 1 } });
   }, 30_000);
 });

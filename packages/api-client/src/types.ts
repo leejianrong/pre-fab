@@ -1,4 +1,4 @@
-import type { BlockNode, DocumentDiff, FieldDiff, PageDocument, PostDocument, PostStatus, ThemeDocument, ThemeTokens } from "@prefab/schema";
+import type { BlockNode, DocumentDiff, FieldDiff, LayoutMode, PageDocument, PostDocument, PostStatus, ThemeDocument, ThemeTokens } from "@prefab/schema";
 
 export interface SiteSummary {
   id: string;
@@ -114,6 +114,8 @@ export interface WritePageInput {
   title: string;
   slug: string;
   blocks: BlockNode[];
+  /** ADR-0014 / KAN-1129. Omitted (or "flow") behaves exactly as before this field existed. */
+  layoutMode?: LayoutMode;
   expectedVersion: number;
 }
 
@@ -254,6 +256,38 @@ export interface ListSubmissionsResult {
   total: number;
 }
 
+// ---- KAN-1138: event sign-ups ----
+
+export interface EventSignupWidget {
+  id: string;
+  siteId: string;
+  heading: string;
+  fields: FormField[];
+  capacity: number | null;
+  waitlistEnabled: boolean;
+  submitLabel: string;
+}
+
+export interface EventSignup {
+  id: string;
+  widgetId: string;
+  siteId: string;
+  values: Record<string, unknown>;
+  status: "confirmed" | "waitlisted";
+  position: number | null;
+  createdAt: string;
+}
+
+export interface ListEventSignupsQuery {
+  limit?: number;
+  offset?: number;
+}
+
+export interface ListEventSignupsResult {
+  signups: EventSignup[];
+  total: number;
+}
+
 // ---- Slice 8: accounts, plans and billing (ADR-0005, ADR-0012) ----
 export type SiteRole = "owner" | "editor" | "viewer";
 
@@ -363,6 +397,43 @@ export interface ConnectCalendarInput {
   provider: CalendarProviderName;
   authorizationCode?: string;
   redirectUri?: string;
+}
+
+// ---- Slice 10 / KAN-1137: one-off payment blocks, bring-your-own Stripe (ADR-0005) ----
+
+export interface StripeConnectionStatus {
+  id: string;
+  stripeAccountId: string;
+  status: "connected" | "error";
+}
+
+export interface ConnectStripeInput {
+  /** A pre-obtained OAuth authorization code — the owner completes Stripe's own Connect consent screen in the browser and hands the resulting code here. Real providers only; the fake (default everywhere, including CI) accepts any string. */
+  authorizationCode: string;
+}
+
+export interface PaymentRecord {
+  id: string;
+  siteId: string;
+  blockId: string;
+  stripeSessionId: string;
+  stripePaymentIntentId: string | null;
+  amount: number;
+  currency: string;
+  status: "pending" | "completed" | "failed";
+  buyerEmail: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ListPaymentsQuery {
+  limit?: number;
+  offset?: number;
+}
+
+export interface ListPaymentsResult {
+  records: PaymentRecord[];
+  total: number;
 }
 
 export type { PageDocument, PostDocument, PostStatus, ThemeDocument, ThemeTokens, BlockNode, DocumentDiff, FieldDiff };
