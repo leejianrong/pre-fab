@@ -40,6 +40,21 @@ export interface CheckoutSession {
   url: string;
 }
 
+/** KAN-1154 / ADR-0016: mirrors apps/api/src/lib/tenant-stripe-provider.ts's own `CreateSubscriptionCheckoutSessionInput` — see that file for the fully-documented original this trims. */
+export interface CreateSubscriptionCheckoutSessionInput {
+  accessToken: string;
+  stripeAccountId: string;
+  price: number;
+  currency: string;
+  interval: "month" | "year";
+  trialPeriodDays: number;
+  productName: string;
+  successUrl: string;
+  cancelUrl: string;
+  subscriptionRecordId: string;
+  siteId: string;
+}
+
 export interface StripeEvent {
   id: string;
   type: string;
@@ -50,6 +65,8 @@ export interface StripeEvent {
 export interface TenantStripeProvider {
   connect(input: { authorizationCode: string }): Promise<TenantStripeTokens>;
   createCheckoutSession(input: CreateCheckoutSessionInput): Promise<CheckoutSession>;
+  /** KAN-1154 / ADR-0016 — a sibling method, not a `mode` param on createCheckoutSession above (see apps/api's own copy for the full reasoning). */
+  createSubscriptionCheckoutSession(input: CreateSubscriptionCheckoutSessionInput): Promise<CheckoutSession>;
   constructEvent(rawBody: Buffer, signature: string | undefined, webhookSecret: string): StripeEvent;
 }
 
@@ -60,6 +77,11 @@ export class FakeTenantStripeProvider implements TenantStripeProvider {
 
   async createCheckoutSession(): Promise<CheckoutSession> {
     const sessionId = `fake_cs_${randomUUID()}`;
+    return { sessionId, url: `https://checkout.stripe.example/fake/${sessionId}` };
+  }
+
+  async createSubscriptionCheckoutSession(): Promise<CheckoutSession> {
+    const sessionId = `fake_cs_sub_${randomUUID()}`;
     return { sessionId, url: `https://checkout.stripe.example/fake/${sessionId}` };
   }
 
@@ -116,6 +138,41 @@ export class RealTenantStripeProvider implements TenantStripeProvider {
         "metadata[siteId]": input.siteId,
         "metadata[paymentRecordId]": input.paymentRecordId,
       }),
+    });
+    if (!response.ok) throw new Error(`Stripe API error (${response.status})`);
+    const result = (await response.json()) as StripeCheckoutSessionResponse;
+    return { sessionId: result.id, url: result.url };
+  }
+
+  /** KAN-1154 / ADR-0016 — mirrors apps/api's own copy exactly (mode: "subscription", price_data[recurring][interval], an optional subscription_data[trial_period_days]). KAN-1154 part 2 addendum: `subscription_data[metadata]` is also always sent, mirroring apps/api's own copy's fully-documented reasoning — it's what lets this instance's own webhook route (see app.ts) resolve siteId from every subscription-lifecycle event after checkout.session.completed, since a self-hosted instance's own `subscription_records` row has no accounts/tenant table to look anything up in either. UNVERIFIED against a live Stripe account. */
+  async createSubscriptionCheckoutSession(input: CreateSubscriptionCheckoutSessionInput): Promise<CheckoutSession> {
+    const body = new URLSearchParams({
+      mode: "subscription",
+      "line_items[0][price_data][currency]": input.currency,
+      "line_items[0][price_data][product_data][name]": input.productName,
+      "line_items[0][price_data][unit_amount]": String(input.price),
+      "line_items[0][price_data][recurring][interval]": input.interval,
+      "line_items[0][quantity]": "1",
+      success_url: input.successUrl,
+      cancel_url: input.cancelUrl,
+      client_reference_id: input.subscriptionRecordId,
+      "metadata[siteId]": input.siteId,
+      "metadata[subscriptionRecordId]": input.subscriptionRecordId,
+      "subscription_data[metadata][siteId]": input.siteId,
+      "subscription_data[metadata][subscriptionRecordId]": input.subscriptionRecordId,
+    });
+    if (input.trialPeriodDays > 0) {
+      body.set("subscription_data[trial_period_days]", String(input.trialPeriodDays));
+    }
+
+    const response = await this.fetchImpl("https://api.stripe.com/v1/checkout/sessions", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${this.platformSecretKey}`,
+        "content-type": "application/x-www-form-urlencoded",
+        "stripe-account": input.stripeAccountId,
+      },
+      body,
     });
     if (!response.ok) throw new Error(`Stripe API error (${response.status})`);
     const result = (await response.json()) as StripeCheckoutSessionResponse;

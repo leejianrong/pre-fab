@@ -25,12 +25,16 @@
       "sm": "0.75rem",
       "element": "1rem",
       "lg": "2rem",
-      "section": "4rem"
+      "section": "5rem"
     },
     "radius": {
       "control": "9999px",
-      "card": "1rem",
+      "card": "1.25rem",
       "full": "9999px"
+    },
+    "fontFamily": {
+      "heading": "Rockwell, 'Bookman Old Style', Georgia, serif",
+      "body": "system-ui, sans-serif"
     }
   }
 }

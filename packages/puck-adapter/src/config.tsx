@@ -21,6 +21,7 @@ import { PostDetail, POSTDETAIL_BLOCK_TYPE, postDetailDefaultProps } from "@pref
 import { Form, FORM_BLOCK_TYPE, formDefaultProps } from "@prefab/blocks";
 import { EventSignup, EVENTSIGNUP_BLOCK_TYPE, eventSignupDefaultProps } from "@prefab/blocks";
 import { Payment, PAYMENT_BLOCK_TYPE, paymentDefaultProps } from "@prefab/blocks";
+import { Subscription, SUBSCRIPTION_BLOCK_TYPE, subscriptionDefaultProps } from "@prefab/blocks";
 import type { ThemeTokens } from "@prefab/schema";
 import { heroFields } from "./hero-fields.js";
 import { headingFields } from "./heading-fields.js";
@@ -43,6 +44,7 @@ import { postDetailFields } from "./postdetail-fields.js";
 import { formFields } from "./form-fields.js";
 import { eventSignupFields } from "./eventsignup-fields.js";
 import { paymentFields } from "./payment-fields.js";
+import { subscriptionFields } from "./subscription-fields.js";
 
 /**
  * The only file besides apps/editor allowed to import @puckeditor/core
@@ -180,6 +182,7 @@ const BLOCK_ENTRIES: BlockEntry<any>[] = [
     Component: EventSignup,
   },
   { type: PAYMENT_BLOCK_TYPE, label: "Payment", fields: paymentFields, defaultProps: paymentDefaultProps, Component: Payment },
+  { type: SUBSCRIPTION_BLOCK_TYPE, label: "Subscription", fields: subscriptionFields, defaultProps: subscriptionDefaultProps, Component: Subscription },
 ];
 
 // Puck's ComponentConfig<P> constrains P more tightly than a plain object
@@ -215,6 +218,14 @@ export function createPuckConfig(tokens: ThemeTokens): Config {
     components: Object.fromEntries(BLOCK_ENTRIES.map((entry) => [entry.type, registerBlock(entry)])),
   };
 }
+
+// ADR-0014 / KAN-1129: Puck's `overrides` (including `preview`, which
+// FreeCanvasPreview replaces) is a prop on the `<Puck>` component itself,
+// not part of `Config` — re-exported here so apps/editor's SiteEditor has
+// one place (`@prefab/puck-adapter`) to import both the config and the
+// override it must pass alongside it, rather than reaching into
+// free-canvas.ts directly.
+export { FreeCanvasPreview } from "./free-canvas.js";
 
 /** The set of block types the Puck canvas can render — everything else is an "unknown block" (R19). */
 export const PUCK_KNOWN_TYPES = new Set(BLOCK_ENTRIES.map((entry) => entry.type));

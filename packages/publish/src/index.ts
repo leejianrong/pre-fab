@@ -1,4 +1,5 @@
 export * from "./build.js";
+export * from "./concurrency-gate.js";
 export * from "./form-manifest.js";
 export * from "./event-signup-manifest.js";
 export * from "./eject.js";

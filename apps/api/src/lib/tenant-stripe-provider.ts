@@ -68,6 +68,35 @@ export interface CheckoutSession {
   url: string;
 }
 
+/**
+ * KAN-1154 / ADR-0016: the recurring counterpart to
+ * CreateCheckoutSessionInput above — a sibling input for a `mode:
+ * "subscription"` Checkout session, not a reused/extended shape (ADR-0016's
+ * question 1: `price` is per-interval, never called `amount`). Every field
+ * is the same "resolved from the block's own publish-time snapshot, never
+ * the visitor's own request" fields CreateCheckoutSessionInput already
+ * carries, plus `interval`/`trialPeriodDays`, which the one-off shape has
+ * no analogue for at all.
+ */
+export interface CreateSubscriptionCheckoutSessionInput {
+  /** See CreateCheckoutSessionInput.accessToken's own comment — identical reasoning, unchanged for a subscription. */
+  accessToken: string;
+  stripeAccountId: string;
+  /** Cents, per interval. */
+  price: number;
+  /** Lowercase ISO 4217, e.g. "usd". */
+  currency: string;
+  interval: "month" | "year";
+  /** 0 means no trial. */
+  trialPeriodDays: number;
+  productName: string;
+  successUrl: string;
+  cancelUrl: string;
+  /** Threaded through Checkout's `client_reference_id`/`metadata` — same reasoning as CreateCheckoutSessionInput.paymentRecordId's own comment, so a real webhook (part 2) can resolve tenant context with no siteId in its own URL. */
+  subscriptionRecordId: string;
+  siteId: string;
+}
+
 /** Real Connect webhook events additionally carry `account`, naming which connected account the event is for (https://docs.stripe.com/connect/webhooks) — absent from lib/stripe.ts's own StripeEvent because platform billing's webhook has no connected accounts at all. */
 export interface StripeEvent {
   id: string;
@@ -79,6 +108,8 @@ export interface StripeEvent {
 export interface TenantStripeProvider {
   connect(input: { authorizationCode: string }): Promise<TenantStripeTokens>;
   createCheckoutSession(input: CreateCheckoutSessionInput): Promise<CheckoutSession>;
+  /** KAN-1154 / ADR-0016: a sibling method, not a `mode` param on createCheckoutSession above — keeps the existing one-off method (and every existing call to it) completely unchanged. */
+  createSubscriptionCheckoutSession(input: CreateSubscriptionCheckoutSessionInput): Promise<CheckoutSession>;
   /** Verifies and parses an inbound Connect webhook body. Throws if the signature does not match. */
   constructEvent(rawBody: Buffer, signature: string | undefined, webhookSecret: string): StripeEvent;
 }
@@ -98,6 +129,11 @@ export class FakeTenantStripeProvider implements TenantStripeProvider {
 
   async createCheckoutSession(_input: CreateCheckoutSessionInput): Promise<CheckoutSession> {
     const sessionId = `fake_cs_${newUlid()}`;
+    return { sessionId, url: `https://checkout.stripe.example/fake/${sessionId}` };
+  }
+
+  async createSubscriptionCheckoutSession(_input: CreateSubscriptionCheckoutSessionInput): Promise<CheckoutSession> {
+    const sessionId = `fake_cs_sub_${newUlid()}`;
     return { sessionId, url: `https://checkout.stripe.example/fake/${sessionId}` };
   }
 
@@ -200,6 +236,78 @@ export class RealTenantStripeProvider implements TenantStripeProvider {
     if (!response.ok) {
       const body = await response.text().catch(() => "");
       throw new Error(`Stripe API error (${response.status}): ${body}`);
+    }
+    const result = (await response.json()) as StripeCheckoutSessionResponse;
+    return { sessionId: result.id, url: result.url };
+  }
+
+  /**
+   * KAN-1154 / ADR-0016. Same direct-charge shell as createCheckoutSession
+   * above (`stripe-account` header, platform's own secret key), but
+   * `mode: "subscription"` and Stripe's `price_data[recurring][interval]`
+   * instead of a flat one-time `unit_amount` line item —
+   * https://docs.stripe.com/api/checkout/sessions/create#create_checkout_session-mode,
+   * https://docs.stripe.com/api/checkout/sessions/create#create_checkout_session-line_items-price_data-recurring.
+   * `subscription_data[trial_period_days]` is only sent when a trial is
+   * actually configured (0 and "omit the field entirely" mean the same
+   * thing to Stripe, but sending `0` explicitly is needless noise on every
+   * request that doesn't use one). UNVERIFIED against a live Stripe account
+   * — see this module's own comment.
+   *
+   * KAN-1154 part 2 / ADR-0016 addendum: `subscription_data[metadata]` is
+   * also always sent — Stripe Checkout copies it onto the *Subscription*
+   * object itself once the session completes (distinct from the top-level
+   * `metadata`/`client_reference_id` above, which only ever land on the
+   * Checkout *Session*, and a session is a one-time, never-seen-again
+   * object once it completes). This is what lets part 2's webhook handler
+   * resolve `siteId` for every event AFTER `checkout.session.completed` —
+   * `customer.subscription.updated`/`.deleted` carry it directly at
+   * `event.data.object.metadata` (the Subscription's own top-level field),
+   * and `invoice.paid`/`invoice.payment_failed` carry it nested under the
+   * invoice's own reference to its subscription (see
+   * subscription-webhook.ts's `extractSubscriptionEventContext` for the
+   * exact, defensively-multi-shaped read). The alternative this part
+   * considered — resolving `stripe_subscription_id` -> `site_id` via a
+   * lookup query that runs before tenant context is set — was rejected:
+   * this repo's RLS (`USING (site_id = current_setting('app.site_id',
+   * true))`) has no existing pattern for a pre-tenant-context lookup by a
+   * non-`site_id` key, and inventing one is strictly more surface (a new
+   * query shape, a new "is this safe under RLS" argument to make) than
+   * asking Stripe to echo back an identifier it already offers a field
+   * for.
+   */
+  async createSubscriptionCheckoutSession(input: CreateSubscriptionCheckoutSessionInput): Promise<CheckoutSession> {
+    const body = new URLSearchParams({
+      mode: "subscription",
+      "line_items[0][price_data][currency]": input.currency,
+      "line_items[0][price_data][product_data][name]": input.productName,
+      "line_items[0][price_data][recurring][interval]": input.interval,
+      "line_items[0][price_data][unit_amount]": String(input.price),
+      "line_items[0][quantity]": "1",
+      success_url: input.successUrl,
+      cancel_url: input.cancelUrl,
+      client_reference_id: input.subscriptionRecordId,
+      "metadata[siteId]": input.siteId,
+      "metadata[subscriptionRecordId]": input.subscriptionRecordId,
+      "subscription_data[metadata][siteId]": input.siteId,
+      "subscription_data[metadata][subscriptionRecordId]": input.subscriptionRecordId,
+    });
+    if (input.trialPeriodDays > 0) {
+      body.set("subscription_data[trial_period_days]", String(input.trialPeriodDays));
+    }
+
+    const response = await this.fetchImpl("https://api.stripe.com/v1/checkout/sessions", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${this.platformSecretKey}`,
+        "content-type": "application/x-www-form-urlencoded",
+        "stripe-account": input.stripeAccountId,
+      },
+      body,
+    });
+    if (!response.ok) {
+      const responseBody = await response.text().catch(() => "");
+      throw new Error(`Stripe API error (${response.status}): ${responseBody}`);
     }
     const result = (await response.json()) as StripeCheckoutSessionResponse;
     return { sessionId: result.id, url: result.url };
