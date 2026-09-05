@@ -14,7 +14,7 @@
   "dependencies": {
     "@prefab/commands": "workspace:*",
     "@prefab/api-client": "workspace:*",
-    "commander": "13.1.0"
+    "commander": "15.0.0"
   },
   "devDependencies": {
     "tsx": "4.19.2",
