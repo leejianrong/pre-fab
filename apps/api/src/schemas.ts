@@ -259,3 +259,38 @@ export const ListPaymentsQuerySchema = z.object({
   limit: z.coerce.number().int().optional(),
   offset: z.coerce.number().int().optional(),
 });
+
+// ---- KAN-1154 part 2 / ADR-0016: subscription lifecycle webhook
+// consumption — dev-only advance route, and the owner-facing read. ----
+
+/**
+ * Dev-only (see `/v1/dev/stripe-connect/:siteId/subscriptions/advance`) —
+ * one flexible route, not five, keyed by `event` — drives the exact same
+ * state machine (apps/api/src/lib/subscription-webhook.ts) a real webhook
+ * would, for whichever Stripe event this call simulates. `eventId` is the
+ * dedup key `recordStripeWebhookEvent` uses (mirrors a real Stripe
+ * `event.id`) — defaults to a fresh ulid per call (so repeated calls with
+ * no `eventId` simulate distinct real-world events); a test proving exact
+ * redelivery-is-a-no-op passes the SAME `eventId` twice on purpose.
+ */
+export const AdvanceFakeSubscriptionBodySchema = z.object({
+  event: z.enum(["checkout_completed", "invoice_paid", "invoice_payment_failed", "subscription_updated", "subscription_deleted"]),
+  eventId: z.string().min(1).optional(),
+  /** checkout_completed only — the row's own stripe_checkout_session_id (what part 1's checkout-creation call snapshotted). */
+  stripeCheckoutSessionId: z.string().min(1).optional(),
+  /** Every event but checkout_completed keys by this instead (the Subscription id checkout_completed itself establishes). */
+  stripeSubscriptionId: z.string().min(1).optional(),
+  /** checkout_completed only. */
+  stripeCustomerId: z.string().min(1).optional(),
+  buyerEmail: z.string().email().optional(),
+  /** subscription_updated only — Stripe's own status string, stored verbatim (ADR-0016's question 2). */
+  status: z.enum(["incomplete", "incomplete_expired", "trialing", "active", "past_due", "canceled", "unpaid", "paused"]).optional(),
+  currentPeriodEnd: z.coerce.date().optional(),
+  /** subscription_updated only. */
+  cancelAtPeriodEnd: z.boolean().optional(),
+});
+
+export const ListSubscriptionsQuerySchema = z.object({
+  limit: z.coerce.number().int().optional(),
+  offset: z.coerce.number().int().optional(),
+});

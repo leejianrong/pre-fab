@@ -84,6 +84,7 @@ import {
   updatePaymentRecordStatus,
   listPaymentRecordsForSite,
   upsertPublishedSubscriptionBlock,
+  listSubscriptionRecordsForSite,
   type Pool,
   type PoolClient,
   type SiteRow,
@@ -179,6 +180,15 @@ import {
   createPostgresPaymentRecordStore,
 } from "./lib/payment-adapters.js";
 import { EmailPaymentNotifier } from "./lib/payment-notifier.js";
+import { EmailSubscriptionNotifier } from "./lib/subscription-notifier.js";
+import {
+  applySubscriptionCheckoutCompleted,
+  applyInvoicePaid,
+  applyInvoicePaymentFailed,
+  applySubscriptionUpdated,
+  applySubscriptionDeleted,
+  extractSubscriptionEventContext,
+} from "./lib/subscription-webhook.js";
 import { createPostgresSubscriptionBlockStore, createPostgresSubscriptionRecordStore } from "./lib/subscription-adapters.js";
 import {
   CreatePageBodySchema,
@@ -218,6 +228,8 @@ import {
   ConnectStripeBodySchema,
   AdvanceFakeStripeConnectBodySchema,
   ListPaymentsQuerySchema,
+  AdvanceFakeSubscriptionBodySchema,
+  ListSubscriptionsQuerySchema,
 } from "./schemas.js";
 
 export interface AppDeps {
@@ -253,6 +265,8 @@ export interface AppDeps {
   stripeConnectWebhookSecret?: string;
   /** Slice 10 — the sender used for "you've been paid" owner notifications specifically, same reasoning as formEmailSender/bookingEmailSender. Defaults to createEmailSender()'s env-based choice. */
   paymentEmailSender?: EmailSender;
+  /** KAN-1154 part 2 — the sender used for subscription-lifecycle owner notifications (new subscriber/past-due/canceled) specifically, same reasoning as paymentEmailSender. Defaults to createEmailSender()'s env-based choice. */
+  subscriptionEmailSender?: EmailSender;
 }
 
 function parseBody<T>(schema: z.ZodType<T>, body: unknown): T {
@@ -436,6 +450,8 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   const eventSignupNotifier = new EmailEventSignupNotifier(eventSignupEmailSender);
   const paymentEmailSender = deps.paymentEmailSender ?? createEmailSender(email);
   const paymentNotifier = new EmailPaymentNotifier(paymentEmailSender);
+  const subscriptionEmailSender = deps.subscriptionEmailSender ?? createEmailSender(email);
+  const subscriptionNotifier = new EmailSubscriptionNotifier(subscriptionEmailSender);
 
   // Stripe webhook signature verification needs the exact raw request
   // bytes (Stripe-Signature is an HMAC over the literal body, not the
@@ -1632,6 +1648,21 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     return withTenantContext(pool, { siteId }, (client) => listPaymentRecordsForSite(client, siteId, request.params.blockId, query));
   });
 
+  // ---- subscription.list (KAN-1154 part 2): owner-facing read of a
+  // Subscription block's own lifecycle history — mirrors payment.list
+  // exactly (point 3 of this card's own scope: a data-access surface
+  // consistent with the existing one-off pattern, not a new dashboard
+  // screen). Every column this part 2 populates (status, current_period_end,
+  // cancel_at_period_end, canceled_at, stripe_subscription_id) is already on
+  // the row `listSubscriptionRecordsForSite` returns — no separate
+  // projection needed. ----
+  app.get<{ Params: { siteId: string; blockId: string } }>("/v1/sites/:siteId/subscription-blocks/:blockId/subscriptions", async (request) => {
+    const principal = await requirePrincipal(request);
+    const { siteId } = await authorizeSite(pool, principal, request.params.siteId);
+    const query = parseQuery(ListSubscriptionsQuerySchema, request.query);
+    return withTenantContext(pool, { siteId }, (client) => listSubscriptionRecordsForSite(client, siteId, request.params.blockId, query));
+  });
+
   // ---- Dev-only: drive the fake tenant-Stripe provider's state, the same
   // "dev-only bootstrap, not a product mutation" pattern as
   // /v1/dev/calendar/:siteId/advance and the EXISTING (unrelated)
@@ -1667,6 +1698,82 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     return { record: updated };
   });
 
+  // ---- Dev-only: drive the subscription lifecycle state machine
+  // (KAN-1154 part 2 / ADR-0016) the same way advance-stripe-connect above
+  // drives one-off payments — one flexible route keyed by `event` rather
+  // than five, since every event this state machine handles shares the
+  // same "resolve siteId (already known — this route is keyed by it, no
+  // webhook payload to parse), apply one guarded transition, notify
+  // best-effort" shape; see subscription-webhook.ts, which this route
+  // calls into UNCHANGED from what the real webhook below calls — the two
+  // can never disagree about what a given event does. ----
+  app.post<{ Params: { siteId: string } }>("/v1/dev/stripe-connect/:siteId/subscriptions/advance", async (request) => {
+    if (!(tenantStripeProvider instanceof FakeTenantStripeProvider)) {
+      throw notFound("the fake tenant-Stripe provider is not in use — nothing to advance");
+    }
+    const { siteId } = request.params;
+    const body = parseBody(AdvanceFakeSubscriptionBodySchema, request.body);
+    const eventId = body.eventId ?? newUlid();
+    const deps = { pool, notifier: subscriptionNotifier };
+
+    switch (body.event) {
+      case "checkout_completed": {
+        if (!body.stripeCheckoutSessionId || !body.stripeSubscriptionId || !body.stripeCustomerId) {
+          throw validationError("checkout_completed needs stripeCheckoutSessionId, stripeSubscriptionId and stripeCustomerId");
+        }
+        const outcome = await applySubscriptionCheckoutCompleted(
+          eventId,
+          {
+            siteId,
+            stripeCheckoutSessionId: body.stripeCheckoutSessionId,
+            stripeSubscriptionId: body.stripeSubscriptionId,
+            stripeCustomerId: body.stripeCustomerId,
+            buyerEmail: body.buyerEmail ?? null,
+            currentPeriodEnd: body.currentPeriodEnd ?? null,
+          },
+          deps,
+        );
+        if (outcome.status === "no_match") throw notFound("no subscription record for that checkout session id on this site (or it is no longer 'incomplete')");
+        return outcome;
+      }
+      case "invoice_paid": {
+        if (!body.stripeSubscriptionId) throw validationError("invoice_paid needs stripeSubscriptionId");
+        const outcome = await applyInvoicePaid(eventId, { siteId, stripeSubscriptionId: body.stripeSubscriptionId }, deps);
+        if (outcome.status === "no_match") throw notFound("no subscription record in a state invoice.paid can apply to");
+        return outcome;
+      }
+      case "invoice_payment_failed": {
+        if (!body.stripeSubscriptionId) throw validationError("invoice_payment_failed needs stripeSubscriptionId");
+        const outcome = await applyInvoicePaymentFailed(eventId, { siteId, stripeSubscriptionId: body.stripeSubscriptionId }, deps);
+        if (outcome.status === "no_match") throw notFound("no subscription record in a state invoice.payment_failed can apply to");
+        return outcome;
+      }
+      case "subscription_updated": {
+        if (!body.stripeSubscriptionId || !body.status) throw validationError("subscription_updated needs stripeSubscriptionId and status");
+        const outcome = await applySubscriptionUpdated(
+          eventId,
+          {
+            siteId,
+            stripeSubscriptionId: body.stripeSubscriptionId,
+            status: body.status,
+            currentPeriodEnd: body.currentPeriodEnd ?? null,
+            cancelAtPeriodEnd: body.cancelAtPeriodEnd ?? false,
+            canceledAt: body.status === "canceled" ? new Date() : null,
+          },
+          deps,
+        );
+        if (outcome.status === "no_match") throw notFound("no subscription record in a state customer.subscription.updated can apply to");
+        return outcome;
+      }
+      case "subscription_deleted": {
+        if (!body.stripeSubscriptionId) throw validationError("subscription_deleted needs stripeSubscriptionId");
+        const outcome = await applySubscriptionDeleted(eventId, { siteId, stripeSubscriptionId: body.stripeSubscriptionId, canceledAt: new Date() }, deps);
+        if (outcome.status === "no_match") throw notFound("no subscription record in a state customer.subscription.deleted can apply to");
+        return outcome;
+      }
+    }
+  });
+
   // ---- Real Stripe Connect webhooks (Slice 10 / KAN-1137): the real,
   // signature-verified inbound path — UNVERIFIED against a live Stripe
   // account (see tenant-stripe-provider.ts's module comment). Distinct
@@ -1694,10 +1801,41 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     if (event.type === "checkout.session.completed") {
       const object = event.data.object as {
         id?: string;
+        mode?: string;
         payment_intent?: string;
+        subscription?: string;
+        customer?: string;
         customer_details?: { email?: string };
         metadata?: { siteId?: string };
       };
+
+      // KAN-1154 part 2 / ADR-0016: a subscription-mode Checkout session —
+      // dispatched to its own handler and returned early, entirely before
+      // the one-off payment branch immediately below, whose own code is
+      // untouched by this part. Discriminated by Checkout's own `mode`
+      // field (always present on a real Checkout Session, and not
+      // something a tampered client ever influences — this event comes
+      // from Stripe, signature-verified above, not from a visitor).
+      if (object.mode === "subscription") {
+        const siteId = object.metadata?.siteId;
+        if (siteId && object.id && object.subscription && object.customer) {
+          await applySubscriptionCheckoutCompleted(
+            event.id,
+            {
+              siteId,
+              stripeCheckoutSessionId: object.id,
+              stripeSubscriptionId: object.subscription,
+              stripeCustomerId: object.customer,
+              buyerEmail: object.customer_details?.email ?? null,
+              currentPeriodEnd: null,
+            },
+            { pool, notifier: subscriptionNotifier },
+          );
+        }
+        reply.status(200);
+        return { ok: true };
+      }
+
       const siteId = object.metadata?.siteId;
       if (siteId && object.id) {
         const updated = await withTenantContext(pool, { siteId }, (client) =>
@@ -1716,6 +1854,59 @@ export function buildApp(deps: AppDeps): FastifyInstance {
               .catch(() => {});
           }
         }
+      }
+      reply.status(200);
+      return { ok: true };
+    }
+
+    // ---- KAN-1154 part 2 / ADR-0016: subscription lifecycle events —
+    // see subscription-webhook.ts for the state machine these funnel into
+    // (the same functions the dev-advance route above calls, so the two
+    // can never disagree about what a given event does). siteId/subscription
+    // id are resolved from Stripe's own payload via
+    // extractSubscriptionEventContext — see that function's own comment for
+    // exactly which (UNVERIFIED, more than one Stripe API version's shape
+    // considered) fields this reads. ----
+    if (event.type === "invoice.paid" || event.type === "invoice.payment_failed") {
+      const { siteId, stripeSubscriptionId } = extractSubscriptionEventContext(event.type, event.data.object);
+      if (siteId && stripeSubscriptionId) {
+        const apply = event.type === "invoice.paid" ? applyInvoicePaid : applyInvoicePaymentFailed;
+        await apply(event.id, { siteId, stripeSubscriptionId }, { pool, notifier: subscriptionNotifier });
+      }
+      reply.status(200);
+      return { ok: true };
+    }
+
+    if (event.type === "customer.subscription.updated") {
+      const { siteId, stripeSubscriptionId } = extractSubscriptionEventContext(event.type, event.data.object);
+      const object = event.data.object as { status?: string; current_period_end?: number; cancel_at_period_end?: boolean; canceled_at?: number };
+      if (siteId && stripeSubscriptionId && object.status) {
+        await applySubscriptionUpdated(
+          event.id,
+          {
+            siteId,
+            stripeSubscriptionId,
+            status: object.status,
+            currentPeriodEnd: object.current_period_end ? new Date(object.current_period_end * 1000) : null,
+            cancelAtPeriodEnd: object.cancel_at_period_end ?? false,
+            canceledAt: object.canceled_at ? new Date(object.canceled_at * 1000) : null,
+          },
+          { pool, notifier: subscriptionNotifier },
+        );
+      }
+      reply.status(200);
+      return { ok: true };
+    }
+
+    if (event.type === "customer.subscription.deleted") {
+      const { siteId, stripeSubscriptionId } = extractSubscriptionEventContext(event.type, event.data.object);
+      const object = event.data.object as { canceled_at?: number };
+      if (siteId && stripeSubscriptionId) {
+        await applySubscriptionDeleted(
+          event.id,
+          { siteId, stripeSubscriptionId, canceledAt: object.canceled_at ? new Date(object.canceled_at * 1000) : new Date() },
+          { pool, notifier: subscriptionNotifier },
+        );
       }
       reply.status(200);
       return { ok: true };

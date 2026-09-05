@@ -186,10 +186,10 @@ CREATE INDEX IF NOT EXISTS payment_records_site_id_block_id_idx ON payment_recor
 -- packages/db/migrations/0012_kan1154_subscriptions.sql minus RLS/ulid, same
 -- reasoning as every other table above. `stripe_connections` above is
 -- reused unchanged — a connected Stripe account is the same account
--- whether it's charged once or on a schedule. Part 1 (this card) only ever
--- writes 'incomplete' rows here; every other status value and every
--- lifecycle column below is written only by a follow-up card's webhook
--- consumer, which does not exist in self-host either yet.
+-- whether it's charged once or on a schedule. Part 1 only ever wrote
+-- 'incomplete' rows here; every other status value and every lifecycle
+-- column below is written by part 2's webhook consumer
+-- (subscription-webhook.ts) and its dev-advance route (app.ts).
 CREATE TABLE IF NOT EXISTS subscription_blocks (
   id TEXT PRIMARY KEY,
   site_id TEXT NOT NULL,
@@ -224,3 +224,16 @@ CREATE TABLE IF NOT EXISTS subscription_records (
 );
 
 CREATE INDEX IF NOT EXISTS subscription_records_site_id_block_id_idx ON subscription_records (site_id, block_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS subscription_records_stripe_subscription_id_idx ON subscription_records (stripe_subscription_id);
+
+-- KAN-1154 part 2 / ADR-0016: mirrors packages/db/migrations/0007_slice8.sql's
+-- own `stripe_webhook_events` table exactly (Stripe event ids are globally
+-- unique regardless of which integration receives them, so one table
+-- serves every webhook consumer this instance ever grows) — a self-hosted
+-- instance's own webhook route (app.ts) uses this to guard against Stripe's
+-- own retry-on-no-2xx redelivering the same event twice.
+CREATE TABLE IF NOT EXISTS stripe_webhook_events (
+  id TEXT PRIMARY KEY,
+  type TEXT NOT NULL,
+  processed_at TEXT NOT NULL
+);
