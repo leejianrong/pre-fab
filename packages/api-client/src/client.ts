@@ -40,6 +40,13 @@ import type {
   Booking,
   ConnectCalendarInput,
   CalendarConnectionStatus,
+  EventSignupWidget,
+  ListEventSignupsQuery,
+  ListEventSignupsResult,
+  ConnectStripeInput,
+  StripeConnectionStatus,
+  ListPaymentsQuery,
+  ListPaymentsResult,
 } from "./types.js";
 
 export type ApiErrorCode =
@@ -371,6 +378,34 @@ export class ApiClient {
     return this.request("DELETE", `/v1/sites/${siteId}/forms/${formId}/submissions/${submissionId}`);
   }
 
+  // ---- eventSignupWidget.get / eventSignup.list / eventSignup.export / eventSignup.delete (KAN-1138) ----
+  getEventSignupWidget(siteId: string, widgetId: string): Promise<EventSignupWidget> {
+    return this.request("GET", `/v1/sites/${siteId}/event-signups/${widgetId}`);
+  }
+
+  listEventSignups(siteId: string, widgetId: string, query: ListEventSignupsQuery = {}): Promise<ListEventSignupsResult> {
+    const params = new URLSearchParams();
+    if (query.limit !== undefined) params.set("limit", String(query.limit));
+    if (query.offset !== undefined) params.set("offset", String(query.offset));
+    const qs = params.toString();
+    return this.request("GET", `/v1/sites/${siteId}/event-signups/${widgetId}/signups${qs ? `?${qs}` : ""}`);
+  }
+
+  exportEventSignupsCsv(siteId: string, widgetId: string): Promise<string> {
+    return this.requestText("GET", `/v1/sites/${siteId}/event-signups/${widgetId}/signups/export?format=csv`);
+  }
+
+  exportEventSignupsJson(
+    siteId: string,
+    widgetId: string,
+  ): Promise<Array<{ id: string; createdAt: string; status: string; position: number | null; values: Record<string, unknown> }>> {
+    return this.request("GET", `/v1/sites/${siteId}/event-signups/${widgetId}/signups/export?format=json`);
+  }
+
+  deleteEventSignup(siteId: string, widgetId: string, signupId: string): Promise<{ removed: true }> {
+    return this.request("DELETE", `/v1/sites/${siteId}/event-signups/${widgetId}/signups/${signupId}`);
+  }
+
   // ---- member.invite / member.list / member.updateRole / member.remove (Slice 8) ----
   inviteMember(siteId: string, input: { email: string; role: Exclude<SiteRole, "owner"> }): Promise<SiteMember> {
     return this.request("POST", `/v1/sites/${siteId}/members`, input);
@@ -435,6 +470,28 @@ export class ApiClient {
 
   getCalendarStatus(siteId: string): Promise<CalendarConnectionStatus | null> {
     return this.request("GET", `/v1/sites/${siteId}/calendar`);
+  }
+
+  // ---- stripe.connect / stripe.disconnect / stripe.status (Slice 10 / KAN-1137, ADR-0005) ----
+  connectStripe(siteId: string, input: ConnectStripeInput): Promise<StripeConnectionStatus> {
+    return this.request("POST", `/v1/sites/${siteId}/stripe`, input);
+  }
+
+  disconnectStripe(siteId: string): Promise<{ removed: true }> {
+    return this.request("DELETE", `/v1/sites/${siteId}/stripe`);
+  }
+
+  getStripeStatus(siteId: string): Promise<StripeConnectionStatus | null> {
+    return this.request("GET", `/v1/sites/${siteId}/stripe`);
+  }
+
+  // ---- payment.list (Slice 10 / KAN-1137) ----
+  listPayments(siteId: string, blockId: string, query: ListPaymentsQuery = {}): Promise<ListPaymentsResult> {
+    const params = new URLSearchParams();
+    if (query.limit !== undefined) params.set("limit", String(query.limit));
+    if (query.offset !== undefined) params.set("offset", String(query.offset));
+    const qs = params.toString();
+    return this.request("GET", `/v1/sites/${siteId}/payment-blocks/${blockId}/payments${qs ? `?${qs}` : ""}`);
   }
 
   resolveUrl(path: string): string {

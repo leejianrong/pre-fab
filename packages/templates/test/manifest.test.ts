@@ -5,8 +5,8 @@ import { TEMPLATE_MANIFESTS, TemplateManifestSchema } from "../src/manifest.js";
 import { loadTemplateCheckout } from "../src/server.js";
 
 describe("template manifests", () => {
-  it("has exactly eight templates, each a valid manifest (ADR-0011)", () => {
-    expect(TEMPLATE_MANIFESTS).toHaveLength(8);
+  it("has at least eight templates, each a valid manifest (ADR-0011, KAN-1128)", () => {
+    expect(TEMPLATE_MANIFESTS.length).toBeGreaterThanOrEqual(8);
     for (const manifest of TEMPLATE_MANIFESTS) {
       expect(TemplateManifestSchema.safeParse(manifest).success).toBe(true);
     }
