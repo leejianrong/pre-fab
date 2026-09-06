@@ -68,22 +68,26 @@ export function TemplateGallery({ onSiteCreated }: { onSiteCreated: (siteId: str
       {templates === null ? (
         <p className="pf-supporting-text">Loading templates…</p>
       ) : (
-        <ul
-          style={{
-            listStyle: "none",
-            padding: 0,
-            margin: 0,
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))",
-            gap: "0.75rem",
-          }}
-        >
+        <ul className="pf-template-grid" style={{ listStyle: "none", padding: 0, margin: 0 }}>
           {templates.map((template) => (
             <li key={template.id}>
-              <Card style={{ display: "grid", gap: "0.4rem" }}>
-                <strong>{template.name}</strong>
-                <span className="pf-supporting-text">{template.tagline}</span>
-                <OutlinedButton onClick={() => startFork(template)}>Use this template</OutlinedButton>
+              {/* padding/overflow override Card's own baked-in 1rem padding
+                  (ui/Card.tsx has no media-slot prop) so the thumbnail can
+                  sit full-bleed at the top, flush with the card's rounded
+                  corners, with the text/button below back in a padded
+                  region of their own. */}
+              <Card style={{ padding: 0, overflow: "hidden", display: "grid", gap: 0 }}>
+                <img
+                  src={`${api.baseUrl}${template.thumbnailUrl}`}
+                  alt={`Preview of the "${template.name}" template`}
+                  loading="lazy"
+                  style={{ display: "block", width: "100%", aspectRatio: "8 / 5", objectFit: "cover" }}
+                />
+                <div style={{ display: "grid", gap: "0.4rem", padding: "1rem" }}>
+                  <strong>{template.name}</strong>
+                  <span className="pf-supporting-text">{template.tagline}</span>
+                  <OutlinedButton onClick={() => startFork(template)}>Use this template</OutlinedButton>
+                </div>
               </Card>
             </li>
           ))}

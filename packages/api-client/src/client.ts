@@ -113,6 +113,17 @@ export class ApiClient {
     this.sessionCookie = options.cookie;
   }
 
+  /**
+   * KAN-1206: exposed so a caller can build an absolute URL for a plain
+   * `<img>`/`<a>` tag (a template thumbnail, say) — those don't go through
+   * `request()`'s fetch wrapper, so they need the same origin prefix by
+   * hand. Empty string in the browser editor's dev/same-origin setup
+   * (see apps/editor/src/api.ts), an absolute API origin otherwise.
+   */
+  get baseUrl(): string {
+    return this.options.baseUrl;
+  }
+
   private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
     let response: Response;
     try {

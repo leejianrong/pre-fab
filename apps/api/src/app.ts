@@ -120,7 +120,7 @@ import {
   type SubscriptionProps,
 } from "@prefab/blocks";
 import { buildSiteBundle } from "@prefab/publish";
-import { TEMPLATE_MANIFESTS, loadTemplateCheckout } from "@prefab/templates/server";
+import { TEMPLATE_MANIFESTS, loadTemplateCheckout, templateThumbnailPath } from "@prefab/templates/server";
 import {
   submitForm,
   toCsv,
@@ -642,6 +642,27 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   // spirit) and the editor's template gallery both need to enumerate what's
   // available before forking one.
   app.get("/v1/templates", async () => TEMPLATE_MANIFESTS);
+
+  // ---- template thumbnail (KAN-1206) ----
+  // Unauthenticated static file, same reasoning as `/v1/assets/:filename`
+  // above: the editor's template gallery renders these in a plain `<img>`
+  // before a visitor has ever signed in, so there is no token to check.
+  // `:id` is validated against the fixed TEMPLATE_MANIFESTS list rather
+  // than trusted as a filesystem path — templateThumbnailPath throws for
+  // anything not already one of those known-good ids, so this can never
+  // be used to read an arbitrary file off disk.
+  app.get<{ Params: { id: string } }>("/v1/templates/:id/thumbnail", async (request, reply) => {
+    const manifest = TEMPLATE_MANIFESTS.find((t) => t.id === request.params.id);
+    if (!manifest) throw notFound(`unknown template "${request.params.id}"`);
+    const filePath = templateThumbnailPath(manifest.id);
+    try {
+      await stat(filePath);
+    } catch {
+      throw notFound("not found");
+    }
+    reply.type("image/jpeg");
+    return reply.send(createReadStream(filePath));
+  });
 
   // ---- site.createFromTemplate (Slice 3 / ADR-0011) ----
   // Fork-on-use: every page and block gets a fresh ULID (rekeyPageForFork),

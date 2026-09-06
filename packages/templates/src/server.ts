@@ -49,4 +49,20 @@ export async function loadTemplateCheckout(templateId: string): Promise<Template
   return { manifest, theme: theme.tokens, pages };
 }
 
+/** Filename convention for the checked-in preview image every template directory carries — see scripts/generate-thumbnails.ts (tools/design-review). */
+export const TEMPLATE_THUMBNAIL_FILENAME = "thumbnail.jpg";
+
+/**
+ * KAN-1206: resolves a template id to its checked-in thumbnail's absolute
+ * path. Validated against `TEMPLATE_MANIFESTS` the same way
+ * `loadTemplateCheckout` is — `templateId` never reaches `path.join` unless
+ * it's one of the fixed, known-good ids in that array, so there's no
+ * path-traversal surface for apps/api's route to worry about.
+ */
+export function templateThumbnailPath(templateId: string): string {
+  const manifest = TEMPLATE_MANIFESTS.find((t) => t.id === templateId);
+  if (!manifest) throw new Error(`unknown template "${templateId}"`);
+  return path.join(TEMPLATES_ROOT, manifest.id, TEMPLATE_THUMBNAIL_FILENAME);
+}
+
 export { TEMPLATE_MANIFESTS, TemplateManifestSchema, type TemplateManifest };

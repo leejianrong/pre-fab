@@ -423,6 +423,43 @@ a {
   justify-content: flex-end;
 }
 
+/* TemplateGallery (KAN-1206): a fixed column-count per tier rather than the
+   old `repeat(auto-fill, minmax(220px, 1fr))` — auto-fill keeps packing in
+   more same-width cards as the viewport grows, which is exactly what the
+   design audit flagged as *not* a genuinely responsive multi-column grid
+   on wide viewports (it never gains a deliberate "3-across" or "4-across"
+   moment, just an ever-growing, arbitrary column count). Breakpoints at
+   640px/1024px mirror @prefab/schema's own BREAKPOINT_MIN_WIDTH
+   (packages/blocks/src/responsive.tsx's mental model, even though this
+   file lives outside that package), plus one wider tier at 1440px —
+   TEMPLATE_VIEWPORTS' own "desktop" width in tools/design-review — since a
+   card grid specifically benefits from a 4th column on a genuinely wide
+   screen where 3 fixed-count columns would otherwise just sit there
+   over-wide. */
+.pf-template-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.25rem;
+}
+
+@media (min-width: 640px) {
+  .pf-template-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (min-width: 1024px) {
+  .pf-template-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (min-width: 1440px) {
+  .pf-template-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
 /* LoadingIndicator */
 .pf-loading {
   display: flex;
