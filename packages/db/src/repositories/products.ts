@@ -158,6 +158,58 @@ export async function listAllProductsForSite(client: PoolClient, siteId: string)
   return result.rows.map(rowToProduct);
 }
 
+export interface DecrementProductStockResult {
+  document: ProductDocument;
+  /**
+   * True when this call found INSUFFICIENT stock (two visitors raced for
+   * the last unit(s), and by the time this order's webhook ran, fewer than
+   * `quantity` remained) — see KAN-1246 / ADR-0018 (part 3 addendum) for the
+   * full reasoning. The Stripe payment has already succeeded by the time
+   * this runs, so this never blocks the caller from creating the order/
+   * order_item anyway; it only flags that specific line as `oversold` for
+   * the owner to resolve by hand.
+   */
+  oversold: boolean;
+}
+
+/**
+ * KAN-1246 / ADR-0018 (part 3 addendum): the atomic, oversell-safe stock
+ * decrement the card calls for — a DB-level conditional UPDATE, not an
+ * app-level read-then-write (the standard idiom for "decrement by N, never
+ * below zero, in one round trip that either succeeds outright or tells the
+ * caller it couldn't"). Call only for a `fulfillmentType === "physical"`
+ * line; a digital/service product has no `stock_count` to decrement at all.
+ *
+ * The strict conditional UPDATE (`stock_count >= $2`) is tried first — the
+ * common case, no race. When it matches zero rows (either genuinely
+ * oversold, or `quantity` exceeds a stock count that changed between this
+ * order's own checkout-time validation and this webhook actually running),
+ * a second UPDATE floors the count at zero with `GREATEST(stock_count -
+ * $2, 0)` rather than leaving it negative or leaving the order unrecorded —
+ * money was already collected by Stripe before this function ever runs, so
+ * failing the order here would mean a customer paid for nothing with no
+ * record of it (this repo's own "never a blank page, never a silently
+ * dropped failure" posture, R7.4). The caller (apps/api/src/lib/
+ * cart-order-webhook.ts) records `oversold: true` on that order_item so the
+ * owner sees it and can resolve it manually (refund, contact the customer).
+ */
+export async function decrementProductStock(client: PoolClient, productId: string, quantity: number): Promise<DecrementProductStockResult> {
+  const strict = await client.query<RawProductRow>(
+    `UPDATE products SET stock_count = stock_count - $2, updated_at = now() WHERE id = $1 AND stock_count >= $2 RETURNING *`,
+    [productId, quantity],
+  );
+  if (strict.rows[0]) {
+    return { document: rowToProduct(strict.rows[0]), oversold: false };
+  }
+
+  const floored = await client.query<RawProductRow>(
+    `UPDATE products SET stock_count = GREATEST(stock_count - $2, 0), updated_at = now() WHERE id = $1 RETURNING *`,
+    [productId, quantity],
+  );
+  if (!floored.rows[0]) throw new Error(`product ${productId} not found while decrementing stock`);
+  return { document: rowToProduct(floored.rows[0]), oversold: true };
+}
+
 export type WriteProductResult = { ok: true; document: ProductDocument } | { ok: false; current: ProductDocument };
 
 function arraysEqual(a: string[], b: string[]): boolean {

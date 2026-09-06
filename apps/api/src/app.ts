@@ -91,6 +91,13 @@ import {
   listPaymentRecordsForSite,
   upsertPublishedSubscriptionBlock,
   listSubscriptionRecordsForSite,
+  getCartCheckoutRecordById,
+  listCartCheckoutRecordsForSite,
+  getProductPublic,
+  listOrderItemsForCartCheckoutRecord,
+  markOrderItemShipped,
+  getOrderItem,
+  listAllOrderItemsForExport,
   type Pool,
   type PoolClient,
   type SiteRow,
@@ -207,6 +214,7 @@ import {
   extractSubscriptionEventContext,
 } from "./lib/subscription-webhook.js";
 import { createPostgresSubscriptionBlockStore, createPostgresSubscriptionRecordStore } from "./lib/subscription-adapters.js";
+import { applyCartCheckoutCompleted } from "./lib/cart-order-webhook.js";
 import {
   CreatePageBodySchema,
   CreatePostBodySchema,
@@ -251,6 +259,10 @@ import {
   AdvanceFakeSubscriptionBodySchema,
   ListSubscriptionsQuerySchema,
   CreateCartCheckoutBodySchema,
+  ListOrdersQuerySchema,
+  ExportOrdersQuerySchema,
+  MarkOrderItemShippedBodySchema,
+  AdvanceFakeCartBodySchema,
 } from "./schemas.js";
 
 export interface AppDeps {
@@ -1096,6 +1108,120 @@ export function buildApp(deps: AppDeps): FastifyInstance {
         });
       }
       return result.document;
+    });
+  });
+
+  // ---- KAN-1246 / ADR-0018 (part 3 addendum): orders, inventory and
+  // fulfillment. An "order" is a cart_checkout_records row once its status
+  // moves to 'completed' — see that ADR addendum's point 1 for why there is
+  // no separate orders table/route prefix; this deliberately lives under
+  // /v1/sites/:siteId/orders (an owner-facing name), not
+  // /v1/sites/:siteId/cart-checkout-records, since "order" is what an owner
+  // actually calls it. ----
+
+  // ---- order.list ----
+  app.get<{ Params: { siteId: string } }>("/v1/sites/:siteId/orders", async (request) => {
+    const principal = await requirePrincipal(request);
+    const { siteId } = await authorizeSite(pool, principal, request.params.siteId);
+    const query = parseQuery(ListOrdersQuerySchema, request.query);
+    return withTenantContext(pool, { siteId }, (client) => listCartCheckoutRecordsForSite(client, siteId, query));
+  });
+
+  // ---- order.get: the header (cart_checkout_records row) plus its own line items ----
+  app.get<{ Params: { siteId: string; orderId: string } }>("/v1/sites/:siteId/orders/:orderId", async (request) => {
+    const principal = await requirePrincipal(request);
+    const { siteId } = await authorizeSite(pool, principal, request.params.siteId);
+    const { orderId } = request.params;
+    return withTenantContext(pool, { siteId }, async (client) => {
+      const order = await getCartCheckoutRecordById(client, siteId, orderId);
+      if (!order) throw notFound("order not found");
+      const items = await listOrderItemsForCartCheckoutRecord(client, siteId, orderId);
+      return { order, items };
+    });
+  });
+
+  // ---- order.export: CSV/JSON, one row per order_item, joined against its
+  // own order header for buyerEmail — mirrors submission.export/
+  // eventSignup.export exactly. ----
+  app.get<{ Params: { siteId: string } }>("/v1/sites/:siteId/orders/export", async (request, reply) => {
+    const principal = await requirePrincipal(request);
+    const { siteId } = await authorizeSite(pool, principal, request.params.siteId, { minRole: "editor" });
+    const query = parseQuery(ExportOrdersQuerySchema, request.query);
+
+    const rows = await withTenantContext(pool, { siteId }, (client) => listAllOrderItemsForExport(client, siteId));
+
+    if (query.format === "json") {
+      return rows.map((row) => ({
+        orderId: row.cartCheckoutRecordId,
+        orderItemId: row.id,
+        orderCreatedAt: row.orderCreatedAt,
+        buyerEmail: row.buyerEmail,
+        productId: row.productId,
+        title: row.title,
+        quantity: row.quantity,
+        unitAmount: row.unitAmount,
+        currency: row.currency,
+        fulfillmentType: row.fulfillmentType,
+        status: row.status,
+        trackingNumber: row.trackingNumber,
+        oversold: row.oversold,
+      }));
+    }
+
+    const columns = [
+      "orderId",
+      "orderItemId",
+      "orderCreatedAt",
+      "buyerEmail",
+      "productId",
+      "title",
+      "quantity",
+      "unitAmount",
+      "currency",
+      "fulfillmentType",
+      "status",
+      "trackingNumber",
+      "oversold",
+    ];
+    const csvRows = rows.map((row) => ({
+      orderId: row.cartCheckoutRecordId,
+      orderItemId: row.id,
+      orderCreatedAt: row.orderCreatedAt.toISOString(),
+      buyerEmail: row.buyerEmail ?? "",
+      productId: row.productId,
+      title: row.title,
+      quantity: String(row.quantity),
+      unitAmount: String(row.unitAmount),
+      currency: row.currency,
+      fulfillmentType: row.fulfillmentType,
+      status: row.status,
+      trackingNumber: row.trackingNumber ?? "",
+      oversold: String(row.oversold),
+    }));
+    reply.type("text/csv; charset=utf-8");
+    reply.header("content-disposition", `attachment; filename="${siteId}-orders.csv"`);
+    return reply.send(toCsv(columns, csvRows));
+  });
+
+  // ---- order.markShipped: the one owner-driven fulfillment transition this
+  // card wires a mutation for (unfulfilled -> shipped, free-text tracking
+  // number) — see the ADR addendum's point 6 for why "mark delivered" for a
+  // physical line has no mutation yet. Guarded by markOrderItemShipped's own
+  // `AND status = 'unfulfilled'` (no matching row -> 404, same "no side
+  // effect on a mismatched precondition" discipline booking.cancel's own
+  // cancelBookingAsOwner already follows). ----
+  app.post<{ Params: { siteId: string; orderItemId: string } }>("/v1/sites/:siteId/orders/items/:orderItemId/ship", async (request) => {
+    const principal = await requirePrincipal(request);
+    const { siteId } = await authorizeSite(pool, principal, request.params.siteId, { minRole: "editor" });
+    const { orderItemId } = request.params;
+    const body = parseBody(MarkOrderItemShippedBodySchema, request.body);
+
+    return withTenantContext(pool, { siteId }, async (client) => {
+      const existing = await getOrderItem(client, siteId, orderItemId);
+      if (!existing) throw notFound("order item not found");
+      const updated = await markOrderItemShipped(client, siteId, orderItemId, body.trackingNumber);
+      if (!updated) throw conflict("order item is not 'unfulfilled' (already shipped/delivered, or not a physical line)", { current: existing });
+      return updated;
     });
   });
 
@@ -1967,6 +2093,35 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     }
   });
 
+  // ---- Dev-only: drive KAN-1246's cart-order webhook consumer
+  // (apps/api/src/lib/cart-order-webhook.ts) the same way advance-stripe-
+  // connect/subscriptions-advance above drive the one-off/subscription
+  // paths — needed for e2e testability since no live Stripe account exists
+  // in this environment. Keyed by `sessionId` (the Stripe Checkout session
+  // id the runtime cart-checkout route's own response url embeds — see
+  // sessionIdFromUrl-shaped extraction in the payments/subscriptions test
+  // suites), the same key `/v1/dev/stripe-connect/:siteId/advance` above
+  // already uses for the one-off path — not this row's own internal id
+  // (see markCartCheckoutRecordCompleted's own comment for why). Calls the
+  // exact same applyCartCheckoutCompleted the real webhook route below
+  // calls, so the two can never disagree. ----
+  app.post<{ Params: { siteId: string } }>("/v1/dev/stripe-connect/:siteId/cart/advance", async (request) => {
+    if (!(tenantStripeProvider instanceof FakeTenantStripeProvider)) {
+      throw notFound("the fake tenant-Stripe provider is not in use — nothing to advance");
+    }
+    const { siteId } = request.params;
+    const body = parseBody(AdvanceFakeCartBodySchema, request.body);
+    const eventId = body.eventId ?? newUlid();
+
+    const outcome = await applyCartCheckoutCompleted(
+      eventId,
+      { siteId, stripeSessionId: body.sessionId, buyerEmail: body.buyerEmail ?? null },
+      { pool },
+    );
+    if (outcome.status === "no_match") throw notFound("no cart checkout record for that id on this site (or it is no longer 'pending')");
+    return outcome;
+  });
+
   // ---- Real Stripe Connect webhooks (Slice 10 / KAN-1137): the real,
   // signature-verified inbound path — UNVERIFIED against a live Stripe
   // account (see tenant-stripe-provider.ts's module comment). Distinct
@@ -1999,7 +2154,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
         subscription?: string;
         customer?: string;
         customer_details?: { email?: string };
-        metadata?: { siteId?: string };
+        metadata?: { siteId?: string; checkoutType?: string; cartCheckoutRecordId?: string };
       };
 
       // KAN-1154 part 2 / ADR-0016: a subscription-mode Checkout session —
@@ -2024,6 +2179,47 @@ export function buildApp(deps: AppDeps): FastifyInstance {
             },
             { pool, notifier: subscriptionNotifier },
           );
+        }
+        reply.status(200);
+        return { ok: true };
+      }
+
+      // KAN-1246 / ADR-0018 (part 3 addendum): a cart-mode Checkout
+      // session — also `mode: "payment"` (the same mode a one-off Payment
+      // block session uses), so this must be discriminated by
+      // `metadata.checkoutType` (KAN-1245's own createCartCheckoutSession
+      // already sets it), NOT by `mode` alone. Dispatched to its own
+      // handler and returned early, entirely before the one-off payment
+      // branch immediately below (whose own code stays untouched by this
+      // card) — inserted here so a cart checkout can never fall through
+      // into updatePaymentRecordStatus, which would silently no-op for it
+      // (no payment_records row exists for a cart session). Keyed by
+      // `object.id` (Stripe's own Checkout Session id), exactly like the
+      // one-off branch immediately below keys `updatePaymentRecordStatus`
+      // — see markCartCheckoutRecordCompleted's own comment for why this
+      // is `stripe_session_id`, not `metadata.cartCheckoutRecordId`.
+      if (object.metadata?.checkoutType === "cart") {
+        const siteId = object.metadata?.siteId;
+        if (siteId && object.id) {
+          const outcome = await applyCartCheckoutCompleted(
+            event.id,
+            { siteId, stripeSessionId: object.id, buyerEmail: object.customer_details?.email ?? null },
+            { pool },
+          );
+          if (outcome.status === "applied") {
+            const site = await withTenantContext(pool, { siteId }, (client) => getSite(client, siteId));
+            const owner = site ? await withTenantContext(pool, {}, (client) => getAccount(client, site.ownerId)) : null;
+            if (owner?.email) {
+              await paymentNotifier
+                .notifyCompleted({
+                  ownerEmail: owner.email,
+                  amount: outcome.cartCheckoutRecord.amountSubtotal,
+                  currency: outcome.cartCheckoutRecord.currency,
+                  buyerEmail: outcome.cartCheckoutRecord.buyerEmail,
+                })
+                .catch(() => {});
+            }
+          }
         }
         reply.status(200);
         return { ok: true };
@@ -2761,6 +2957,14 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     const { siteId } = request.params;
     const body = parseBody(CreateCartCheckoutBodySchema, request.body);
     const referer = (request.headers.referer as string | undefined) ?? (request.headers.origin as string | undefined) ?? runtimeApiUrl ?? "http://localhost/";
+    // KAN-1246 / ADR-0018 (part 3 addendum): generated up front (not
+    // inline) so the success redirect can carry it as `pf_cart_id` —
+    // CartDrawer's own success-detection effect reads it back to fetch each
+    // purchased item's post-purchase message from the new receipt route
+    // below. Not new information reaching the visitor's browser: this is
+    // the same id already threaded into the Checkout Session's own
+    // `client_reference_id`/`metadata.cartCheckoutRecordId`.
+    const cartCheckoutRecordId = newUlid();
 
     function returnUrl(outcome: "success" | "cancel"): string {
       let url: URL;
@@ -2770,11 +2974,12 @@ export function buildApp(deps: AppDeps): FastifyInstance {
         url = new URL("http://localhost/");
       }
       url.searchParams.set("pf_cart", outcome);
+      if (outcome === "success") url.searchParams.set("pf_cart_id", cartCheckoutRecordId);
       return url.toString();
     }
 
     const result = await createCartCheckout(
-      { id: newUlid(), siteId, items: body.items, successUrl: returnUrl("success"), cancelUrl: returnUrl("cancel") },
+      { id: cartCheckoutRecordId, siteId, items: body.items, successUrl: returnUrl("success"), cancelUrl: returnUrl("cancel") },
       cartCheckoutDeps,
     );
 
@@ -2793,6 +2998,78 @@ export function buildApp(deps: AppDeps): FastifyInstance {
       case "provider_error":
         throw new ApiError("internal", "the payment provider could not create a checkout session");
     }
+  });
+
+  // ---- KAN-1246 / ADR-0018 (part 3 addendum): the post-purchase receipt
+  // read — no principal, keyed by the cart-checkout record id CartDrawer's
+  // own success redirect now carries (`pf_cart_id`, see the create route
+  // above). Reads `cart_checkout_records` with the SAME no-principal
+  // tenant-context trust model the create route already uses
+  // (withTenantContext(pool, { siteId }) with siteId taken straight from
+  // the URL — no new public-read RLS policy needed; see the ADR addendum's
+  // point 5 for the full reasoning) rather than a new public-read policy,
+  // which would stay permissive for any future context-free query against
+  // this visitor-PII-bearing table forever. Returns only what a visitor
+  // needs to see their own post-purchase message — never buyer_email,
+  // amount, or anything else this row carries. ----
+  app.options("/v1/runtime/sites/:siteId/cart-checkout/:cartCheckoutRecordId/receipt", async (_request, reply) => {
+    reply
+      .header("access-control-allow-origin", "*")
+      .header("access-control-allow-methods", "GET, OPTIONS")
+      .header("access-control-allow-headers", "content-type")
+      .status(204)
+      .send();
+  });
+
+  app.get<{ Params: { siteId: string; cartCheckoutRecordId: string } }>(
+    "/v1/runtime/sites/:siteId/cart-checkout/:cartCheckoutRecordId/receipt",
+    async (request, reply) => {
+      reply.header("access-control-allow-origin", "*");
+      const { siteId, cartCheckoutRecordId } = request.params;
+
+      const record = await withTenantContext(pool, { siteId }, (client) => getCartCheckoutRecordById(client, siteId, cartCheckoutRecordId));
+      if (!record || record.status !== "completed") throw notFound("no completed cart checkout for that id on this site");
+
+      const items = await Promise.all(
+        record.items.map(async (line) => {
+          const product = await withTenantContext(pool, {}, (client) => getProductPublic(client, line.productId));
+          return {
+            productId: line.productId,
+            title: line.title,
+            fulfillmentType: line.fulfillmentType,
+            successMessage: product?.successMessage ?? "Thank you for your purchase.",
+          };
+        }),
+      );
+      return { items };
+    },
+  );
+
+  // ---- KAN-1246 / ADR-0018 (part 3 addendum): live stock display for
+  // productGrid/productDetail — no principal, relies on the SAME
+  // `products_public_read` policy (0014_kan1245_cart_checkout.sql) the
+  // cart-checkout runtime route's own product read already uses. This is
+  // presentational only (R4's "static-first" tradeoff, same spirit
+  // PLAN.md's own R4 discussion already accepts elsewhere) — the actual
+  // source of truth at purchase time remains createCartCheckout's own
+  // server-side stock revalidation; this endpoint only improves what the
+  // visitor sees before they try to buy, so a published page can show
+  // "sold out" without waiting for a republish. ----
+  app.options("/v1/runtime/sites/:siteId/products/:productId/stock", async (_request, reply) => {
+    reply
+      .header("access-control-allow-origin", "*")
+      .header("access-control-allow-methods", "GET, OPTIONS")
+      .header("access-control-allow-headers", "content-type")
+      .status(204)
+      .send();
+  });
+
+  app.get<{ Params: { siteId: string; productId: string } }>("/v1/runtime/sites/:siteId/products/:productId/stock", async (request, reply) => {
+    reply.header("access-control-allow-origin", "*");
+    const { siteId, productId } = request.params;
+    const product = await withTenantContext(pool, {}, (client) => getProductPublic(client, productId));
+    if (!product || product.siteId !== siteId) throw notFound("product not found");
+    return { fulfillmentType: product.fulfillmentType, stockCount: product.stockCount };
   });
 
   // ---- Dev-only: force webhook retries to run now, the same "dev-only

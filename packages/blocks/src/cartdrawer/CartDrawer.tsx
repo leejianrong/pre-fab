@@ -37,6 +37,14 @@ function lineTotal(item: CartItem): number {
   return item.price * item.quantity;
 }
 
+/** KAN-1246 / ADR-0018 (part 3 addendum) — one item's own post-purchase message, from the new receipt endpoint. */
+interface ReceiptItem {
+  productId: string;
+  title: string;
+  fulfillmentType: "physical" | "digital_or_service";
+  successMessage: string;
+}
+
 export function CartDrawer(props: CartDrawerProps & BlockRenderProps & CartDrawerExtraProps) {
   const { heading, emptyMessage, checkoutButtonLabel, runtimeApiUrl, siteId, blockId, responsive } = props;
   const cart = useCart();
@@ -46,6 +54,15 @@ export function CartDrawer(props: CartDrawerProps & BlockRenderProps & CartDrawe
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [redirectUrl, setRedirectUrl] = useState<string | null>(null);
   const [justCompleted, setJustCompleted] = useState(false);
+  // KAN-1246 / ADR-0018 (part 3 addendum): each purchased item's own
+  // post-purchase message, fetched once the visitor lands back with
+  // `pf_cart=success` — replaces the old hardcoded "Thank you for your
+  // order!" with what the card actually asked for (the product's own
+  // configured message, the *entire* fulfillment experience for a
+  // digital/service item). `null` while loading/absent; the generic
+  // fallback below covers a fetch failure the same "never worse than not
+  // having tried" way ProductDetail's own live-stock effect does.
+  const [receiptItems, setReceiptItems] = useState<ReceiptItem[] | null>(null);
 
   // Stripe's own success_url/cancel_url redirect (see apps/api/src/app.ts's
   // runtime cart-checkout route) lands the visitor back on this exact page
@@ -61,6 +78,16 @@ export function CartDrawer(props: CartDrawerProps & BlockRenderProps & CartDrawe
       cart.clear();
       setJustCompleted(true);
       setOpen(false);
+
+      const cartCheckoutRecordId = params.get("pf_cart_id");
+      if (cartCheckoutRecordId && runtimeApiUrl && siteId) {
+        fetch(`${runtimeApiUrl}/v1/runtime/sites/${siteId}/cart-checkout/${cartCheckoutRecordId}/receipt`)
+          .then((response) => (response.ok ? response.json() : null))
+          .then((body: { items: ReceiptItem[] } | null) => {
+            if (body?.items) setReceiptItems(body.items);
+          })
+          .catch(() => {});
+      }
     }
     // cart.clear is stable (useCallback with no deps) — safe to omit from
     // the dependency list without an exhaustive-deps violation in spirit,
@@ -182,7 +209,19 @@ export function CartDrawer(props: CartDrawerProps & BlockRenderProps & CartDrawe
           <h2 className="pf-cartdrawer-heading" style={headingStyle}>
             {heading}
           </h2>
-          {justCompleted ? <p style={bodyStyle}>Thank you for your order!</p> : null}
+          {justCompleted ? (
+            receiptItems && receiptItems.length > 0 ? (
+              <div className="pf-cartdrawer-receipt" style={{ display: "grid", gap: cssVar("spacing", "xs") }}>
+                {receiptItems.map((item) => (
+                  <p key={item.productId} style={bodyStyle}>
+                    {item.successMessage}
+                  </p>
+                ))}
+              </div>
+            ) : (
+              <p style={bodyStyle}>Thank you for your order!</p>
+            )
+          ) : null}
           {cart.items.length === 0 ? (
             <p className="pf-cartdrawer-empty" style={bodyStyle}>
               {emptyMessage}

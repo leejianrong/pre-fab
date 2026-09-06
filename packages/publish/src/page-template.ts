@@ -340,6 +340,10 @@ const pageGutterStyle = {
         // the same source the old static-only render used), not
         // \`extraProps\` above (which no longer computes a productdetail
         // case at all now that this branch intercepts it first).
+        // KAN-1246 / ADR-0018 (part 3 addendum): \`runtimeApiUrl\`/\`siteId\`
+        // added so ProductDetail can live-check stock (its own useEffect,
+        // presentational only — see that endpoint's own comment in
+        // apps/api/src/app.ts) without waiting for a republish.
         if (block.type === "productdetail") {
           return (
             <ProductDetail
@@ -349,6 +353,8 @@ const pageGutterStyle = {
               responsive={block.responsive}
               scrollReveal={block.scrollReveal}
               product={detailProduct}
+              runtimeApiUrl={data.runtimeApiUrl}
+              siteId={site.id}
             />
           );
         }

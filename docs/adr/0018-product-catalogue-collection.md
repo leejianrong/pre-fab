@@ -608,3 +608,271 @@ whatever apps/self-host already did for the one-off/subscription paths).
 Flagged here rather than left to be discovered, the same "designed in
 from the start, not bolted on when someone almost got it wrong" discipline
 this ADR's part 1 already used for `fulfillmentType`.
+
+## Addendum (part 3, KAN-1246): orders, inventory decrement, fulfillment
+
+Part 2's own "Note for card 3" left four things unresolved: whether this
+card creates a new `orders` table, whether stock decrements atomically
+against the same `fromStatuses` idempotency discipline used elsewhere, what
+happens when that decrement fails, and (from the card's own brief, not part
+2) how a digital/service product's post-purchase message actually reaches
+the visitor. Four decisions, in that order.
+
+### 1. `cart_checkout_records` IS the order header — no new `orders` table
+
+The card's own text says "new `orders`/`order_items` tables," as if from
+scratch. It isn't: `cart_checkout_records` (0014_kan1245_cart_checkout.sql)
+already carries every field an order header needs — `site_id`, `currency`,
+`amount_subtotal`, `status` (`'pending'` → `'completed'`/`'failed'`,
+deliberately left for this card to transition, per that migration's own
+header comment), `buyer_email`, timestamps. Creating a parallel `orders`
+table with the identical shape would mean two rows describing the same
+event, kept in sync by hand forever, or — more likely — a query that has to
+join across them to answer "list this site's orders." The two tables
+would diverge only in `id` and nothing else, which is exactly the "one
+thing, described twice" shape ADR-0016's own question 3 already rejected
+for `subscription_records` vs. a `payment_records.type` branch.
+
+**Decision: no `orders` table.** `markCartCheckoutRecordCompleted`
+(`packages/db/src/repositories/cart-checkout-records.ts`) is the function
+this card adds to finally drive `cart_checkout_records.status` out of
+`'pending'` — the transition part 2's own migration comment named as this
+card's job — and a `cart_checkout_records` row **is** an order from the
+moment that transition lands. `listCartCheckoutRecordsForSite` (new, mirrors
+`listPaymentRecordsForSite`/`listSubscriptionRecordsForSite`) is the
+owner-facing `order.list` read.
+
+What genuinely doesn't fit in `cart_checkout_records` is per-line
+fulfillment state: `items` is a `jsonb` blob written once, before the
+Stripe call, by KAN-1245's `createCartCheckout` — every field in it
+(`unitAmount`, `currency`, `title`, `fulfillmentType`) is already
+server-resolved and correct at that point, but it has no place to record
+"and *this* line has since shipped, with tracking number X" without
+rewriting the whole blob on every fulfillment action and losing any
+per-line optimistic-concurrency story. **`order_items`** (new,
+0015_kan1246_orders.sql) is that table — one row per cart line, FK'd to
+`cart_checkout_records.id`, holding exactly the fulfillment-relevant state
+the header's own `items` blob can't cleanly mutate: `product_id`,
+`quantity`, `unit_amount`, `currency`, `title` (snapshotted, same reasoning
+as the header's own `items.title`), `fulfillment_type`, `status`
+(`unfulfilled`/`shipped`/`delivered`), `tracking_number` (nullable),
+`oversold` (see point 3), timestamps. This is a genuinely new table with a
+genuinely new purpose, not a second header.
+
+### 2. Cart-mode discrimination: `metadata.checkoutType`, inserted between the subscription branch and the existing one-off branch
+
+`/v1/webhooks/stripe-connect`'s `checkout.session.completed` handler
+already branches one-off-vs-subscription on Stripe's own `object.mode`
+field (KAN-1154 part 2) — but a cart checkout also uses `mode: "payment"`
+(the same mode a one-off Payment block session uses), so `mode` alone
+cannot tell a cart-mode session from a one-off one. KAN-1245's
+`createCartCheckoutSession` already sets `metadata.checkoutType = "cart"`
+for exactly this reason (that addendum's point 6, written before this card
+existed to consume it). This card's new branch checks
+`object.metadata?.checkoutType === "cart"`, inserted **after** the
+subscription branch returns early and **before** the existing one-off
+branch's own code — so a cart checkout is caught before it can ever fall
+through into `updatePaymentRecordStatus` (which would silently no-op for a
+cart session, since no `payment_records` row exists for it, but "silently
+no-op" is exactly the failure mode worth avoiding by ordering this
+correctly rather than relying on it).
+
+Both branches then resolve the row to update by `object.id` — Stripe's own
+Checkout Session id — not `metadata.cartCheckoutRecordId` (KAN-1245 already
+sets that metadata field too, but for a different purpose: threading the
+record's own id to the visitor's browser via `client_reference_id`, for
+this card's post-purchase receipt endpoint, point 5 below — never as a
+webhook lookup key). `0014_kan1245_cart_checkout.sql`'s own header comment
+names the `stripe_session_id` index exactly for this: "a session up by id
+alone, with no siteId in hand yet — same reasoning as
+`payment_records_stripe_session_id_idx`." `markCartCheckoutRecordCompleted`
+(point 1 above) is keyed by `stripe_session_id` for exactly that
+already-decided reason, mirroring `updatePaymentRecordStatus`'s identical
+lookup one branch below it — not a new convention, the existing one applied
+to a third table.
+
+### 3. Oversell handling: never block the order, flag the line instead
+
+The card's own open question: what happens when the atomic stock decrement
+finds insufficient stock — two visitors raced for the last unit(s), and by
+the time this webhook runs (Stripe's own delivery is not synchronous with
+the Checkout Session completing), fewer than `quantity` remain?
+
+The Stripe payment has **already succeeded** by the time this function
+runs — the customer's card was charged before this webhook ever fires.
+Failing the order/order_item creation here would mean a customer paid for
+nothing with no record of it anywhere in this repo, the one outcome this
+project's own R7.4 posture ("never a blank page, never a silently dropped
+failure — surface it") exists to rule out. Silently ignoring the shortfall
+(decrementing below zero, or leaving stock unchanged) would corrupt the
+inventory count for every subsequent visitor's own checkout-time
+revalidation (`createCartCheckout` already re-checks `stockCount` against
+the current row on every call).
+
+**Decision: `decrementProductStock` (`packages/db/src/repositories/
+products.ts`) tries the strict conditional UPDATE first
+(`stock_count >= quantity`, the DB-level guard the card asks for, not an
+app-level read-then-write) — the common case, no race. When that matches
+zero rows, a second UPDATE floors the count at zero
+(`GREATEST(stock_count - quantity, 0)`) rather than leaving the order
+uncreated or the count negative, and reports `oversold: true` back to the
+caller.** `cart-order-webhook.ts` records that on the order_item's own
+`oversold` boolean rather than blocking anything. There is no owner
+mutation to clear it in this card — the card's own brief describes the
+resolution as "refund via their own Stripe dashboard, contact the
+customer," both of which happen outside this system; `oversold` is
+surfaced in the owner's order-detail view (`OrdersPanel.tsx`) as a visible
+flag so the owner knows to act, not auto-resolved. Both the strict UPDATE
+and its floor fallback run inside the **same** transaction as the
+`cart_checkout_records.status` transition and this line's own
+`order_items` insert (see point 4) — a decrement can never happen without
+its order_item existing to record whether it was oversold.
+
+### 4. Idempotency and atomicity: one transaction, two guards, the same shape ADR-0016 already established
+
+Two layers, identical in kind to `subscription-webhook.ts`'s own (see that
+file's module comment for the full precedent this mirrors):
+
+1. **Exact redelivery**: `recordStripeWebhookEvent` against the same
+   *global* `stripe_webhook_events` table subscriptions and payments
+   already share — Stripe event ids are globally unique regardless of
+   which integration receives them, so this needed no new table.
+2. **Out-of-order / duplicate-but-different-event-id delivery**:
+   `markCartCheckoutRecordCompleted`'s own `AND status = 'pending'` guard —
+   the `fromStatuses`-style precondition the card asked for, generalized
+   from `updateSubscriptionLifecycle`'s caller-supplied set down to the one
+   transition this table actually has (`'pending'` → `'completed'`, `
+   'failed'` being unreachable from this card — see the note below).
+
+New to this card: order_items creation and the stock decrement happen
+**inside the same `withTenantContext` call** as the status transition
+itself — one Postgres transaction, one `client`, one COMMIT or none.
+`withTenantContext` already wraps its callback in `BEGIN`/`COMMIT`/
+`ROLLBACK` (`packages/db/src/tenant-context.ts`); `cart-order-webhook.ts`'s
+`applyCartCheckoutCompleted` runs `markCartCheckoutRecordCompleted`, every
+line's `decrementProductStock`, and every line's `createOrderItem` inside
+one such call. This is what makes the atomicity claim true end to end: a
+redelivered webhook that raced with the first delivery's own transaction
+either sees the row already `'completed'` (guard 2 above fires, whole
+callback returns `null`, nothing further runs) or doesn't start until the
+first delivery has fully committed (line items and stock decrements
+included) — there is no window where the header is `'completed'` with some
+or none of its order_items created.
+
+`cart_checkout_records.status`'s `'failed'` value (part 2's own migration)
+is not driven by anything in this card, the same "value exists for a future
+transition, no code populates it yet" shape `subscription_records`'
+`current_period_end` etc. carried before KAN-1154 part 2 populated them.
+Stripe does not deliver a "this cart checkout failed" event the way it
+delivers `invoice.payment_failed` for a subscription — an abandoned cart
+Checkout session simply never completes, leaving the row `'pending'`
+forever. Nothing in this card's scope needed to reconcile that (no
+"expire stale pending carts" job was asked for); flagged here rather than
+silently left unmentioned.
+
+### 5. Digital/service post-purchase message: a receipt endpoint keyed by the cart-checkout record id, read with the SAME no-principal tenant-context trust model the create route already uses
+
+`CartDrawer`'s success-redirect handling only ever cleared the cart and
+showed a hardcoded "Thank you for your order!" — no per-product
+`successMessage` reached the visitor at all, for either fulfillment type.
+Closing this gap needed a way for the visitor's browser, after Stripe
+redirects back, to ask "what should I show for the items I just bought?"
+with no signed-in principal (a visitor, not an owner) and no session of any
+kind.
+
+The runtime cart-checkout route's own `returnUrl` helper already appends
+`pf_cart=success|cancel` to the Referer/Origin-derived redirect target
+(KAN-1245's own point 5: never a visitor-supplied redirect, to avoid an
+open-redirect surface). This card additionally threads the Checkout
+session's own `cartCheckoutRecordId` (the same id already generated before
+the Stripe call, and already carried in `client_reference_id`/
+`metadata.cartCheckoutRecordId`) through as `pf_cart_id` on the success
+redirect only — it is not new information reaching the visitor's browser
+that Stripe wasn't already going to hand back some identifier for, and it
+never appears anywhere but this one same-origin redirect URL.
+
+**Decision: `GET /v1/runtime/sites/:siteId/cart-checkout/:cartCheckoutRecordId/receipt`**,
+no principal, reading `cart_checkout_records` via
+`withTenantContext(pool, { siteId })` with `siteId` taken directly from the
+URL — **not** a new public-read RLS policy on `cart_checkout_records`.
+This is the identical trust model the existing cart-checkout *creation*
+route already uses today (`createPostgresCartCheckoutRecordStore`'s own
+`create` calls `withTenantContext(pool, { siteId: input.siteId }, ...)`
+with no principal either): `tenant_isolation`'s RLS predicate is
+`site_id = current_setting('app.site_id')`, and since the query's own
+`WHERE id = $cartCheckoutRecordId AND site_id = $siteId` supplies both
+sides of that comparison, an attacker who doesn't already know a real
+`(siteId, cartCheckoutRecordId)` pair learns nothing — `siteId` is public
+(every runtime route on this repo already takes it unauthenticated from the
+URL) and a ULID has no practically guessable structure. This is a strictly
+narrower exposure than adding a scoped public-read *policy* would have
+been: a policy is permissive for **any** future context-free query against
+this table, forever, whereas this route's own SQL selects only what it
+needs and nothing else reads this table with no tenant context.
+
+The route itself returns only `{ items: [{ productId, title,
+fulfillmentType, successMessage }] }` for a `'completed'` record (anything
+else — not found, still `'pending'`, `'failed'` — is a 404: there is
+nothing to show yet, or ever). It never returns `buyer_email`,
+`amount_subtotal`, or any other field from the row — the response is built
+by re-reading each item's *current* `products` row via the already-existing
+`getProductPublic` (KAN-1245, scoped to `status = 'published'`) for its
+live `successMessage`, falling back to a generic thank-you if the product
+was since unpublished or deleted, rather than erroring the whole response
+for one missing line. `CartDrawer`'s existing success-detection effect
+calls this once, on mount, when `pf_cart=success` and `pf_cart_id` are both
+present, and renders each item's own message instead of (not merely
+alongside) the old hardcoded string — physical lines get their own
+`successMessage` too (defaulted to "Thank you for your purchase.", part 1's
+own default), not just digital/service ones, since the field was never
+type-restricted to one fulfillment type in the first place.
+
+### 6. `order.markShipped` is the only owner-driven status transition this card wires up — `delivered` for a physical line has no mutation yet
+
+The card's own "your two deliverables" section names exactly three
+mutations needing full three-surface parity: `order.list`, `order.get`,
+`order.markShipped`. Read literally alongside the fulfillment-lifecycle
+bullet ("owner can mark `shipped`... then `delivered`"), a naive reading
+would add a fourth, `order.markDelivered`. This addendum does not: for a
+small storefront, "delivered" for a physical line is usually confirmed by
+a carrier or the customer, not something the owner clicks a button for
+with no tracking-integration to base it on (tracking numbers here are
+free-text, not looked up against any carrier API — deferred, same as
+tax/carrier-computed shipping). Adding a mutation for a transition nothing
+in this card's own brief actually asked to drive would be scope creep in
+the other direction from the card's own "thin slice" instruction.
+
+`order_items.status` still carries all three values (`unfulfilled`/
+`shipped`/`delivered`) — a digital/service line is written `'delivered'`
+directly at order-creation time (the card's own explicit requirement), and
+`'delivered'` remains available for a physical line for a future card to
+drive (a carrier webhook, a customer-facing "confirm receipt" link, or a
+manual mutation) the same way `subscription_records`' own
+`current_period_end`/`cancel_at_period_end` existed on that table before
+KAN-1154 part 2 ever populated them. Flagged here rather than silently
+built around, the same discipline this ADR's own part 2 used to flag the
+pre-existing "no BookingsPanel status-change action" gap without spending
+this card's scope fixing it.
+
+### 7. Live stock display wired for `productDetail`, not `productGrid`
+
+The card's own brief asks for a "small runtime endpoint for live stock
+display... so `productGrid`/`productDetail` can show 'sold out'." This
+card adds the endpoint (`GET /v1/runtime/sites/:siteId/products/:productId/
+stock`) and wires it into `productDetail` only.
+
+`page-template.ts`'s own module comment is explicit about why `productGrid`
+was deliberately left off the `client:load` hydration list part 1 already
+built: "it makes no runtime call and has no client-side state of its own
+(a visitor clicks through to a product's own `productDetail` page to add it
+to a cart)." Hydrating a paginated grid of up to a dozen cards to fetch
+per-card live stock is a real behavior change to that documented design,
+not a narrow addition — every card would need its own fetch, page weight
+grows for a block that ships 0 KB today by design (ADR-0007), and the
+actual "about to buy" decision point this endpoint matters most for is
+`productDetail`, which a shopper reaches before ever completing an
+add-to-cart. `productGrid` keeps showing its build-time "Out of stock"
+snapshot (part 1's own read-only display), refreshed on the next publish —
+unchanged from today. Flagged as a deliberate, narrower-than-literally-asked
+scope call rather than left to be discovered; revisit if a future card
+finds shoppers actually hitting sold-out adds from the grid itself.

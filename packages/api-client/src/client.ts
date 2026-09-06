@@ -52,6 +52,12 @@ import type {
   StripeConnectionStatus,
   ListPaymentsQuery,
   ListPaymentsResult,
+  ListOrdersQuery,
+  ListOrdersResult,
+  OrderWithItems,
+  MarkOrderItemShippedInput,
+  OrderItem,
+  OrderExportRow,
 } from "./types.js";
 
 export type ApiErrorCode =
@@ -530,6 +536,35 @@ export class ApiClient {
     if (query.offset !== undefined) params.set("offset", String(query.offset));
     const qs = params.toString();
     return this.request("GET", `/v1/sites/${siteId}/payment-blocks/${blockId}/payments${qs ? `?${qs}` : ""}`);
+  }
+
+  // ---- order.list / order.get / order.export / order.markShipped
+  // (KAN-1246 / ADR-0018 part 3 addendum) — an "order" is a
+  // cart_checkout_records row once its status moves to 'completed'; see
+  // that ADR addendum's point 1. ----
+  listOrders(siteId: string, query: ListOrdersQuery = {}): Promise<ListOrdersResult> {
+    const params = new URLSearchParams();
+    if (query.limit !== undefined) params.set("limit", String(query.limit));
+    if (query.offset !== undefined) params.set("offset", String(query.offset));
+    if (query.status) params.set("status", query.status);
+    const qs = params.toString();
+    return this.request("GET", `/v1/sites/${siteId}/orders${qs ? `?${qs}` : ""}`);
+  }
+
+  getOrder(siteId: string, orderId: string): Promise<OrderWithItems> {
+    return this.request("GET", `/v1/sites/${siteId}/orders/${orderId}`);
+  }
+
+  exportOrdersCsv(siteId: string): Promise<string> {
+    return this.requestText("GET", `/v1/sites/${siteId}/orders/export?format=csv`);
+  }
+
+  exportOrdersJson(siteId: string): Promise<OrderExportRow[]> {
+    return this.request("GET", `/v1/sites/${siteId}/orders/export?format=json`);
+  }
+
+  markOrderItemShipped(siteId: string, orderItemId: string, input: MarkOrderItemShippedInput): Promise<OrderItem> {
+    return this.request("POST", `/v1/sites/${siteId}/orders/items/${orderItemId}/ship`, input);
   }
 
   resolveUrl(path: string): string {

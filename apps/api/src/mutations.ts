@@ -58,6 +58,13 @@ export const API_MUTATIONS = [
   // booking.create/submission.create are absent from this manifest too. ----
   { name: "stripe.connect", method: "POST", path: "/v1/sites/:siteId/stripe" },
   { name: "stripe.disconnect", method: "DELETE", path: "/v1/sites/:siteId/stripe" },
+  // ---- KAN-1246 / ADR-0018 (part 3 addendum): orders, inventory and
+  // fulfillment. order.list/order.get/order.export are non-mutating reads
+  // (same reason product.list/product.get/submission.export aren't listed
+  // here either) — order.markShipped is the one owner-driven status
+  // transition this card wires a mutation for (see that ADR addendum's
+  // point 6 for why "mark delivered" for a physical line isn't). ----
+  { name: "order.markShipped", method: "POST", path: "/v1/sites/:siteId/orders/items/:orderItemId/ship" },
 ] as const;
 
 export type MutationName = (typeof API_MUTATIONS)[number]["name"];

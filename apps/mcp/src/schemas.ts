@@ -118,6 +118,18 @@ export const schemas = {
     expectedVersion: z.number().int().nonnegative(),
   },
 
+  // ---- orders (KAN-1246 / ADR-0018 part 3 addendum) — an "order" is a
+  // cart_checkout_records row once its status moves to 'completed'. ----
+  "order.list": {
+    siteId: z.string(),
+    limit: z.number().int().optional(),
+    offset: z.number().int().optional(),
+    status: z.enum(["pending", "completed", "failed"]).optional(),
+  },
+  "order.get": { siteId: z.string(), orderId: z.string() },
+  "order.export": { siteId: z.string(), format: z.enum(["csv", "json"]).optional() },
+  "order.markShipped": { siteId: z.string(), orderItemId: z.string(), trackingNumber: z.string().min(1) },
+
   "form.configure": {
     siteId: z.string(),
     formId: z.string(),
