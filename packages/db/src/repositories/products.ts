@@ -82,6 +82,22 @@ export async function getProduct(client: PoolClient, productId: string): Promise
   return result.rows[0] ? rowToProduct(result.rows[0]) : null;
 }
 
+/**
+ * KAN-1245 / ADR-0018 cart addendum: the runtime's only way to resolve a
+ * productId with no tenant context — relies entirely on
+ * `products_public_read` (0014_kan1245_cart_checkout.sql), which is scoped
+ * to `status = 'published'` (unlike `getPaymentBlockPublic`'s unscoped
+ * policy — see that migration's own header comment for why a product can't
+ * use the same unscoped shape). Call with `withTenantContext(pool, {})`,
+ * same as `getPaymentBlockPublic`. The query itself is identical to
+ * `getProduct` above — the difference is entirely in which RLS policy is in
+ * effect for the caller's tenant context, not in this function's own SQL.
+ */
+export async function getProductPublic(client: PoolClient, productId: string): Promise<ProductDocument | null> {
+  const result = await client.query<RawProductRow>(`SELECT * FROM products WHERE id = $1`, [productId]);
+  return result.rows[0] ? rowToProduct(result.rows[0]) : null;
+}
+
 /** Every slug already in use on this site — used to dedupe an auto-generated slug at creation time (@prefab/schema's `dedupeSlug`), same reasoning as `listPostSlugsForSite`. */
 export async function listProductSlugsForSite(client: PoolClient, siteId: string): Promise<string[]> {
   const result = await client.query<{ slug: string }>(`SELECT slug FROM products WHERE site_id = $1`, [siteId]);

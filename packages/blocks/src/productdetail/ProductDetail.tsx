@@ -1,15 +1,23 @@
-import type { CSSProperties } from "react";
+import { useState, type CSSProperties } from "react";
 import type { ProductDocument } from "@prefab/schema";
 import { cssVar, PROSE_MAX_MEASURE } from "../theme-css.js";
 import { ResponsiveStyle, type BlockRenderProps } from "../responsive.js";
 import { parseMarkdownLite } from "../markdown-lite.js";
+import { useCart } from "../cart/useCart.js";
 import type { ProductDetailProps } from "./schema.js";
 
-/** Injected by the publish pipeline's per-product route (@prefab/publish's page-template.ts) — never part of stored props, same as PostDetail's `post`. Undefined inside the Puck canvas, which has no single "current product" to show. */
+/**
+ * Injected by the publish pipeline's per-product route (@prefab/publish's
+ * page-template.ts) — never part of stored props, same as PostDetail's
+ * `post`. Undefined inside the Puck canvas, which has no single "current
+ * product" to show. `id` (KAN-1245 / ADR-0018 cart addendum) is what the
+ * add-to-cart button below needs to identify the line it's adding —
+ * part 1's own render props didn't need it (nothing was clickable yet).
+ */
 export interface ProductDetailRenderProps {
   product?: Pick<
     ProductDocument,
-    "title" | "description" | "images" | "price" | "currency" | "fulfillmentType" | "stockCount" | "successMessage"
+    "id" | "title" | "description" | "images" | "price" | "currency" | "fulfillmentType" | "stockCount" | "successMessage"
   >;
 }
 
@@ -24,6 +32,13 @@ function formatPrice(price: number, currency: string): string {
 
 export function ProductDetail(props: ProductDetailProps & BlockRenderProps & ProductDetailRenderProps) {
   const { product, blockId, responsive } = props;
+
+  // Hooks run unconditionally, before the "no product selected" early
+  // return below (the Puck canvas preview) — React's own rule, not
+  // specific to this block.
+  const cart = useCart();
+  const [quantity, setQuantity] = useState(1);
+  const [added, setAdded] = useState(false);
 
   const articleStyle: CSSProperties = {
     padding: `${cssVar("spacing", "section")} ${cssVar("spacing", "element")}`,
@@ -73,9 +88,20 @@ export function ProductDetail(props: ProductDetailProps & BlockRenderProps & Pro
     background: cssVar("color", "accent"),
     color: cssVar("color", "accent-foreground"),
     fontSize: cssVar("fontSize", "body"),
-    cursor: "not-allowed",
-    opacity: 0.6,
+    cursor: "pointer",
   };
+  const disabledButtonStyle: CSSProperties = { ...buttonStyle, cursor: "not-allowed", opacity: 0.6 };
+  const addToCartRowStyle: CSSProperties = { display: "flex", alignItems: "center", gap: cssVar("spacing", "xs"), flexWrap: "wrap" };
+  const quantityInputStyle: CSSProperties = {
+    width: "4em",
+    padding: cssVar("spacing", "xs"),
+    borderRadius: cssVar("radius", "control"),
+    border: `1px solid ${cssVar("color", "border")}`,
+    background: cssVar("color", "background"),
+    color: cssVar("color", "foreground"),
+    fontSize: cssVar("fontSize", "body"),
+  };
+  const addedStyle: CSSProperties = { fontSize: cssVar("fontSize", "sm"), lineHeight: cssVar("lineHeight", "sm"), color: cssVar("color", "foreground") };
 
   if (!product) {
     return (
@@ -142,14 +168,58 @@ export function ProductDetail(props: ProductDetailProps & BlockRenderProps & Pro
         })}
       </div>
       {/*
-        Add to cart is a visible, disabled stub — cart state and checkout
-        are card 2's scope (ADR-0018), not this card's. `disabled` (rather
-        than an onClick that silently does nothing) is deliberate: a
-        visitor should never wonder whether a click was received.
+        KAN-1245 / ADR-0018 cart addendum: add-to-cart is wired to the
+        shared `useCart` hook — client-side only (localStorage), never a
+        runtime request (cart state doesn't need one; checkout, from
+        CartDrawer, does). `disabled` when out of stock, same "never a
+        click that silently does nothing" reasoning part 1's own stub
+        comment already gave.
       */}
-      <button type="button" style={buttonStyle} disabled title="Cart and checkout ship in a later update">
-        Add to cart
-      </button>
+      <div className="pf-productdetail-addtocart" style={addToCartRowStyle}>
+        <label htmlFor={`pf-productdetail-qty-${blockId ?? ""}`} style={bodyTextStyle}>
+          Qty
+        </label>
+        <input
+          id={`pf-productdetail-qty-${blockId ?? ""}`}
+          type="number"
+          min={1}
+          max={product.fulfillmentType === "physical" ? (product.stockCount ?? 1) : 99}
+          value={quantity}
+          disabled={outOfStock}
+          style={quantityInputStyle}
+          onChange={(event) => {
+            const next = Math.max(1, Math.trunc(Number(event.target.value) || 1));
+            setQuantity(next);
+            setAdded(false);
+          }}
+        />
+        <button
+          type="button"
+          style={outOfStock ? disabledButtonStyle : buttonStyle}
+          disabled={outOfStock}
+          onClick={() => {
+            cart.addItem(
+              {
+                productId: product.id,
+                title: product.title,
+                price: product.price,
+                currency: product.currency,
+                image: product.images[0] ?? null,
+                fulfillmentType: product.fulfillmentType,
+              },
+              quantity,
+            );
+            setAdded(true);
+          }}
+        >
+          {outOfStock ? "Out of stock" : "Add to cart"}
+        </button>
+        {added && !outOfStock ? (
+          <span className="pf-productdetail-added" style={addedStyle} role="status">
+            Added to cart
+          </span>
+        ) : null}
+      </div>
     </article>
   );
 }

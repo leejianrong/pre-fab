@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { Hero, heroDefaultProps } from "@prefab/blocks";
+import { Hero, heroDefaultProps, blockSchemaRegistry } from "@prefab/blocks";
 import { DEFAULT_THEME_TOKENS } from "@prefab/schema";
 import { createPuckConfig } from "../src/config.js";
 
@@ -46,5 +46,19 @@ describe("createPuckConfig", () => {
       rootRender!({ children: createElement("span", null, "content") }),
     );
     expect(html).toContain(`--pf-color-background:${DEFAULT_THEME_TOKENS.color.background}`);
+  });
+
+  it("registers a Puck config entry for every block type in @prefab/blocks' schema registry", () => {
+    // Regression check for KAN-1244/KAN-1245: a block can be fully wired
+    // into @prefab/blocks' registry.ts (schema, component, CLI/API/MCP
+    // parity) and still be un-placeable in the editor canvas if nobody
+    // added the matching entry to this package's BLOCK_ENTRIES. Comparing
+    // against blockSchemaRegistry.types() — the schema half's own list of
+    // every registered block type — catches that gap without needing to
+    // know each block type's name up front.
+    const config = createPuckConfig(DEFAULT_THEME_TOKENS);
+    const registeredTypes = blockSchemaRegistry.types().sort();
+    const puckTypes = Object.keys(config.components ?? {}).sort();
+    expect(puckTypes).toEqual(registeredTypes);
   });
 });

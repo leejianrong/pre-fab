@@ -17,13 +17,21 @@
  * `blockComponents[block.type]` (a runtime lookup into a plain object) has
  * no such static import to point at, so it fails with "No matching import
  * has been found" for any dynamically-resolved component. `Form`,
- * `Booking`, `EventSignup`, `Payment` and (KAN-1154 / ADR-0016) `Subscription`
- * are imported directly below for exactly this reason, and rendered on
- * their own branch rather than through `blockComponents`. `productGrid`/
- * `productDetail` (KAN-1244 / ADR-0018) are NOT in that list — neither
- * hydrates (the add-to-cart button is a static, disabled stub; cart/
- * checkout are a later card's scope), so both render through the ordinary
- * `blockComponents` lookup like every other static block. This file, plus
+ * `Booking`, `EventSignup`, `Payment`, (KAN-1154 / ADR-0016) `Subscription`
+ * and (KAN-1245 / ADR-0018 cart addendum) `ProductDetail`/`CartDrawer` are
+ * imported directly below for exactly this reason, and rendered on their
+ * own branch rather than through `blockComponents`. `productGrid` is NOT in
+ * that list — it makes no runtime call and has no client-side state of its
+ * own (a visitor clicks through to a product's own `productDetail` page to
+ * add it to a cart), so it still renders through the ordinary
+ * `blockComponents` lookup like every other static block.
+ * `productDetail` moved OFF that list with this card: KAN-1244/ADR-0018
+ * shipped its add-to-cart button as a static, disabled stub specifically
+ * because cart state didn't exist yet; now that @prefab/blocks' `useCart`
+ * hook does, the button needs real client-side interactivity, so
+ * `productDetail` hydrates like every other visitor-facing runtime caller.
+ * `CartDrawer` hydrates for the same reason — its own state (the cart
+ * itself, plus the checkout call) is 100% client-side. This file, plus
  * @prefab/publish, is the only place in the repo allowed to import Astro
  * (enforced by tools/checks).
  *
@@ -57,6 +65,8 @@ import {
   EventSignup,
   Payment,
   Subscription,
+  ProductDetail,
+  CartDrawer,
   FreePositionStyle,
   freePositionBaseStyle,
   rankRootBlocksForStacking,
@@ -247,8 +257,6 @@ const pageGutterStyle = {
             totalPages: listTotalPages,
             basePath: page.slug,
           };
-        } else if (block.type === "productdetail" && detailProduct) {
-          extraProps = { product: detailProduct };
         } else if (block.type === "productgrid" && block.id === productGridBlockId) {
           const productsPerPage = block.props?.productsPerPage ?? 12;
           const start = (productGridPageNumber - 1) * productsPerPage;
@@ -322,6 +330,39 @@ const pageGutterStyle = {
               responsive={block.responsive}
               scrollReveal={block.scrollReveal}
               runtimeApiUrl={data.runtimeApiUrl}
+            />
+          );
+        }
+
+        // KAN-1245 / ADR-0018 cart addendum: hydrates for the first time
+        // this card (see this file's own module comment) — \`product\` comes
+        // from \`detailProduct\` (this page's own per-product route props,
+        // the same source the old static-only render used), not
+        // \`extraProps\` above (which no longer computes a productdetail
+        // case at all now that this branch intercepts it first).
+        if (block.type === "productdetail") {
+          return (
+            <ProductDetail
+              client:load
+              {...block.props}
+              blockId={block.id}
+              responsive={block.responsive}
+              scrollReveal={block.scrollReveal}
+              product={detailProduct}
+            />
+          );
+        }
+
+        if (block.type === "cartdrawer") {
+          return (
+            <CartDrawer
+              client:load
+              {...block.props}
+              blockId={block.id}
+              responsive={block.responsive}
+              scrollReveal={block.scrollReveal}
+              runtimeApiUrl={data.runtimeApiUrl}
+              siteId={site.id}
             />
           );
         }

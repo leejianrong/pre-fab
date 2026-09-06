@@ -290,3 +290,247 @@ export async function createSubscriptionCheckout(
 
   return { status: "created", url: session.url };
 }
+
+/**
+ * KAN-1245 / ADR-0018 cart addendum: multi-item cart checkout, a *third*
+ * sibling to createPaymentCheckout/createSubscriptionCheckout above, not a
+ * branch on either — a cart has no single block to resolve a manifest from
+ * at all (it spans however many products a visitor added, off any one
+ * page), and `mode: "payment"` only (no subscription products in a cart
+ * this milestone, already settled with the user). The one thing this
+ * function shares with the two above: money is ALWAYS resolved
+ * server-side, never trusted from the caller — here that means re-reading
+ * every `products` row fresh on every call (unlike payment_blocks/
+ * subscription_blocks' immutable publish-time snapshot, `products.price`/
+ * `stockCount` are live and mutable — see the ADR addendum's point 1 for
+ * why a snapshot would defeat the entire purpose of this milestone's
+ * "never trust the client for money" checkout).
+ */
+
+/** The one per-item shape `TenantCartCheckoutProvider` needs — deliberately narrower than `CartCheckoutLineItem` below (drops `productId`/`fulfillmentType`, which the actual Stripe line item never needs), the same "identical, separately-declared shape across this boundary" convention `CreateCheckoutSessionInput`/`CreateSubscriptionCheckoutSessionInput` already use in apps/api/src/lib/tenant-stripe-provider.ts. */
+export interface CartCheckoutSessionLineItem {
+  /** Cents. */
+  unitAmount: number;
+  currency: string;
+  title: string;
+  quantity: number;
+}
+
+/** Server-configured, never visitor-supplied — see the ADR addendum's point 4 for why a real per-site owner setting is deferred, and why the amount/allowed-countries here must never come from the runtime checkout request body. */
+export interface CartShippingConfig {
+  /** Cents — applied verbatim regardless of the cart's own resolved currency (see the ADR addendum's point 4). */
+  flatRateAmount: number;
+  /** Stripe's `shipping_options[0][shipping_rate_data][display_name]`. */
+  label: string;
+  /** ISO 3166-1 alpha-2, uppercase, e.g. ["US"]. */
+  allowedCountries: string[];
+}
+
+export interface TenantCartCheckoutProvider {
+  createCartCheckoutSession(input: {
+    accessToken: string;
+    stripeAccountId: string;
+    items: CartCheckoutSessionLineItem[];
+    /** Every item above already shares this one currency — see createCartCheckout's own mixed-currency rejection below. */
+    currency: string;
+    successUrl: string;
+    cancelUrl: string;
+    cartCheckoutRecordId: string;
+    siteId: string;
+    requiresShipping: boolean;
+    shipping: CartShippingConfig;
+  }): Promise<TenantCheckoutSession>;
+}
+
+/** The current, live state of one `products` row this cart references — resolved fresh on every checkout call, never from a publish-time snapshot (see this section's own module comment). */
+export interface CartProductManifest {
+  id: string;
+  siteId: string;
+  title: string;
+  /** Cents — the CURRENT price, re-read at checkout time; never trusted from the visitor's own cart. */
+  price: number;
+  currency: string;
+  fulfillmentType: "physical" | "digital_or_service";
+  /** null for a digital/service product (nothing to run out of). */
+  stockCount: number | null;
+}
+
+export interface CartProductStore {
+  /** Only ever returns a published product — relies entirely on `products_public_read` (0014_kan1245_cart_checkout.sql), scoped to `status = 'published'`. Same contract as PaymentBlockStore.getBlock. */
+  getProduct(productId: string): Promise<CartProductManifest | null>;
+}
+
+/** One resolved, server-validated cart line — built by createCartCheckout below, persisted verbatim into `cart_checkout_records.items` before the Stripe call (see the ADR addendum's point 6 for why the authoritative itemization lives there rather than in Stripe's own metadata). */
+export interface CartCheckoutLineItem {
+  productId: string;
+  quantity: number;
+  /** Cents. */
+  unitAmount: number;
+  currency: string;
+  title: string;
+  fulfillmentType: "physical" | "digital_or_service";
+}
+
+export interface CreatedCartCheckoutRecord {
+  id: string;
+}
+
+export interface CartCheckoutRecordStore {
+  create(input: {
+    id: string;
+    siteId: string;
+    stripeSessionId: string;
+    items: CartCheckoutLineItem[];
+    currency: string;
+    /** Cents — sum of every line's unitAmount * quantity, excluding shipping. */
+    amountSubtotal: number;
+    requiresShipping: boolean;
+  }): Promise<CreatedCartCheckoutRecord>;
+}
+
+export interface CreateCartCheckoutDeps {
+  products: CartProductStore;
+  /** Reused unchanged from the one-off payment port (top of this file) — a connected Stripe account is the same account regardless of what's being charged. */
+  stripeConnections: StripeConnectionStore;
+  cartCheckoutRecords: CartCheckoutRecordStore;
+  tenantStripe: TenantCartCheckoutProvider;
+  shipping: CartShippingConfig;
+}
+
+export interface CreateCartCheckoutItemInput {
+  productId: string;
+  quantity: number;
+}
+
+export interface CreateCartCheckoutInput {
+  /** Pre-generated by the caller — same reasoning as CreatePaymentCheckoutInput.id's own comment; also what apps/api's real adapter threads through Checkout's `client_reference_id`/`metadata` so a future webhook can resolve tenant context. */
+  id: string;
+  siteId: string;
+  items: CreateCartCheckoutItemInput[];
+  /** Derived server-side from the request's own Referer/Origin header by the caller (apps/api's route) — deliberately NOT accepted as a field a visitor's own request body sets; see the ADR addendum's point 5 for why (an open-redirect surface, the same reasoning every existing runtime checkout route here already avoids). */
+  successUrl: string;
+  cancelUrl: string;
+}
+
+export type CartCheckoutIssueReason = "not_found" | "invalid_quantity" | "out_of_stock";
+
+export interface CartCheckoutIssue {
+  productId: string;
+  reason: CartCheckoutIssueReason;
+}
+
+export type CreateCartCheckoutOutcome =
+  | { status: "created"; url: string }
+  | { status: "empty_cart" }
+  | { status: "invalid_items"; issues: CartCheckoutIssue[] }
+  | { status: "mixed_currency" }
+  | { status: "no_connection" }
+  | { status: "provider_error" };
+
+const MAX_CART_ITEM_QUANTITY = 999;
+
+/**
+ * The runtime API's cart-checkout mutation. Every item's price/currency/
+ * title/fulfillmentType/stock is resolved from the CURRENT `products` row,
+ * never from the visitor's own cart (which only ever supplies
+ * `{productId, quantity}` pairs) — see this section's own module comment.
+ * "Reject wholesale, name every problem" (the same discipline
+ * `validateProductDocument` already documents): if ANY line fails
+ * validation, the entire checkout is rejected with every issue named,
+ * never a partial cart silently checked out with the bad lines dropped —
+ * dropping lines would mean charging a different cart than the one the
+ * visitor actually saw.
+ */
+export async function createCartCheckout(input: CreateCartCheckoutInput, deps: CreateCartCheckoutDeps): Promise<CreateCartCheckoutOutcome> {
+  if (input.items.length === 0) return { status: "empty_cart" };
+
+  // Duplicate productId entries are merged (quantities summed) rather than
+  // rejected or turned into two Stripe line items for the same product —
+  // see the ADR addendum's point 3.
+  const mergedQuantities = new Map<string, number>();
+  const order: string[] = [];
+  for (const item of input.items) {
+    if (!mergedQuantities.has(item.productId)) order.push(item.productId);
+    mergedQuantities.set(item.productId, (mergedQuantities.get(item.productId) ?? 0) + item.quantity);
+  }
+
+  const issues: CartCheckoutIssue[] = [];
+  const validated: CartCheckoutLineItem[] = [];
+
+  for (const productId of order) {
+    const quantity = mergedQuantities.get(productId)!;
+    if (!Number.isInteger(quantity) || quantity <= 0 || quantity > MAX_CART_ITEM_QUANTITY) {
+      issues.push({ productId, reason: "invalid_quantity" });
+      continue;
+    }
+
+    const product = await deps.products.getProduct(productId);
+    // A product that doesn't exist, isn't published (products_public_read
+    // hides it), or belongs to a different site (that policy has no site
+    // scoping of its own — there's no tenant context to scope against) all
+    // read the same way from here: not something THIS site's cart can
+    // check out. Never distinguished in the response — surfacing "this
+    // product exists, just not on your site" would leak cross-tenant
+    // existence information for no benefit to a legitimate caller.
+    if (!product || product.siteId !== input.siteId) {
+      issues.push({ productId, reason: "not_found" });
+      continue;
+    }
+
+    if (product.fulfillmentType === "physical" && (product.stockCount ?? 0) < quantity) {
+      issues.push({ productId, reason: "out_of_stock" });
+      continue;
+    }
+
+    validated.push({
+      productId,
+      quantity,
+      unitAmount: product.price,
+      currency: product.currency,
+      title: product.title,
+      fulfillmentType: product.fulfillmentType,
+    });
+  }
+
+  if (issues.length > 0) return { status: "invalid_items", issues };
+
+  const currencies = new Set(validated.map((item) => item.currency));
+  if (currencies.size > 1) return { status: "mixed_currency" };
+  const currency = validated[0]!.currency;
+
+  const connection = await deps.stripeConnections.getConnection(input.siteId);
+  if (!connection) return { status: "no_connection" };
+
+  const requiresShipping = validated.some((item) => item.fulfillmentType === "physical");
+  const amountSubtotal = validated.reduce((sum, item) => sum + item.unitAmount * item.quantity, 0);
+
+  let session: TenantCheckoutSession;
+  try {
+    session = await deps.tenantStripe.createCartCheckoutSession({
+      accessToken: connection.accessToken,
+      stripeAccountId: connection.stripeAccountId,
+      items: validated.map((item) => ({ unitAmount: item.unitAmount, currency: item.currency, title: item.title, quantity: item.quantity })),
+      currency,
+      successUrl: input.successUrl,
+      cancelUrl: input.cancelUrl,
+      cartCheckoutRecordId: input.id,
+      siteId: input.siteId,
+      requiresShipping,
+      shipping: deps.shipping,
+    });
+  } catch {
+    return { status: "provider_error" };
+  }
+
+  await deps.cartCheckoutRecords.create({
+    id: input.id,
+    siteId: input.siteId,
+    stripeSessionId: session.sessionId,
+    items: validated,
+    currency,
+    amountSubtotal,
+    requiresShipping,
+  });
+
+  return { status: "created", url: session.url };
+}
