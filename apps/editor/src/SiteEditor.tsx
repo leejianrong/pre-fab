@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Puck, type Data } from "@puckeditor/core";
 import {
   applyFreePositions,
@@ -35,6 +35,77 @@ import {
 } from "./ui/index.js";
 
 type Status = "idle" | "saving" | "saved" | "publishing" | "published";
+
+/** True only for a pointer that can actually hover — matches Puck's own drawer-item hover media query, and is also the guard `DrawerItemContent` uses before mounting a preview (see its own comment). */
+function supportsHoverPreview(): boolean {
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") return false;
+  return window.matchMedia("(hover: hover) and (pointer: fine)").matches;
+}
+
+/**
+ * KAN-1207 / docs/adr/0017 (revised after KAN-1207's own PR caught a real
+ * regression in CI, not by inspection): Puck mounts each drawer row *twice*
+ * (`draggableBg`/`draggableFg`, its own drag-ghost mechanism — see the ADR),
+ * and `overrides.drawerItem` is called once per copy, for every row, on
+ * every editor page load — 44 calls for 22 block types. The first version
+ * of this component rendered `<preview.Component {...defaultProps}/>`
+ * unconditionally in all 44, gated only by CSS `visibility`/`opacity` —
+ * which does not stop React from mounting them, or stop their side effects
+ * (MapEmbed's default props render a real external Google Maps `<iframe>`;
+ * Image/Gallery fetch external placeholder images) or the layout cost of 44
+ * always-present, `transform: scale()`d, 40rem-wide subtrees. e2e caught
+ * this directly: six unrelated specs across the whole suite started timing
+ * out waiting for the canvas iframe to become visible, one of them an
+ * explicit p95 drag-performance budget — a page-load-time regression, not a
+ * flaky test. The fix: each row owns its own local "am I hovered" state, and
+ * the live preview component only mounts for the one row actually hovered —
+ * everywhere else, `BLOCK_PREVIEWS[name]` is looked up but never rendered
+ * into anything. This is *not* the row-position-tracking machinery ADR-0017
+ * deliberately avoided (still no coordinates, no `getBoundingClientRect`,
+ * the popover still docks at the same fixed CSS position) — it only changes
+ * *when* the component mounts, from "always" to "while this row is
+ * hovered," which is what actually bounds the cost to at most the couple of
+ * rows (draggableBg + draggableFg) under the pointer at any one moment.
+ * Defined at module scope, not inside `SiteEditor`, so its hover state is
+ * local to each row instance and never forces `overrides` (and therefore
+ * `<Puck>`'s own props) to change identity on every mouse move.
+ */
+function DrawerItemContent({
+  name,
+  children,
+  previewStyle,
+}: {
+  name: string;
+  children: ReactNode;
+  previewStyle: Record<string, string>;
+}) {
+  const [hovered, setHovered] = useState(false);
+  const icon = BLOCK_ICONS[name];
+  const preview = BLOCK_PREVIEWS[name];
+  return (
+    <div
+      className="pf-drawer-item"
+      onMouseEnter={() => {
+        if (supportsHoverPreview()) setHovered(true);
+      }}
+      onMouseLeave={() => setHovered(false)}
+    >
+      {icon ? (
+        <span className="pf-drawer-item-icon" aria-hidden="true">
+          {icon}
+        </span>
+      ) : null}
+      <div className="pf-drawer-item-label">{children}</div>
+      {preview && hovered ? (
+        <div className="pf-drawer-item-preview" aria-hidden="true">
+          <div className="pf-drawer-item-preview-inner" style={previewStyle}>
+            <preview.Component {...preview.defaultProps} />
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 export function SiteEditor({
   siteId,
@@ -321,28 +392,15 @@ export function SiteEditor({
               // `--puck-drawer-item-*` custom-property overrides + the
               // `.pf-puck-canvas` rules in ui/tokens.css instead). Adds a
               // per-block-type glyph and a hover-revealed live preview of
-              // the actual block component at its default props.
-              drawerItem: ({ children, name }) => {
-                const icon = BLOCK_ICONS[name];
-                const preview = BLOCK_PREVIEWS[name];
-                return (
-                  <div className="pf-drawer-item">
-                    {icon ? (
-                      <span className="pf-drawer-item-icon" aria-hidden="true">
-                        {icon}
-                      </span>
-                    ) : null}
-                    <div className="pf-drawer-item-label">{children}</div>
-                    {preview ? (
-                      <div className="pf-drawer-item-preview" aria-hidden="true">
-                        <div className="pf-drawer-item-preview-inner" style={previewStyle}>
-                          <preview.Component {...preview.defaultProps} />
-                        </div>
-                      </div>
-                    ) : null}
-                  </div>
-                );
-              },
+              // the actual block component at its default props —
+              // `DrawerItemContent` (module scope, above) owns the "is this
+              // row hovered" state itself, so the preview only ever mounts
+              // for the row actually under the pointer, not all 44 at once.
+              drawerItem: ({ children, name }) => (
+                <DrawerItemContent name={name} previewStyle={previewStyle}>
+                  {children}
+                </DrawerItemContent>
+              ),
             }}
             onChange={(data) => {
               latestPuckData.current = data;

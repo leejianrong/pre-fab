@@ -528,9 +528,22 @@ a {
    whichever row is hovered) would need that row's on-screen Y at hover
    time, which only JS (getBoundingClientRect) can supply — the one place
    here where "simplest mechanism that satisfies the requirement" means
-   dropping the anchoring rather than adding a hover-state machine. `24rem`
-   clears the widest the left sidebar (plugin bar + component list) ever
-   measured while verifying this (~358px), plus margin. */
+   dropping the anchoring rather than adding position-tracking machinery.
+   `24rem` clears the widest the left sidebar (plugin bar + component list)
+   ever measured while verifying this (~358px), plus margin.
+
+   This element (and the live block inside it) is only ever present in the
+   DOM while `DrawerItemContent` (SiteEditor.tsx) has it mounted — i.e.
+   while that exact row is hovered — not CSS-toggled on a permanently-
+   mounted element. An earlier version mounted the preview for all 44 row
+   copies unconditionally, gated only by `visibility`/`opacity`; CI caught
+   that this doesn't stop React from mounting 44 live block instances (one
+   with a real external Google Maps iframe, two fetching external images) on
+   every editor load, which measurably slowed the canvas enough to blow six
+   unrelated e2e tests' timeouts (docs/adr/0017's "Consequences", revised).
+   The mount/unmount gate is React's job now; this class only ever needs to
+   style something that's already meant to be shown, so a short fade-in
+   is enough — no exit animation, since removal is instant either way. */
 .pf-drawer-item-preview {
   position: fixed;
   top: 50%;
@@ -540,28 +553,19 @@ a {
   width: 16rem;
   max-height: 14rem;
   overflow: hidden;
-  visibility: hidden;
-  opacity: 0;
   pointer-events: none;
   background: var(--md-sys-color-surface-container-high);
   border: 1px solid var(--md-sys-color-outline-variant);
   border-radius: var(--md-sys-shape-corner-large);
   box-shadow: var(--md-sys-elevation-level3);
-  transition: opacity var(--md-sys-motion-duration-short2) var(--md-sys-motion-easing-standard);
+  animation: pf-drawer-item-preview-in var(--md-sys-motion-duration-short2) var(--md-sys-motion-easing-standard);
 }
 
-/* Puck's own `[data-puck-drawer-item]` attribute (a plain data attribute,
-   not a hashed class — see docs/adr/0017 for why this one's a safer
-   long-term selector than the CSS-module classes) marks the row; the
-   preview is one of its descendants (`.pf-drawer-item-preview`, nested
-   inside the `.pf-drawer-item` wrapper rendered above), so a descendant
-   `:hover` selector on the row correctly reveals it. Gated on a real
-   hovering pointer, matching Puck's own drawer-item hover rule, so a touch
-   device (no hover capability) just doesn't get a preview rather than a
-   popover a tap can't dismiss. */
-@media (hover: hover) and (pointer: fine) {
-  [data-puck-drawer-item]:hover .pf-drawer-item-preview {
-    visibility: visible;
+@keyframes pf-drawer-item-preview-in {
+  from {
+    opacity: 0;
+  }
+  to {
     opacity: 1;
   }
 }
