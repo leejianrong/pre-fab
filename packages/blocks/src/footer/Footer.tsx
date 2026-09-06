@@ -31,6 +31,8 @@ export function Footer(props: FooterProps & BlockRenderProps) {
     color: cssVar("color", "surface-foreground"),
     fontSize: cssVar("fontSize", "sm"),
     textDecoration: "none",
+    display: "inline-block",
+    padding: "0.9em 1.1em",
   };
 
   return (
