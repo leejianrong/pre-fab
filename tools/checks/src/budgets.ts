@@ -1,11 +1,11 @@
-import { existsSync, readFileSync } from "node:fs";
-import { createRequire } from "node:module";
+import { existsSync } from "node:fs";
 import { chromium } from "playwright";
 import { launch as launchChrome, type LaunchedChrome } from "chrome-launcher";
 import lighthouse from "lighthouse";
 import { buildSiteBundle, servePreview } from "@prefab/publish";
 import { TEMPLATE_MANIFESTS, loadTemplateCheckout } from "@prefab/templates/server";
 import { newUlid, type SiteManifest, type ThemeDocument } from "@prefab/schema";
+import { classifyBlockingAxeViolations, runAxe, type AxeViolation } from "./axe.js";
 
 /**
  * Per-template Lighthouse + axe-core budgets (SLICES.md Slice 3: "Lighthouse
@@ -20,9 +20,6 @@ import { newUlid, type SiteManifest, type ThemeDocument } from "@prefab/schema";
  * measured is exactly what a visitor would get.
  */
 
-const require = createRequire(import.meta.url);
-const AXE_SOURCE = readFileSync(require.resolve("axe-core/axe.min.js"), "utf8");
-
 // Mirrors e2e/playwright.config.ts's own comment: this sandbox pre-installs
 // Chromium at a revision Playwright's resolver doesn't expect; a normal
 // machine (including real CI, which runs `playwright install`) has no such
@@ -32,12 +29,6 @@ const PREINSTALLED_CHROMIUM = "/opt/pw-browsers/chromium";
 async function resolveChromiumPath(): Promise<string> {
   if (existsSync(PREINSTALLED_CHROMIUM)) return PREINSTALLED_CHROMIUM;
   return chromium.executablePath();
-}
-
-export interface AxeViolation {
-  id: string;
-  impact: string | null;
-  nodes: number;
 }
 
 export interface TemplateBudgetResult {
@@ -55,18 +46,6 @@ export function checkPerformanceScore(performanceScore: number): string | null {
   return performanceScore < MIN_PERFORMANCE_SCORE
     ? `Lighthouse performance ${performanceScore} < ${MIN_PERFORMANCE_SCORE} (R3)`
     : null;
-}
-
-/**
- * R6 has two distinct clauses: every first-party block must have zero
- * *critical* axe-core violations, and every shipped template must
- * separately meet WCAG 2.2 AA contrast — so `color-contrast` blocks
- * regardless of the impact axe assigns it (usually "serious", not
- * "critical"), while every other rule only blocks at "critical". Pure, so
- * it's unit-testable without a browser.
- */
-export function classifyBlockingAxeViolations(violations: AxeViolation[]): AxeViolation[] {
-  return violations.filter((v) => v.impact === "critical" || v.id === "color-contrast");
 }
 
 export async function checkTemplateBudget(templateId: string, bundleStoreDir: string): Promise<TemplateBudgetResult> {
@@ -118,15 +97,7 @@ export async function checkTemplateBudget(templateId: string, bundleStoreDir: st
     try {
       const page = await browser.newPage();
       await page.goto(preview.url, { waitUntil: "load" });
-      await page.addScriptTag({ content: AXE_SOURCE });
-      const results = await page.evaluate(async () => {
-        return (window as unknown as { axe: { run(): Promise<{ violations: AxeViolation[] }> } }).axe.run();
-      });
-      axeViolations = results.violations.map((v) => ({
-        id: v.id,
-        impact: v.impact,
-        nodes: (v as unknown as { nodes: unknown[] }).nodes.length,
-      }));
+      axeViolations = await runAxe(page);
       const blocking = classifyBlockingAxeViolations(axeViolations);
       if (blocking.length > 0) {
         reasons.push(`axe-core found ${blocking.length} blocking violation(s) (R6): ${blocking.map((v) => `${v.id} [${v.impact}]`).join(", ")}`);

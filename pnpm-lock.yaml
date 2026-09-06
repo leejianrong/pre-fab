@@ -232,6 +232,9 @@ importers:
       '@prefab/blocks':
         specifier: workspace:*
         version: link:../packages/blocks
+      '@prefab/ci-checks':
+        specifier: workspace:*
+        version: link:../tools/checks
       '@prefab/commands':
         specifier: workspace:*
         version: link:../packages/commands

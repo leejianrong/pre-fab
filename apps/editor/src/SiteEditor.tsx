@@ -138,6 +138,7 @@ export function SiteEditor({
   const latestPuckData = useRef<Data | null>(null);
   const unknownBlocksRef = useRef<BlockNode[]>([]);
   const expectedVersionRef = useRef(0);
+  const puckCanvasRef = useRef<HTMLDivElement>(null);
   // Mirrors unknownBlocksRef into render-visible state (R19: "shows a
   // placeholder in the editor") — the ref alone drives handleSave's
   // reconstruction of the document but doesn't itself trigger a re-render.
@@ -217,6 +218,39 @@ export function SiteEditor({
     setLayoutMode(page.layoutMode);
     setPositions(initialPositionsFromBlocks(page.blocks));
   }, [page?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // KAN-1219: Puck's own built-in ViewportControls (the zoom-level <select>
+  // it renders next to the canvas, independent of the `header: () => <></>`
+  // override above — see KAN-1205's comment on that override) ships with no
+  // accessible name at all (verified against @puckeditor/core 0.23.0's
+  // compiled output: no wrapping <label>, no aria-label, no title — a real
+  // critical axe-core `select-name` violation, not a false positive). This
+  // is vendor markup pre-fab has no source to patch, so the fix is a small,
+  // scoped DOM patch: find the element by its (CSS-module, but
+  // version-pinned per CLAUDE.md) class name and stamp an aria-label onto
+  // it. A MutationObserver rather than a one-shot query because the whole
+  // subtree remounts on every page switch (`key={page.id}` on `<Puck>`
+  // below), and the observer costs nothing once idle. Keyed on `page?.id`,
+  // not `[]`, because `.pf-puck-canvas` (and puckCanvasRef with it) doesn't
+  // exist yet on this component's first render — the site/theme/page fetch
+  // above is still in flight — so a mount-only effect would only ever see
+  // a null ref and never retry once the canvas actually appears.
+  useEffect(() => {
+    const root = puckCanvasRef.current;
+    if (!root) return;
+
+    function labelZoomSelect() {
+      const select = root!.querySelector('select[class*="ViewportControls-zoomSelect"]');
+      if (select && !select.hasAttribute("aria-label")) {
+        select.setAttribute("aria-label", "Zoom level");
+      }
+    }
+
+    labelZoomSelect();
+    const observer = new MutationObserver(labelZoomSelect);
+    observer.observe(root, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, [page?.id]);
 
   function handleRectChange(blockId: string, rect: FreeRect) {
     setPositions((prev) => {
@@ -368,7 +402,7 @@ export function SiteEditor({
         </div>
       ) : null}
       <UnknownBlockList blocks={unknownBlocks} />
-      <div className="pf-puck-canvas" style={{ flex: 1, minHeight: 0 }}>
+      <div ref={puckCanvasRef} className="pf-puck-canvas" style={{ flex: 1, minHeight: 0 }}>
         <FreeCanvasContext.Provider value={{ layoutMode, positions, onRectChange: handleRectChange, idBridge }}>
           <Puck
             key={page.id}

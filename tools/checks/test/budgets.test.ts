@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { checkPerformanceScore, classifyBlockingAxeViolations, type AxeViolation } from "../src/budgets.js";
+import { checkPerformanceScore } from "../src/budgets.js";
+import { classifyBlockingAxeViolations, type AxeViolation } from "../src/axe.js";
 
 describe("checkPerformanceScore (R3)", () => {
   it("passes at or above 90", () => {
