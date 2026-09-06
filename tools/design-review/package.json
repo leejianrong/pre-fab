@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "screenshots": "tsx src/cli.ts",
+    "generate:thumbnails": "tsx src/generate-thumbnails.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {

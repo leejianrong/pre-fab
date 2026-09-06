@@ -27,6 +27,8 @@ export interface TemplateSummary {
   category: string;
   tagline: string;
   description: string;
+  /** KAN-1206: API-relative path to this template's preview thumbnail — see @prefab/templates' TemplateManifestSchema. */
+  thumbnailUrl: string;
 }
 
 export interface CreateSiteFromTemplateResult {
