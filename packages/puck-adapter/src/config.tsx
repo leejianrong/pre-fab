@@ -21,6 +21,7 @@ import { PostDetail, POSTDETAIL_BLOCK_TYPE, postDetailDefaultProps } from "@pref
 import { ProductGrid, PRODUCTGRID_BLOCK_TYPE, productGridDefaultProps } from "@prefab/blocks";
 import { ProductDetail, PRODUCTDETAIL_BLOCK_TYPE, productDetailDefaultProps } from "@prefab/blocks";
 import { Form, FORM_BLOCK_TYPE, formDefaultProps } from "@prefab/blocks";
+import { Booking, BOOKING_BLOCK_TYPE, bookingDefaultProps } from "@prefab/blocks";
 import { EventSignup, EVENTSIGNUP_BLOCK_TYPE, eventSignupDefaultProps } from "@prefab/blocks";
 import { Payment, PAYMENT_BLOCK_TYPE, paymentDefaultProps } from "@prefab/blocks";
 import { Subscription, SUBSCRIPTION_BLOCK_TYPE, subscriptionDefaultProps } from "@prefab/blocks";
@@ -46,6 +47,7 @@ import { postDetailFields } from "./postdetail-fields.js";
 import { productGridFields } from "./productgrid-fields.js";
 import { productDetailFields } from "./productdetail-fields.js";
 import { formFields } from "./form-fields.js";
+import { bookingFields } from "./booking-fields.js";
 import { eventSignupFields } from "./eventsignup-fields.js";
 import { paymentFields } from "./payment-fields.js";
 import { subscriptionFields } from "./subscription-fields.js";
@@ -240,6 +242,14 @@ const BLOCK_ENTRIES: BlockEntry<any>[] = [
     Component: ProductDetail,
   },
   { type: FORM_BLOCK_TYPE, label: "Form", icon: "📋", fields: formFields, defaultProps: formDefaultProps, Component: Form },
+  {
+    type: BOOKING_BLOCK_TYPE,
+    label: "Booking",
+    icon: "📅",
+    fields: bookingFields,
+    defaultProps: bookingDefaultProps,
+    Component: Booking,
+  },
   {
     type: EVENTSIGNUP_BLOCK_TYPE,
     label: "Event sign-up",
