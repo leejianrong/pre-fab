@@ -460,6 +460,124 @@ a {
   }
 }
 
+/* KAN-1207 / docs/adr/0017: Puck's drawer/component-list rows (the block
+   picker). `overrides.drawerItem` (SiteEditor.tsx) only wraps the row's
+   *inner* content — the outer row element (padding, hover background,
+   shape) is still rendered by Puck's own `DrawerItemInner`. Puck exposes
+   exactly that row's background/border/radius/spacing/font-size as CSS
+   custom properties (`--puck-drawer-item-*`, confirmed in
+   @puckeditor/core@0.23.0's own shipped index.css — a public theming hook,
+   not an internal implementation detail), so MD3 alignment here is a
+   handful of variable overrides, not a fight with Puck's hashed CSS-module
+   class names. Scoped to `.pf-puck-canvas` (the div wrapping <Puck> in
+   SiteEditor.tsx) rather than `:root`, so this doesn't also touch
+   `--puck-space-3`/`--puck-radius-m`'s *other* Puck chrome that shares the
+   same generic fallback tokens elsewhere in the editor. Puck's own
+   tokens live inside `@layer puck-tokens`, so this plain (unlayered) rule
+   already outranks them regardless of selector specificity or source
+   order — no !important needed. */
+.pf-puck-canvas {
+  --puck-drawer-item-radius: var(--md-sys-shape-corner-medium);
+  --puck-drawer-item-space: 0.625rem 0.875rem;
+  --puck-drawer-item-border-width: 0px;
+  --puck-drawer-item-color-border: transparent;
+  --puck-drawer-item-color-bg: transparent;
+  --puck-drawer-item-color-text: var(--md-sys-color-on-surface);
+  --puck-drawer-item-color-text-hover: var(--md-sys-color-on-surface);
+  --puck-drawer-item-color-bg-hover: color-mix(
+    in srgb,
+    var(--md-sys-color-on-surface) calc(var(--md-sys-state-hover-state-layer-opacity) * 100%),
+    var(--md-sys-color-surface)
+  );
+  --puck-drawer-item-font-size: var(--md-sys-typescale-body-medium-size);
+}
+
+/* The icon + Puck's own label/drag-icon content, laid out side by side —
+   rendered by `overrides.drawerItem` inside Puck's row (see above). */
+.pf-drawer-item {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  width: 100%;
+}
+
+.pf-drawer-item-icon {
+  flex: none;
+  width: 1.5rem;
+  font-size: 1.125rem;
+  line-height: 1;
+  text-align: center;
+}
+
+.pf-drawer-item-label {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Hover preview: a live `<Component {...defaultProps} />` at a small scale
+   (docs/adr/0017) — the actual block, not a hand-drawn stand-in, wrapped in
+   the same theme CSS variables the canvas root applies (previewRootStyle).
+   Docked at a fixed spot in the viewport rather than tracking the hovered
+   row's own on-screen position: `position: fixed`'s containing block is the
+   viewport unless some ancestor sets a transform/filter/perspective/
+   `contain` — verified against the running editor that none of the
+   drawer's real ancestors (the scrolling ComponentList, the left Sidebar,
+   Puck's own root) do, so `fixed` reliably escapes the drawer's own
+   `overflow-y: auto` clipping without needing `position: absolute` inside a
+   clipped ancestor. A row-anchored popover (appearing right beside
+   whichever row is hovered) would need that row's on-screen Y at hover
+   time, which only JS (getBoundingClientRect) can supply — the one place
+   here where "simplest mechanism that satisfies the requirement" means
+   dropping the anchoring rather than adding a hover-state machine. `24rem`
+   clears the widest the left sidebar (plugin bar + component list) ever
+   measured while verifying this (~358px), plus margin. */
+.pf-drawer-item-preview {
+  position: fixed;
+  top: 50%;
+  left: 24rem;
+  transform: translateY(-50%);
+  z-index: 1000;
+  width: 16rem;
+  max-height: 14rem;
+  overflow: hidden;
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+  background: var(--md-sys-color-surface-container-high);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: var(--md-sys-shape-corner-large);
+  box-shadow: var(--md-sys-elevation-level3);
+  transition: opacity var(--md-sys-motion-duration-short2) var(--md-sys-motion-easing-standard);
+}
+
+/* Puck's own `[data-puck-drawer-item]` attribute (a plain data attribute,
+   not a hashed class — see docs/adr/0017 for why this one's a safer
+   long-term selector than the CSS-module classes) marks the row; the
+   preview is one of its descendants (`.pf-drawer-item-preview`, nested
+   inside the `.pf-drawer-item` wrapper rendered above), so a descendant
+   `:hover` selector on the row correctly reveals it. Gated on a real
+   hovering pointer, matching Puck's own drawer-item hover rule, so a touch
+   device (no hover capability) just doesn't get a preview rather than a
+   popover a tap can't dismiss. */
+@media (hover: hover) and (pointer: fine) {
+  [data-puck-drawer-item]:hover .pf-drawer-item-preview {
+    visibility: visible;
+    opacity: 1;
+  }
+}
+
+/* Renders the real block at a representative desktop width, then scales
+   the whole thing down uniformly (text, spacing and images together) —
+   shrinking only `font-size` wouldn't rescale a block's own `rem`-sized
+   theme tokens (`--pf-fontSize-*` etc. are root-relative, not
+   parent-relative), so a visual `scale()` is the only transform that
+   actually shrinks a themed block "roughly" rather than just its text. */
+.pf-drawer-item-preview-inner {
+  width: 40rem;
+  transform: scale(0.4);
+  transform-origin: top left;
+}
+
 /* LoadingIndicator */
 .pf-loading {
   display: flex;

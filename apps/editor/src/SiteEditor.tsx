@@ -2,11 +2,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Puck, type Data } from "@puckeditor/core";
 import {
   applyFreePositions,
+  BLOCK_ICONS,
+  BLOCK_PREVIEWS,
   createPuckConfig,
   FreeCanvasContext,
   FreeCanvasPreview,
   initialPositionsFromBlocks,
   pageDocumentToPuckData,
+  previewRootStyle,
   puckDataToPageDocument,
   PuckIdBridge,
   PUCK_KNOWN_TYPES,
@@ -109,6 +112,11 @@ export function SiteEditor({
   }, [siteId]);
 
   const config = useMemo(() => (theme ? createPuckConfig(theme.tokens) : null), [theme]);
+
+  // KAN-1207: the same theme-CSS-variable wrapper the canvas root already
+  // applies (createPuckConfig's root.render) — used below for the drawer's
+  // hover preview, which renders a real block outside that canvas root.
+  const previewStyle = useMemo(() => (theme ? previewRootStyle(theme.tokens) : {}), [theme]);
 
   // Keyed on page.id only, deliberately — recomputing this on every
   // `page` state change (e.g. after a save) would hand Puck a fresh `data`
@@ -289,7 +297,7 @@ export function SiteEditor({
         </div>
       ) : null}
       <UnknownBlockList blocks={unknownBlocks} />
-      <div style={{ flex: 1, minHeight: 0 }}>
+      <div className="pf-puck-canvas" style={{ flex: 1, minHeight: 0 }}>
         <FreeCanvasContext.Provider value={{ layoutMode, positions, onRectChange: handleRectChange, idBridge }}>
           <Puck
             key={page.id}
@@ -305,6 +313,36 @@ export function SiteEditor({
               // its working FilledButton onClick={handlePublish}) as the
               // only chrome above the canvas.
               header: () => <></>,
+              // KAN-1207 / docs/adr/0017: the only per-row extension point
+              // Puck's ComponentConfig/Overrides expose — it wraps Puck's
+              // own default inner content (name label + drag-grip icon,
+              // `children` here), it doesn't replace the outer row element
+              // (padding/hover background/shape — that's handled by the
+              // `--puck-drawer-item-*` custom-property overrides + the
+              // `.pf-puck-canvas` rules in ui/tokens.css instead). Adds a
+              // per-block-type glyph and a hover-revealed live preview of
+              // the actual block component at its default props.
+              drawerItem: ({ children, name }) => {
+                const icon = BLOCK_ICONS[name];
+                const preview = BLOCK_PREVIEWS[name];
+                return (
+                  <div className="pf-drawer-item">
+                    {icon ? (
+                      <span className="pf-drawer-item-icon" aria-hidden="true">
+                        {icon}
+                      </span>
+                    ) : null}
+                    <div className="pf-drawer-item-label">{children}</div>
+                    {preview ? (
+                      <div className="pf-drawer-item-preview" aria-hidden="true">
+                        <div className="pf-drawer-item-preview-inner" style={previewStyle}>
+                          <preview.Component {...preview.defaultProps} />
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              },
             }}
             onChange={(data) => {
               latestPuckData.current = data;
