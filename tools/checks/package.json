@@ -3,6 +3,9 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "exports": {
+    "./axe": "./src/axe.ts"
+  },
   "scripts": {
     "containment": "tsx src/cli/containment.ts",
     "parity": "tsx src/cli/parity.ts",
