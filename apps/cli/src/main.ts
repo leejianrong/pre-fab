@@ -35,6 +35,10 @@ import {
   memberList,
   memberRemove,
   memberUpdateRole,
+  orderExport,
+  orderGet,
+  orderList,
+  orderMarkShipped,
   pageCreate,
   pageGet,
   pageList,
@@ -399,6 +403,41 @@ product
         }),
       );
     },
+  );
+
+const order = program.command("order").description("Manage a site's orders and fulfillment (KAN-1246 / ADR-0018 part 3 addendum)");
+order
+  .command("list <siteId>")
+  .description("List a site's orders — completed/pending/failed cart checkouts")
+  .option("--limit <limit>", "page size")
+  .option("--offset <offset>")
+  .option("--status <status>", "filter by pending, completed or failed")
+  .action((siteId, options: { limit?: string; offset?: string; status?: "pending" | "completed" | "failed" }) =>
+    runCommand(globalOptions(), async () =>
+      orderList.run(await resolveContext(), {
+        siteId,
+        limit: options.limit ? Number(options.limit) : undefined,
+        offset: options.offset ? Number(options.offset) : undefined,
+        status: options.status,
+      }),
+    ),
+  );
+order
+  .command("get <siteId> <orderId>")
+  .description("Get one order's header plus its own line items")
+  .action((siteId, orderId) => runCommand(globalOptions(), async () => orderGet.run(await resolveContext(), { siteId, orderId })));
+order
+  .command("export <siteId>")
+  .description("Export a site's orders — CSV by default, one row per order line")
+  .option("--format <format>", "csv or json", "csv")
+  .action((siteId, options: { format?: "csv" | "json" }) =>
+    runCommand(globalOptions(), async () => orderExport.run(await resolveContext(), { siteId, format: options.format })),
+  );
+order
+  .command("ship <siteId> <orderItemId> <trackingNumber>")
+  .description("Mark a physical order line 'shipped' with a free-text tracking number (unfulfilled -> shipped only)")
+  .action((siteId, orderItemId, trackingNumber) =>
+    runCommand(globalOptions(), async () => orderMarkShipped.run(await resolveContext(), { siteId, orderItemId, trackingNumber })),
   );
 
 const form = program.command("form").description("Manage Form block notifications, webhooks and submissions (Slice 6)");

@@ -21,6 +21,7 @@ import { ThemeEditor } from "./ThemeEditor.js";
 import { DomainsPanel } from "./DomainsPanel.js";
 import { BlogPanel } from "./BlogPanel.js";
 import { ProductsPanel } from "./ProductsPanel.js";
+import { OrdersPanel } from "./OrdersPanel.js";
 import { SubmissionsPanel } from "./SubmissionsPanel.js";
 import { api } from "./api.js";
 import {
@@ -159,6 +160,7 @@ export function SiteEditor({
   const [domainsPanelOpen, setDomainsPanelOpen] = useState(false);
   const [blogPanelOpen, setBlogPanelOpen] = useState(false);
   const [productsPanelOpen, setProductsPanelOpen] = useState(false);
+  const [ordersPanelOpen, setOrdersPanelOpen] = useState(false);
   const [submissionsPanelOpen, setSubmissionsPanelOpen] = useState(false);
 
   useEffect(() => {
@@ -357,6 +359,7 @@ export function SiteEditor({
             <OutlinedButton onClick={() => setDomainsPanelOpen(true)}>Domains</OutlinedButton>
             <OutlinedButton onClick={() => setBlogPanelOpen(true)}>Blog</OutlinedButton>
             <OutlinedButton onClick={() => setProductsPanelOpen(true)}>Products</OutlinedButton>
+            <OutlinedButton onClick={() => setOrdersPanelOpen(true)}>Orders</OutlinedButton>
             <OutlinedButton onClick={() => setSubmissionsPanelOpen(true)}>Submissions</OutlinedButton>
             {/* ADR-0014 / KAN-1129: local UI state only until Save — switching
                 to "free" (or back to "flow") never touches the document until
@@ -451,6 +454,7 @@ export function SiteEditor({
       {domainsPanelOpen ? <DomainsPanel siteId={siteId} onClose={() => setDomainsPanelOpen(false)} /> : null}
       {blogPanelOpen ? <BlogPanel siteId={siteId} onClose={() => setBlogPanelOpen(false)} /> : null}
       {productsPanelOpen ? <ProductsPanel siteId={siteId} onClose={() => setProductsPanelOpen(false)} /> : null}
+      {ordersPanelOpen ? <OrdersPanel siteId={siteId} onClose={() => setOrdersPanelOpen(false)} /> : null}
       {submissionsPanelOpen ? <SubmissionsPanel siteId={siteId} page={page} onClose={() => setSubmissionsPanelOpen(false)} /> : null}
       <Dialog open={celebration !== null} onClose={() => setCelebration(null)} ariaLabel="Site published">
         <h2 className="pf-dialog-headline">🎉 Your site is live!</h2>

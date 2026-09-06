@@ -231,6 +231,99 @@ export interface ProductConflictDetails {
   diff: FieldDiff[];
 }
 
+// ---- orders (KAN-1246 / ADR-0018 part 3 addendum) ----
+// An "order" IS a cart_checkout_records row once its status moves to
+// 'completed' — see that ADR addendum's point 1 for why there is no
+// separate Order type distinct from CartCheckoutRecord below.
+
+export type CartCheckoutRecordStatus = "pending" | "completed" | "failed";
+
+/** One resolved, server-validated line of a completed cart Checkout session — see @prefab/runtime's createCartCheckout for where this is built. */
+export interface CartCheckoutRecordItem {
+  productId: string;
+  quantity: number;
+  /** Cents. */
+  unitAmount: number;
+  currency: string;
+  title: string;
+  fulfillmentType: FulfillmentType;
+}
+
+/** The order header (KAN-1245's own cart_checkout_records row) — visitor PII/payment metadata (R20), platform Postgres only. */
+export interface CartCheckoutRecord {
+  id: string;
+  siteId: string;
+  stripeSessionId: string;
+  items: CartCheckoutRecordItem[];
+  currency: string;
+  /** Cents — sum of every line's unitAmount * quantity, excluding shipping. */
+  amountSubtotal: number;
+  requiresShipping: boolean;
+  status: CartCheckoutRecordStatus;
+  buyerEmail: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type OrderItemStatus = "unfulfilled" | "shipped" | "delivered";
+
+/** One order line's own fulfillment state — see 0015_kan1246_orders.sql's own header comment for why this is a separate table from the header above. */
+export interface OrderItem {
+  id: string;
+  cartCheckoutRecordId: string;
+  siteId: string;
+  productId: string;
+  quantity: number;
+  /** Cents. */
+  unitAmount: number;
+  currency: string;
+  title: string;
+  fulfillmentType: FulfillmentType;
+  status: OrderItemStatus;
+  trackingNumber: string | null;
+  /** See the ADR addendum's point 3 — set when this line's stock decrement found insufficient stock. Always false for a digital/service line. */
+  oversold: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ListOrdersQuery {
+  limit?: number;
+  offset?: number;
+  status?: CartCheckoutRecordStatus;
+}
+
+export interface ListOrdersResult {
+  records: CartCheckoutRecord[];
+  total: number;
+}
+
+export interface OrderWithItems {
+  order: CartCheckoutRecord;
+  items: OrderItem[];
+}
+
+/** `order.markShipped` — free-text tracking number, no carrier lookup (deferred). */
+export interface MarkOrderItemShippedInput {
+  trackingNumber: string;
+}
+
+export interface OrderExportRow {
+  orderId: string;
+  orderItemId: string;
+  orderCreatedAt: string;
+  buyerEmail: string | null;
+  productId: string;
+  title: string;
+  quantity: number;
+  unitAmount: number;
+  currency: string;
+  fulfillmentType: FulfillmentType;
+  status: OrderItemStatus;
+  trackingNumber: string | null;
+  oversold: boolean;
+}
+
 export interface AssetVariant {
   width: number;
   key: string;

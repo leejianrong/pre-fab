@@ -1,5 +1,5 @@
-import { useState, type CSSProperties } from "react";
-import type { ProductDocument } from "@prefab/schema";
+import { useEffect, useState, type CSSProperties } from "react";
+import type { FulfillmentType, ProductDocument } from "@prefab/schema";
 import { cssVar, PROSE_MAX_MEASURE } from "../theme-css.js";
 import { ResponsiveStyle, type BlockRenderProps } from "../responsive.js";
 import { parseMarkdownLite } from "../markdown-lite.js";
@@ -19,6 +19,9 @@ export interface ProductDetailRenderProps {
     ProductDocument,
     "id" | "title" | "description" | "images" | "price" | "currency" | "fulfillmentType" | "stockCount" | "successMessage"
   >;
+  /** KAN-1246 / ADR-0018 (part 3 addendum) — same "absent inside the Puck canvas and an offline local build" contract as CartDrawerExtraProps.runtimeApiUrl. Enables the live stock-check effect below; the block renders its build-time snapshot's stock when either is missing. */
+  runtimeApiUrl?: string;
+  siteId?: string;
 }
 
 /** `price` is always cents — same division-point-for-display-only rule as Payment.tsx's formatAmount. */
@@ -31,7 +34,7 @@ function formatPrice(price: number, currency: string): string {
 }
 
 export function ProductDetail(props: ProductDetailProps & BlockRenderProps & ProductDetailRenderProps) {
-  const { product, blockId, responsive } = props;
+  const { product, blockId, responsive, runtimeApiUrl, siteId } = props;
 
   // Hooks run unconditionally, before the "no product selected" early
   // return below (the Puck canvas preview) — React's own rule, not
@@ -39,6 +42,31 @@ export function ProductDetail(props: ProductDetailProps & BlockRenderProps & Pro
   const cart = useCart();
   const [quantity, setQuantity] = useState(1);
   const [added, setAdded] = useState(false);
+  // KAN-1246 / ADR-0018 (part 3 addendum): live stock, read once on mount
+  // from the new runtime stock-check endpoint — presentational only (the
+  // build-time `product.stockCount` is what renders until/unless this
+  // resolves; a failed or absent fetch just leaves that snapshot in place,
+  // same "never worse than not having tried" discipline every other
+  // browser-touching effect in this codebase already follows). The actual
+  // source of truth at purchase time remains createCartCheckout's own
+  // server-side revalidation — this only improves what the visitor sees
+  // before they try to buy.
+  const [liveStock, setLiveStock] = useState<{ fulfillmentType: FulfillmentType; stockCount: number | null } | null>(null);
+
+  useEffect(() => {
+    if (!runtimeApiUrl || !siteId || !product) return;
+    let cancelled = false;
+    fetch(`${runtimeApiUrl}/v1/runtime/sites/${siteId}/products/${product.id}/stock`)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((body: { fulfillmentType: FulfillmentType; stockCount: number | null } | null) => {
+        if (!cancelled && body) setLiveStock(body);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [runtimeApiUrl, siteId, product?.id]);
 
   const articleStyle: CSSProperties = {
     padding: `${cssVar("spacing", "section")} ${cssVar("spacing", "element")}`,
@@ -112,7 +140,9 @@ export function ProductDetail(props: ProductDetailProps & BlockRenderProps & Pro
     );
   }
 
-  const outOfStock = product.fulfillmentType === "physical" && (product.stockCount ?? 0) <= 0;
+  const fulfillmentType = liveStock?.fulfillmentType ?? product.fulfillmentType;
+  const stockCount = liveStock ? liveStock.stockCount : product.stockCount;
+  const outOfStock = fulfillmentType === "physical" && (stockCount ?? 0) <= 0;
   const blocks = parseMarkdownLite(product.description);
 
   return (
@@ -183,7 +213,7 @@ export function ProductDetail(props: ProductDetailProps & BlockRenderProps & Pro
           id={`pf-productdetail-qty-${blockId ?? ""}`}
           type="number"
           min={1}
-          max={product.fulfillmentType === "physical" ? (product.stockCount ?? 1) : 99}
+          max={fulfillmentType === "physical" ? (stockCount ?? 1) : 99}
           value={quantity}
           disabled={outOfStock}
           style={quantityInputStyle}

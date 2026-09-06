@@ -111,3 +111,84 @@ export async function getCartCheckoutRecordById(client: PoolClient, siteId: stri
   ]);
   return result.rows[0] ? rowToCartCheckoutRecord(result.rows[0]) : null;
 }
+
+/**
+ * KAN-1246 / ADR-0018 (part 3 addendum): the transition this migration's own
+ * header comment named as "KAN-1246's job" — `checkout.session.completed`
+ * for a cart-mode session. Keyed by `stripe_session_id`
+ * (`cart_checkout_records_stripe_session_id_idx`), not this row's own `id` —
+ * that index's own migration comment names exactly this lookup ("looks a
+ * session up by id alone, with no siteId in hand yet — same reasoning as
+ * payment_records_stripe_session_id_idx"), and the real webhook's own
+ * `object.id` (Stripe's own Checkout Session id) is what a real event
+ * always carries, mirroring `updatePaymentRecordStatus`'s identical
+ * `stripe_session_id` lookup for the one-off path one branch above it in
+ * app.ts. `AND status = 'pending'` is the identical idempotency guard
+ * `updatePaymentRecordStatus`/`completeSubscriptionCheckout` already
+ * document: a redelivered webhook (same or different Stripe event id) that
+ * arrives after this has already run once matches no row, returns `null`,
+ * and the caller's `if (updated)` guard skips both order_items creation and
+ * stock decrement a second time. Called from inside the SAME
+ * `withTenantContext` transaction that then creates this record's
+ * order_items and decrements stock (apps/api/src/lib/cart-order-webhook.ts)
+ * — one commit or none, never a status flip with no line items to match it.
+ */
+export async function markCartCheckoutRecordCompleted(
+  client: PoolClient,
+  siteId: string,
+  stripeSessionId: string,
+  patch: { buyerEmail: string | null },
+): Promise<CartCheckoutRecord | null> {
+  const result = await client.query<RawCartCheckoutRecordRow>(
+    `UPDATE cart_checkout_records SET
+       status = 'completed',
+       buyer_email = COALESCE($1, buyer_email),
+       updated_at = now()
+     WHERE site_id = $2 AND stripe_session_id = $3 AND status = 'pending'
+     RETURNING *`,
+    [patch.buyerEmail, siteId, stripeSessionId],
+  );
+  return result.rows[0] ? rowToCartCheckoutRecord(result.rows[0]) : null;
+}
+
+export interface ListCartCheckoutRecordsOptions {
+  /** Clamped to [1, 200]. Default 50. */
+  limit?: number;
+  /** Clamped to >= 0. Default 0. */
+  offset?: number;
+  status?: CartCheckoutRecordStatus;
+}
+
+export interface ListCartCheckoutRecordsResult {
+  records: CartCheckoutRecord[];
+  total: number;
+}
+
+const CART_CHECKOUT_DEFAULT_LIMIT = 50;
+const CART_CHECKOUT_MAX_LIMIT = 200;
+
+/** The owner-facing order list/dashboard read (KAN-1246) — mirrors listPaymentRecordsForSite/listSubscriptionRecordsForSite exactly, but scoped by siteId alone (a cart checkout has no blockId to further scope by — see this table's own migration header comment). */
+export async function listCartCheckoutRecordsForSite(
+  client: PoolClient,
+  siteId: string,
+  options: ListCartCheckoutRecordsOptions = {},
+): Promise<ListCartCheckoutRecordsResult> {
+  const limit = Math.min(CART_CHECKOUT_MAX_LIMIT, Math.max(1, Math.trunc(options.limit ?? CART_CHECKOUT_DEFAULT_LIMIT)));
+  const offset = Math.max(0, Math.trunc(options.offset ?? 0));
+
+  const whereParts = ["site_id = $1"];
+  const params: unknown[] = [siteId];
+  if (options.status) {
+    params.push(options.status);
+    whereParts.push(`status = $${params.length}`);
+  }
+  const where = whereParts.join(" AND ");
+
+  const countResult = await client.query<{ count: string }>(`SELECT COUNT(*) AS count FROM cart_checkout_records WHERE ${where}`, params);
+  const rowsResult = await client.query<RawCartCheckoutRecordRow>(
+    `SELECT * FROM cart_checkout_records WHERE ${where} ORDER BY created_at DESC, id DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+    [...params, limit, offset],
+  );
+
+  return { records: rowsResult.rows.map(rowToCartCheckoutRecord), total: Number(countResult.rows[0]!.count) };
+}

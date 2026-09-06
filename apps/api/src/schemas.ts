@@ -363,3 +363,39 @@ export const CreateCartCheckoutBodySchema = z.object({
     .min(1)
     .max(50),
 });
+
+// ---- KAN-1246 / ADR-0018 (part 3 addendum): orders, inventory and
+// fulfillment. "Order" = a cart_checkout_records row once its status moves
+// to 'completed' — see the addendum's point 1 for why there is no separate
+// orders table/schema. ----
+export const ListOrdersQuerySchema = z.object({
+  limit: z.coerce.number().int().optional(),
+  offset: z.coerce.number().int().optional(),
+  status: z.enum(["pending", "completed", "failed"]).optional(),
+});
+
+export const ExportOrdersQuerySchema = z.object({
+  format: z.enum(["csv", "json"]).default("csv"),
+});
+
+/** `order.markShipped` — free-text tracking number, no carrier lookup (deferred, same as tax/carrier-computed shipping). */
+export const MarkOrderItemShippedBodySchema = z.object({
+  trackingNumber: z.string().min(1).max(200),
+});
+
+/**
+ * Dev-only (see `/v1/dev/stripe-connect/:siteId/cart/advance`) — drives the
+ * same `applyCartCheckoutCompleted` (apps/api/src/lib/cart-order-webhook.ts)
+ * a real `checkout.session.completed` cart-mode webhook would, keyed by
+ * `sessionId` — the Stripe Checkout session id the runtime cart-checkout
+ * route's own response `url` embeds — exactly the same shape/field name
+ * `AdvanceFakeStripeConnectBodySchema` already uses for the one-off path
+ * (see `markCartCheckoutRecordCompleted`'s own comment in
+ * cart-checkout-records.ts for why this is the session id, not this row's
+ * own internal id).
+ */
+export const AdvanceFakeCartBodySchema = z.object({
+  sessionId: z.string().min(1),
+  eventId: z.string().min(1).optional(),
+  buyerEmail: z.string().email().optional(),
+});
