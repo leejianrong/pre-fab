@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { BlockListSchema, LayoutModeSchema, PostStatusSchema, ThemeTokensSchema } from "@prefab/schema";
+import { BlockListSchema, FulfillmentTypeSchema, LayoutModeSchema, PostStatusSchema, ProductStatusSchema, ThemeTokensSchema } from "@prefab/schema";
 
 export const CreateSiteBodySchema = z.object({
   slug: z.string().min(1).max(64),
@@ -62,6 +62,51 @@ export const ListPostsQuerySchema = z.object({
   limit: z.coerce.number().int().optional(),
   offset: z.coerce.number().int().optional(),
   status: PostStatusSchema.optional(),
+});
+
+// ---- products (KAN-1244 / ADR-0018) ----
+// `slug` is optional (auto-generated from `title`, deduped against the
+// site's existing products — same discipline as CreatePostBodySchema).
+// `stockCount` is optional: when omitted, apps/api's product.create route
+// defaults it to 0 for a physical product or null for a digital/service
+// one (see that route's own comment) — never left ambiguous.
+export const CreateProductBodySchema = z.object({
+  title: z.string().min(1).max(200),
+  slug: z.string().min(1).max(96).optional(),
+  description: z.string().max(20_000).optional(),
+  images: z.array(z.string().max(2048)).max(12).optional(),
+  price: z.number().int().positive().max(99_999_999),
+  currency: z
+    .string()
+    .regex(/^[a-z]{3}$/, "must be a lowercase 3-letter ISO 4217 currency code")
+    .optional(),
+  fulfillmentType: FulfillmentTypeSchema.optional(),
+  stockCount: z.number().int().nonnegative().nullable().optional(),
+  successMessage: z.string().max(300).optional(),
+  status: ProductStatusSchema.optional(),
+});
+
+export const WriteProductBodySchema = z.object({
+  title: z.string().min(1).max(200),
+  slug: z.string().min(1).max(96),
+  description: z.string().max(20_000).default(""),
+  images: z.array(z.string().max(2048)).max(12).default([]),
+  price: z.number().int().positive().max(99_999_999),
+  currency: z
+    .string()
+    .regex(/^[a-z]{3}$/, "must be a lowercase 3-letter ISO 4217 currency code")
+    .default("usd"),
+  fulfillmentType: FulfillmentTypeSchema.default("physical"),
+  stockCount: z.number().int().nonnegative().nullable().default(0),
+  successMessage: z.string().max(300).default("Thank you for your purchase."),
+  status: ProductStatusSchema.default("draft"),
+  expectedVersion: z.number().int().nonnegative(),
+});
+
+export const ListProductsQuerySchema = z.object({
+  limit: z.coerce.number().int().optional(),
+  offset: z.coerce.number().int().optional(),
+  status: ProductStatusSchema.optional(),
 });
 
 export const CreateTokenBodySchema = z.object({

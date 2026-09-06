@@ -1,6 +1,7 @@
 import type { BlockNode } from "./block.js";
 import type { PageDocument } from "./document.js";
 import type { PostDocument } from "./post.js";
+import type { ProductDocument } from "./product.js";
 
 export type BlockDiffOp =
   | { kind: "add"; block: BlockNode }
@@ -131,6 +132,31 @@ const POST_DIFFED_FIELDS = ["title", "slug", "date", "author", "tags", "cover", 
 export function diffPostDocuments(before: PostDocument, after: PostDocument): FieldDiff[] {
   const fields: FieldDiff[] = [];
   for (const field of POST_DIFFED_FIELDS) {
+    const b = before[field];
+    const a = after[field];
+    const changed = Array.isArray(b) && Array.isArray(a) ? JSON.stringify(b) !== JSON.stringify(a) : b !== a;
+    if (changed) fields.push({ field, before: b, after: a });
+  }
+  return fields;
+}
+
+const PRODUCT_DIFFED_FIELDS = [
+  "title",
+  "slug",
+  "description",
+  "images",
+  "price",
+  "currency",
+  "fulfillmentType",
+  "stockCount",
+  "successMessage",
+  "status",
+] as const;
+
+/** Field-level diff for a product (R17's conflict payload, product.write's equivalent of `diffPostDocuments`) — no block tree to diff here. */
+export function diffProductDocuments(before: ProductDocument, after: ProductDocument): FieldDiff[] {
+  const fields: FieldDiff[] = [];
+  for (const field of PRODUCT_DIFFED_FIELDS) {
     const b = before[field];
     const a = after[field];
     const changed = Array.isArray(b) && Array.isArray(a) ? JSON.stringify(b) !== JSON.stringify(a) : b !== a;

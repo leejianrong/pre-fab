@@ -1,6 +1,7 @@
-import type { PageDocument, PostDocument, SiteManifest } from "@prefab/schema";
+import type { PageDocument, PostDocument, ProductDocument, SiteManifest } from "@prefab/schema";
 
 const POSTDETAIL_BLOCK_TYPE = "postdetail";
+const PRODUCTDETAIL_BLOCK_TYPE = "productdetail";
 
 function escapeXml(value: string): string {
   return value
@@ -23,6 +24,16 @@ function pageUrl(baseUrl: string, slug: string): string {
 function postUrl(baseUrl: string, detailPage: PageDocument | undefined, post: PostDocument): string | undefined {
   if (!detailPage) return undefined;
   return `${baseUrl}/${detailPage.slug}/${post.slug}`;
+}
+
+/** The first page (in document order) carrying a `productdetail` block — mirrors `findPostDetailPage` for the catalogue's own per-product URL (KAN-1244 / ADR-0018). */
+function findProductDetailPage(pages: PageDocument[]): PageDocument | undefined {
+  return pages.find((page) => page.blocks.some((block) => block.type === PRODUCTDETAIL_BLOCK_TYPE));
+}
+
+function productUrl(baseUrl: string, detailPage: PageDocument | undefined, product: ProductDocument): string | undefined {
+  if (!detailPage) return undefined;
+  return `${baseUrl}/${detailPage.slug}/${product.slug}`;
 }
 
 /**
@@ -51,15 +62,23 @@ export function generateRssFeed(input: { site: SiteManifest; pages: PageDocument
   )}</title><link>${escapeXml(baseUrl)}</link><description>${escapeXml(`${site.name} blog`)}</description>${items}</channel></rss>`;
 }
 
-/** Sitemap over every page plus every visible post's own detail URL (when a detail page exists). */
-export function generateSitemap(input: { pages: PageDocument[]; posts: PostDocument[]; baseUrl: string }): string {
-  const { pages, posts, baseUrl } = input;
-  const detailPage = findPostDetailPage(pages);
+/** Sitemap over every page plus every visible post's/product's own detail URL (when a detail page exists for each). */
+export function generateSitemap(input: {
+  pages: PageDocument[];
+  posts: PostDocument[];
+  /** KAN-1244 / ADR-0018. Defaults to `[]` — every existing caller (pre-dating the catalogue) builds fine with no products at all. */
+  products?: ProductDocument[];
+  baseUrl: string;
+}): string {
+  const { pages, posts, products = [], baseUrl } = input;
+  const postDetailPage = findPostDetailPage(pages);
+  const productDetailPage = findProductDetailPage(pages);
 
   const pageUrls = pages.map((page) => pageUrl(baseUrl, page.slug));
-  const postUrls = detailPage ? posts.map((post) => `${postUrl(baseUrl, detailPage, post)}`) : [];
+  const postUrls = postDetailPage ? posts.map((post) => `${postUrl(baseUrl, postDetailPage, post)}`) : [];
+  const productUrls = productDetailPage ? products.map((product) => `${productUrl(baseUrl, productDetailPage, product)}`) : [];
 
-  const urlEntries = [...pageUrls, ...postUrls]
+  const urlEntries = [...pageUrls, ...postUrls, ...productUrls]
     .map((url) => `<url><loc>${escapeXml(url)}</loc></url>`)
     .join("");
 

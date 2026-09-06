@@ -20,7 +20,7 @@ process.env.NODE_ENV = "production";
 
 import { access, cp, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { PageDocument, PostDocument, SiteManifest, ThemeDocument } from "@prefab/schema";
+import type { PageDocument, PostDocument, ProductDocument, SiteManifest, ThemeDocument } from "@prefab/schema";
 import { createBuildWorkspace, ensureBundleStore } from "./workspace.js";
 import { hashDirectory } from "./content-hash.js";
 import { generateRssFeed, generateSitemap } from "./feeds.js";
@@ -36,6 +36,7 @@ interface WorkerInput {
   theme: ThemeDocument;
   pages: PageDocument[];
   posts: PostDocument[];
+  products: ProductDocument[];
   baseUrl: string;
   runtimeApiUrl: string;
   turnstileSiteKey: string;
@@ -57,11 +58,17 @@ function sortPostsNewestFirst(posts: PostDocument[]): PostDocument[] {
   return [...posts].sort((a, b) => (a.date === b.date ? (a.id < b.id ? 1 : -1) : a.date < b.date ? 1 : -1));
 }
 
+/** Alphabetical by title, id as a stable tiebreaker — the same order `listAllProductsForSite` already returns from Postgres (a product has no `date` to order by — ADR-0018), applied here too so pagination order is a single, pipeline-owned invariant. */
+function sortProductsByTitle(products: ProductDocument[]): ProductDocument[] {
+  return [...products].sort((a, b) => (a.title === b.title ? (a.id < b.id ? -1 : 1) : a.title < b.title ? -1 : 1));
+}
+
 async function main(): Promise<void> {
   const inputPath = process.argv[2];
   if (!inputPath) throw new Error("build-worker: missing input file path argument");
   const input: WorkerInput = JSON.parse(await readFile(inputPath, "utf8"));
   input.posts = sortPostsNewestFirst(input.posts);
+  input.products = sortProductsByTitle(input.products ?? []);
 
   const { build: astroBuild } = await import("astro");
   const { default: react } = await import("@astrojs/react");
@@ -71,6 +78,7 @@ async function main(): Promise<void> {
     theme: input.theme,
     pages: input.pages,
     posts: input.posts,
+    products: input.products,
     runtimeApiUrl: input.runtimeApiUrl,
     turnstileSiteKey: input.turnstileSiteKey,
   });
@@ -100,7 +108,7 @@ async function main(): Promise<void> {
     );
     await writeFile(
       path.join(workspace.outDir, "sitemap.xml"),
-      generateSitemap({ pages: input.pages, posts: input.posts, baseUrl: input.baseUrl }),
+      generateSitemap({ pages: input.pages, posts: input.posts, products: input.products, baseUrl: input.baseUrl }),
       "utf8",
     );
 
