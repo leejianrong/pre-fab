@@ -1,4 +1,17 @@
-import type { BlockNode, DocumentDiff, FieldDiff, LayoutMode, PageDocument, PostDocument, PostStatus, ThemeDocument, ThemeTokens } from "@prefab/schema";
+import type {
+  BlockNode,
+  DocumentDiff,
+  FieldDiff,
+  FulfillmentType,
+  LayoutMode,
+  PageDocument,
+  PostDocument,
+  PostStatus,
+  ProductDocument,
+  ProductStatus,
+  ThemeDocument,
+  ThemeTokens,
+} from "@prefab/schema";
 
 export interface SiteSummary {
   id: string;
@@ -168,6 +181,53 @@ export interface ListPostsResult {
 /** Mirrors apps/api's post.write 409 conflict payload — a plain field diff, since a post has no block tree to diff (unlike page.write's ConflictDetails). */
 export interface PostConflictDetails {
   current: PostDocument;
+  diff: FieldDiff[];
+}
+
+// ---- products (KAN-1244 / ADR-0018) ----
+
+export interface CreateProductInput {
+  title: string;
+  slug?: string;
+  description?: string;
+  images?: string[];
+  price: number;
+  currency?: string;
+  fulfillmentType?: FulfillmentType;
+  /** Required (non-negative) for a physical product; must be omitted/null for a digital/service one. Omitted entirely defaults to 0 for physical, null for digital/service — see apps/api's product.create route. */
+  stockCount?: number | null;
+  successMessage?: string;
+  status?: ProductStatus;
+}
+
+export interface WriteProductInput {
+  title: string;
+  slug: string;
+  description: string;
+  images: string[];
+  price: number;
+  currency: string;
+  fulfillmentType: FulfillmentType;
+  stockCount: number | null;
+  successMessage: string;
+  status: ProductStatus;
+  expectedVersion: number;
+}
+
+export interface ListProductsQuery {
+  limit?: number;
+  offset?: number;
+  status?: ProductStatus;
+}
+
+export interface ListProductsResult {
+  products: ProductDocument[];
+  total: number;
+}
+
+/** Mirrors apps/api's product.write 409 conflict payload — a plain field diff, the same shape PostConflictDetails already uses. */
+export interface ProductConflictDetails {
+  current: ProductDocument;
   diff: FieldDiff[];
 }
 
@@ -438,4 +498,16 @@ export interface ListPaymentsResult {
   total: number;
 }
 
-export type { PageDocument, PostDocument, PostStatus, ThemeDocument, ThemeTokens, BlockNode, DocumentDiff, FieldDiff };
+export type {
+  PageDocument,
+  PostDocument,
+  PostStatus,
+  ProductDocument,
+  ProductStatus,
+  FulfillmentType,
+  ThemeDocument,
+  ThemeTokens,
+  BlockNode,
+  DocumentDiff,
+  FieldDiff,
+};

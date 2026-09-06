@@ -14,4 +14,6 @@ export * from "./rekey.js";
 export * from "./post.js";
 export * from "./slug.js";
 export * from "./post-file.js";
+export * from "./product.js";
+export * from "./product-file.js";
 export * from "./export-manifest.js";

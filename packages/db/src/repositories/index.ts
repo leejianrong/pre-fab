@@ -8,6 +8,7 @@ export * from "./publishes.js";
 export * from "./assets.js";
 export * from "./custom-domains.js";
 export * from "./posts.js";
+export * from "./products.js";
 export * from "./forms.js";
 export * from "./submissions.js";
 export * from "./webhook-deliveries.js";

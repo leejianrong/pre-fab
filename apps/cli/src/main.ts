@@ -45,6 +45,10 @@ import {
   postGet,
   postList,
   postWrite,
+  productCreate,
+  productGet,
+  productList,
+  productWrite,
   preview,
   publishCreate,
   publishList,
@@ -289,6 +293,112 @@ post
           expectedVersion: Number(expectedVersion),
         });
       }),
+  );
+
+const product = program.command("product").description("Manage catalogue products (KAN-1244 / ADR-0018)");
+product
+  .command("create <siteId> <title> <price>")
+  .description("Create a new catalogue product — the slug is generated from the title unless --slug is given. price is in cents.")
+  .option("--slug <slug>", "explicit slug instead of one generated from the title")
+  .option("--description <description>")
+  .option("--currency <currency>", "lowercase ISO 4217, defaults to usd")
+  .option("--fulfillment-type <fulfillmentType>", "physical or digital_or_service", "physical")
+  .option("--stock-count <stockCount>", "required for physical; omit for digital_or_service")
+  .option("--status <status>", "draft or published", "draft")
+  .action(
+    (
+      siteId,
+      title,
+      price,
+      options: {
+        slug?: string;
+        description?: string;
+        currency?: string;
+        fulfillmentType?: "physical" | "digital_or_service";
+        stockCount?: string;
+        status?: "draft" | "published";
+      },
+    ) =>
+      runCommand(globalOptions(), async () =>
+        productCreate.run(await resolveContext(), {
+          siteId,
+          title,
+          price: Number(price),
+          slug: options.slug,
+          description: options.description,
+          currency: options.currency,
+          fulfillmentType: options.fulfillmentType,
+          stockCount: options.stockCount === undefined ? undefined : Number(options.stockCount),
+          status: options.status,
+        }),
+      ),
+  );
+product
+  .command("list <siteId>")
+  .description("List a site's catalogue products")
+  .option("--limit <limit>", "page size")
+  .option("--offset <offset>")
+  .option("--status <status>", "filter by draft or published")
+  .action((siteId, options: { limit?: string; offset?: string; status?: "draft" | "published" }) =>
+    runCommand(globalOptions(), async () =>
+      productList.run(await resolveContext(), {
+        siteId,
+        limit: options.limit ? Number(options.limit) : undefined,
+        offset: options.offset ? Number(options.offset) : undefined,
+        status: options.status,
+      }),
+    ),
+  );
+product
+  .command("get <siteId> <productId>")
+  .action((siteId, productId) => runCommand(globalOptions(), async () => productGet.run(await resolveContext(), { siteId, productId })));
+product
+  .command("write <siteId> <productId> <title> <slug> <price> <status> <expectedVersion>")
+  .description("Replace a product's fields directly (R17/R18). price is in cents.")
+  .option("--description <description>", "", "")
+  .option("--images <images>", "comma-separated URLs")
+  .option("--currency <currency>", "", "usd")
+  .option("--fulfillment-type <fulfillmentType>", "physical or digital_or_service", "physical")
+  .option("--stock-count <stockCount>", "required for physical; pass nothing (leave unset) for digital_or_service")
+  .option("--success-message <successMessage>", "", "Thank you for your purchase.")
+  .action(
+    (
+      siteId,
+      productId,
+      title,
+      slug,
+      price,
+      status,
+      expectedVersion,
+      options: {
+        description?: string;
+        images?: string;
+        currency?: string;
+        fulfillmentType?: "physical" | "digital_or_service";
+        stockCount?: string;
+        successMessage?: string;
+      },
+    ) => {
+      const fulfillmentType = options.fulfillmentType ?? "physical";
+      return runCommand(globalOptions(), async () =>
+        productWrite.run(await resolveContext(), {
+          siteId,
+          productId,
+          title,
+          slug,
+          price: Number(price),
+          status,
+          expectedVersion: Number(expectedVersion),
+          description: options.description ?? "",
+          images: options.images ? options.images.split(",").map((s) => s.trim()).filter(Boolean) : [],
+          currency: options.currency ?? "usd",
+          fulfillmentType,
+          stockCount:
+            options.stockCount !== undefined ? Number(options.stockCount) : fulfillmentType === "physical" ? 0 : null,
+          successMessage: options.successMessage ?? "Thank you for your purchase.",
+        }),
+      );
+    },
   );
 
 const form = program.command("form").description("Manage Form block notifications, webhooks and submissions (Slice 6)");

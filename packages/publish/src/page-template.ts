@@ -19,7 +19,11 @@
  * has been found" for any dynamically-resolved component. `Form`,
  * `Booking`, `EventSignup`, `Payment` and (KAN-1154 / ADR-0016) `Subscription`
  * are imported directly below for exactly this reason, and rendered on
- * their own branch rather than through `blockComponents`. This file, plus
+ * their own branch rather than through `blockComponents`. `productGrid`/
+ * `productDetail` (KAN-1244 / ADR-0018) are NOT in that list — neither
+ * hydrates (the add-to-cart button is a static, disabled stub; cart/
+ * checkout are a later card's scope), so both render through the ordinary
+ * `blockComponents` lookup like every other static block. This file, plus
  * @prefab/publish, is the only place in the repo allowed to import Astro
  * (enforced by tools/checks).
  *
@@ -65,10 +69,13 @@ import {
 // carrying a postdetail block is a *template* for one route per post
 // (\${page.slug}/\${post.slug}); a page carrying a postlist block gets one
 // route per pagination page (page.slug, then \${page.slug}/page/2, ...).
-// Everything else is the plain one-route-per-page mapping slice 1 already
-// had. data.posts is exactly the set the caller decided to build with
-// (already visibility-filtered for a real publish, unfiltered for an
-// author's own preview) — this file never re-derives that decision.
+// KAN-1244 / ADR-0018 extends the identical pattern to productdetail/
+// productgrid, one collection ("posts" or "products") per detail/list block
+// type. Everything else is the plain one-route-per-page mapping slice 1
+// already had. data.posts/data.products are exactly the sets the caller
+// decided to build with (already visibility-filtered for a real publish,
+// unfiltered for an author's own preview) — this file never re-derives
+// that decision.
 //
 // Every helper and constant this needs is declared *inside* this function,
 // not as a sibling top-level declaration: Astro's static-build compiler
@@ -80,6 +87,8 @@ import {
 export function getStaticPaths() {
   const POSTLIST_TYPE = "postlist";
   const POSTDETAIL_TYPE = "postdetail";
+  const PRODUCTGRID_TYPE = "productgrid";
+  const PRODUCTDETAIL_TYPE = "productdetail";
 
   function findBlockOfType(blocks, type) {
     return blocks.find((b) => b.type === type) ?? null;
@@ -89,6 +98,7 @@ export function getStaticPaths() {
     return slug === "home" ? undefined : slug;
   }
 
+  const products = data.products ?? [];
   const paths = [];
 
   for (const page of data.pages) {
@@ -98,6 +108,17 @@ export function getStaticPaths() {
         paths.push({
           params: { slug: \`\${page.slug}/\${post.slug}\` },
           props: { page, theme: data.theme, site: data.site, detailPost: post },
+        });
+      }
+      continue;
+    }
+
+    const productDetailBlock = findBlockOfType(page.blocks, PRODUCTDETAIL_TYPE);
+    if (productDetailBlock) {
+      for (const product of products) {
+        paths.push({
+          params: { slug: \`\${page.slug}/\${product.slug}\` },
+          props: { page, theme: data.theme, site: data.site, detailProduct: product },
         });
       }
       continue;
@@ -124,6 +145,27 @@ export function getStaticPaths() {
       continue;
     }
 
+    const productGridBlock = findBlockOfType(page.blocks, PRODUCTGRID_TYPE);
+    if (productGridBlock) {
+      const productsPerPage = productGridBlock.props?.productsPerPage ?? 12;
+      const totalPages = Math.max(1, Math.ceil(products.length / productsPerPage));
+      for (let pageNumber = 1; pageNumber <= totalPages; pageNumber++) {
+        const slug = pageNumber === 1 ? routeSlug(page.slug) : \`\${page.slug}/page/\${pageNumber}\`;
+        paths.push({
+          params: { slug },
+          props: {
+            page,
+            theme: data.theme,
+            site: data.site,
+            productGridBlockId: productGridBlock.id,
+            productGridPageNumber: pageNumber,
+            productGridTotalPages: totalPages,
+          },
+        });
+      }
+      continue;
+    }
+
     paths.push({
       params: { slug: routeSlug(page.slug) },
       props: { page, theme: data.theme, site: data.site },
@@ -133,7 +175,19 @@ export function getStaticPaths() {
   return paths;
 }
 
-const { page, theme, site, detailPost, listBlockId, listPageNumber, listTotalPages } = Astro.props;
+const {
+  page,
+  theme,
+  site,
+  detailPost,
+  listBlockId,
+  listPageNumber,
+  listTotalPages,
+  detailProduct,
+  productGridBlockId,
+  productGridPageNumber,
+  productGridTotalPages,
+} = Astro.props;
 const themeVars = themeRootStyle(resolveThemeTokens(theme.tokens));
 
 // KAN-1204 (docs/design-audit-2026-09.md §1): the page-level horizontal
@@ -191,6 +245,17 @@ const pageGutterStyle = {
             posts: data.posts.slice(start, start + postsPerPage),
             pageNumber: listPageNumber,
             totalPages: listTotalPages,
+            basePath: page.slug,
+          };
+        } else if (block.type === "productdetail" && detailProduct) {
+          extraProps = { product: detailProduct };
+        } else if (block.type === "productgrid" && block.id === productGridBlockId) {
+          const productsPerPage = block.props?.productsPerPage ?? 12;
+          const start = (productGridPageNumber - 1) * productsPerPage;
+          extraProps = {
+            products: (data.products ?? []).slice(start, start + productsPerPage),
+            pageNumber: productGridPageNumber,
+            totalPages: productGridTotalPages,
             basePath: page.slug,
           };
         }

@@ -11,11 +11,16 @@ import type {
   IssuedApiToken,
   ListPostsQuery,
   ListPostsResult,
+  ListProductsQuery,
+  ListProductsResult,
   ListSubmissionsQuery,
   ListSubmissionsResult,
   PageDocument,
   PageSummary,
   PostDocument,
+  ProductDocument,
+  CreateProductInput,
+  WriteProductInput,
   PreviewResult,
   PublishRecord,
   PublishResult,
@@ -321,6 +326,28 @@ export class ApiClient {
 
   writePost(siteId: string, postId: string, input: WritePostInput): Promise<PostDocument> {
     return this.request("PUT", `/v1/sites/${siteId}/posts/${postId}`, input);
+  }
+
+  // ---- product.create / product.list / product.get / product.write (KAN-1244) ----
+  createProduct(siteId: string, input: CreateProductInput): Promise<ProductDocument> {
+    return this.request("POST", `/v1/sites/${siteId}/products`, input);
+  }
+
+  listProducts(siteId: string, query: ListProductsQuery = {}): Promise<ListProductsResult> {
+    const params = new URLSearchParams();
+    if (query.limit !== undefined) params.set("limit", String(query.limit));
+    if (query.offset !== undefined) params.set("offset", String(query.offset));
+    if (query.status) params.set("status", query.status);
+    const qs = params.toString();
+    return this.request("GET", `/v1/sites/${siteId}/products${qs ? `?${qs}` : ""}`);
+  }
+
+  getProduct(siteId: string, productId: string): Promise<ProductDocument> {
+    return this.request("GET", `/v1/sites/${siteId}/products/${productId}`);
+  }
+
+  writeProduct(siteId: string, productId: string, input: WriteProductInput): Promise<ProductDocument> {
+    return this.request("PUT", `/v1/sites/${siteId}/products/${productId}`, input);
   }
 
   // ---- asset.upload / asset.list ----

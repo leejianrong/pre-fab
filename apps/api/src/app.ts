@@ -30,6 +30,12 @@ import {
   listPostsForSite,
   listAllPostsForSite,
   listPostSlugsForSite,
+  createProduct,
+  getProduct,
+  writeProduct,
+  listProductsForSite,
+  listAllProductsForSite,
+  listProductSlugsForSite,
   createPublish,
   setLivePublish,
   getLivePublish,
@@ -94,14 +100,18 @@ import {
   dedupeSlug,
   diffPageDocuments,
   diffPostDocuments,
+  diffProductDocuments,
   isPostVisible,
+  isProductVisible,
   newUlid,
   rekeyPageForFork,
   slugify,
   validatePageDocument,
   validatePostDocument,
+  validateProductDocument,
   type PageDocument,
   type PostDocument,
+  type ProductDocument,
   type SiteManifest,
 } from "@prefab/schema";
 import {
@@ -202,6 +212,9 @@ import {
   ConfigureFormBodySchema,
   ExportSubmissionsQuerySchema,
   ListPostsQuerySchema,
+  CreateProductBodySchema,
+  WriteProductBodySchema,
+  ListProductsQuerySchema,
   ListSubmissionsQuerySchema,
   SignupBodySchema,
   SubmitFormBodySchema,
@@ -921,6 +934,132 @@ export function buildApp(deps: AppDeps): FastifyInstance {
         throw conflict("post has moved on since expectedVersion", {
           current: result.current,
           diff: diffPostDocuments(result.current, candidate),
+        });
+      }
+      return result.document;
+    });
+  });
+
+  // ---- product.create (KAN-1244 / ADR-0018) ----
+  // Same auto-slug discipline as post.create. `stockCount` omitted defaults
+  // to 0 for a physical product (the default fulfillmentType) or null for
+  // a digital/service one — the pairing validateProductDocument enforces,
+  // resolved here rather than left ambiguous the way `date` is resolved
+  // for a post.
+  app.post<{ Params: { siteId: string } }>("/v1/sites/:siteId/products", async (request) => {
+    const principal = await requirePrincipal(request);
+    const { siteId } = await authorizeSite(pool, principal, request.params.siteId, { minRole: "editor" });
+    const body = parseBody(CreateProductBodySchema, request.body);
+
+    return withTenantContext(pool, { siteId }, async (client) => {
+      const existingSlugs = await listProductSlugsForSite(client, siteId);
+      const slug = body.slug ? dedupeSlug(body.slug, existingSlugs) : dedupeSlug(slugify(body.title), existingSlugs);
+      const fulfillmentType = body.fulfillmentType ?? "physical";
+      const stockCount = body.stockCount !== undefined ? body.stockCount : fulfillmentType === "physical" ? 0 : null;
+
+      const candidate = {
+        id: newUlid(),
+        siteId,
+        slug,
+        title: body.title,
+        schemaVersion: 1,
+        version: 0,
+        description: body.description ?? "",
+        images: body.images ?? [],
+        price: body.price,
+        currency: body.currency ?? "usd",
+        fulfillmentType,
+        stockCount,
+        successMessage: body.successMessage ?? "Thank you for your purchase.",
+        status: body.status ?? "draft",
+      };
+      const validated = validateProductDocument(candidate);
+      if (!validated.ok) throw validationError("product failed validation", validated.issues);
+
+      return createProduct(client, {
+        id: validated.document.id,
+        siteId,
+        slug: validated.document.slug,
+        title: validated.document.title,
+        description: validated.document.description,
+        images: validated.document.images,
+        price: validated.document.price,
+        currency: validated.document.currency,
+        fulfillmentType: validated.document.fulfillmentType,
+        stockCount: validated.document.stockCount,
+        successMessage: validated.document.successMessage,
+        status: validated.document.status,
+      });
+    });
+  });
+
+  // ---- product.list ----
+  app.get<{ Params: { siteId: string } }>("/v1/sites/:siteId/products", async (request) => {
+    const principal = await requirePrincipal(request);
+    const { siteId } = await authorizeSite(pool, principal, request.params.siteId);
+    const query = parseQuery(ListProductsQuerySchema, request.query);
+    return withTenantContext(pool, { siteId }, (client) => listProductsForSite(client, siteId, query));
+  });
+
+  // ---- product.get ----
+  app.get<{ Params: { siteId: string; productId: string } }>("/v1/sites/:siteId/products/:productId", async (request) => {
+    const principal = await requirePrincipal(request);
+    const { siteId } = await authorizeSite(pool, principal, request.params.siteId);
+    const product = await withTenantContext(pool, { siteId }, (client) => getProduct(client, request.params.productId));
+    if (!product || product.siteId !== siteId) throw notFound("product not found");
+    return product;
+  });
+
+  // ---- product.write — the collection's core mutation, same discipline as post.write (ADR-0006/R17/R18) ----
+  app.put<{ Params: { siteId: string; productId: string } }>("/v1/sites/:siteId/products/:productId", async (request) => {
+    const principal = await requirePrincipal(request);
+    const { siteId } = await authorizeSite(pool, principal, request.params.siteId, { minRole: "editor" });
+    const { productId } = request.params;
+    const body = parseBody(WriteProductBodySchema, request.body);
+
+    const candidate: ProductDocument = {
+      id: productId,
+      siteId,
+      slug: body.slug,
+      title: body.title,
+      schemaVersion: 1,
+      version: body.expectedVersion,
+      description: body.description,
+      images: body.images,
+      price: body.price,
+      currency: body.currency,
+      fulfillmentType: body.fulfillmentType,
+      stockCount: body.stockCount,
+      successMessage: body.successMessage,
+      status: body.status,
+    };
+    const validated = validateProductDocument(candidate);
+    if (!validated.ok) throw validationError("product failed validation", validated.issues);
+
+    return withTenantContext(pool, { siteId }, async (client) => {
+      const existing = await getProduct(client, productId);
+      if (!existing || existing.siteId !== siteId) throw notFound("product not found");
+
+      const result = await writeProduct(client, {
+        productId,
+        siteId,
+        slug: validated.document.slug,
+        title: validated.document.title,
+        description: validated.document.description,
+        images: validated.document.images,
+        price: validated.document.price,
+        currency: validated.document.currency,
+        fulfillmentType: validated.document.fulfillmentType,
+        stockCount: validated.document.stockCount,
+        successMessage: validated.document.successMessage,
+        status: validated.document.status,
+        expectedVersion: body.expectedVersion,
+      });
+
+      if (!result.ok) {
+        throw conflict("product has moved on since expectedVersion", {
+          current: result.current,
+          diff: diffProductDocuments(result.current, candidate),
         });
       }
       return result.document;
@@ -1953,7 +2092,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     const principal = await requirePrincipal(request);
     const { siteId, accountId } = await authorizeSite(pool, principal, request.params.siteId, { minRole: "editor" });
 
-    const { manifest, theme, pages, posts, availabilityRule } = await withTenantContext(pool, { siteId }, async (client) => {
+    const { manifest, theme, pages, posts, products, availabilityRule } = await withTenantContext(pool, { siteId }, async (client) => {
       const site = await getSite(client, siteId);
       if (!site) throw notFound("site not found");
       const theme = await getTheme(client, siteId);
@@ -1968,6 +2107,11 @@ export function buildApp(deps: AppDeps): FastifyInstance {
       // there is exactly one place this rule can drift.
       const allPosts = await listAllPostsForSite(client, siteId);
       const posts = allPosts.filter((post) => isPostVisible(post));
+      // KAN-1244 / ADR-0018: identical "filter before the build ever sees
+      // it" discipline for products — a draft product is never built into a
+      // publish, the same rule posts already get.
+      const allProducts = await listAllProductsForSite(client, siteId);
+      const products = allProducts.filter((product) => isProductVisible(product));
 
       // Slice 6: snapshot every Form block's field manifest into `forms`
       // so the runtime submit endpoint can validate against it with no
@@ -2075,7 +2219,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
             maxHorizonDays: rule.maxHorizonDays,
           }
         : null;
-      return { manifest: await siteManifestFor(client, site), theme, pages, posts, availabilityRule };
+      return { manifest: await siteManifestFor(client, site), theme, pages, posts, products, availabilityRule };
     });
 
     // Astro build runs outside the DB transaction — it's slow (real
@@ -2087,6 +2231,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
       theme,
       pages,
       posts,
+      products,
       baseUrl: publicSiteUrl(manifest.slug),
       runtimeApiUrl,
       turnstileSiteKey,
@@ -2147,7 +2292,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     const principal = await requirePrincipal(request);
     const { siteId } = await authorizeSite(pool, principal, request.params.siteId);
 
-    const { manifest, theme, pages, posts } = await withTenantContext(pool, { siteId }, async (client) => {
+    const { manifest, theme, pages, posts, products } = await withTenantContext(pool, { siteId }, async (client) => {
       const site = await getSite(client, siteId);
       if (!site) throw notFound("site not found");
       const theme = await getTheme(client, siteId);
@@ -2156,11 +2301,12 @@ export function buildApp(deps: AppDeps): FastifyInstance {
       const pages = (await Promise.all(pageRefs.map((p) => getPageDocument(client, p.id)))).filter(
         (p): p is PageDocument => p !== null,
       );
-      // Preview shows every post, drafts and scheduled ones included — it's
-      // "what the author is working on," not "what's public" (that
-      // filtering only happens at publish time, above).
+      // Preview shows every post/product, drafts included — it's "what the
+      // author is working on," not "what's public" (that filtering only
+      // happens at publish time, above).
       const posts = await listAllPostsForSite(client, siteId);
-      return { manifest: await siteManifestFor(client, site), theme, pages, posts };
+      const products = await listAllProductsForSite(client, siteId);
+      return { manifest: await siteManifestFor(client, site), theme, pages, posts, products };
     });
 
     const built = await buildSiteBundle({
@@ -2168,6 +2314,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
       theme,
       pages,
       posts,
+      products,
       baseUrl: publicSiteUrl(manifest.slug),
       runtimeApiUrl,
       turnstileSiteKey,

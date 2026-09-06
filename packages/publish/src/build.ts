@@ -3,7 +3,7 @@ import { availableParallelism, tmpdir } from "node:os";
 import { spawn } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { PageDocument, PostDocument, SiteManifest, ThemeDocument } from "@prefab/schema";
+import type { PageDocument, PostDocument, ProductDocument, SiteManifest, ThemeDocument } from "@prefab/schema";
 import { createConcurrencyGate, type ConcurrencyGate } from "./concurrency-gate.js";
 
 const PACKAGE_ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -57,6 +57,8 @@ export interface BuildSiteBundleInput {
   pages: PageDocument[];
   /** Defaults to `[]` — every existing caller (local `build`/`preview` from a checkout, the template-budgets check) builds fine with no posts at all. */
   posts?: PostDocument[];
+  /** KAN-1244 / ADR-0018 — same "own collection, defaults to []" shape as `posts` above. */
+  products?: ProductDocument[];
   /** Anchors RSS/sitemap's absolute links. Defaults to a placeholder for callers with no real public address yet (an offline local build, R16). */
   baseUrl?: string;
   /** Where the Form block's submit island posts to (Slice 6, ADR-0007). Defaults to empty — the island simply declines to submit rather than failing, so an offline local build (R16) still builds and previews fine with no runtime configured. */
@@ -106,6 +108,7 @@ async function buildSiteBundleUngated(input: BuildSiteBundleInput): Promise<Buil
   const resolvedInput = {
     ...input,
     posts: input.posts ?? [],
+    products: input.products ?? [],
     baseUrl: input.baseUrl ?? `https://${input.site.slug}.prefab.invalid`,
     runtimeApiUrl: input.runtimeApiUrl ?? "",
     turnstileSiteKey: input.turnstileSiteKey ?? "",

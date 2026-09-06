@@ -18,6 +18,8 @@ import { Columns, COLUMNS_BLOCK_TYPE, columnsDefaultProps } from "@prefab/blocks
 import { CardGrid, CARDGRID_BLOCK_TYPE, cardGridDefaultProps } from "@prefab/blocks";
 import { PostList, POSTLIST_BLOCK_TYPE, postListDefaultProps } from "@prefab/blocks";
 import { PostDetail, POSTDETAIL_BLOCK_TYPE, postDetailDefaultProps } from "@prefab/blocks";
+import { ProductGrid, PRODUCTGRID_BLOCK_TYPE, productGridDefaultProps } from "@prefab/blocks";
+import { ProductDetail, PRODUCTDETAIL_BLOCK_TYPE, productDetailDefaultProps } from "@prefab/blocks";
 import { Form, FORM_BLOCK_TYPE, formDefaultProps } from "@prefab/blocks";
 import { EventSignup, EVENTSIGNUP_BLOCK_TYPE, eventSignupDefaultProps } from "@prefab/blocks";
 import { Payment, PAYMENT_BLOCK_TYPE, paymentDefaultProps } from "@prefab/blocks";
@@ -41,6 +43,8 @@ import { columnsFields } from "./columns-fields.js";
 import { cardGridFields } from "./cardgrid-fields.js";
 import { postListFields } from "./postlist-fields.js";
 import { postDetailFields } from "./postdetail-fields.js";
+import { productGridFields } from "./productgrid-fields.js";
+import { productDetailFields } from "./productdetail-fields.js";
 import { formFields } from "./form-fields.js";
 import { eventSignupFields } from "./eventsignup-fields.js";
 import { paymentFields } from "./payment-fields.js";
@@ -218,6 +222,22 @@ const BLOCK_ENTRIES: BlockEntry<any>[] = [
     fields: postDetailFields,
     defaultProps: postDetailDefaultProps,
     Component: PostDetail,
+  },
+  {
+    type: PRODUCTGRID_BLOCK_TYPE,
+    label: "Product grid",
+    icon: "🛍️",
+    fields: productGridFields,
+    defaultProps: productGridDefaultProps,
+    Component: ProductGrid,
+  },
+  {
+    type: PRODUCTDETAIL_BLOCK_TYPE,
+    label: "Product detail",
+    icon: "🏷️",
+    fields: productDetailFields,
+    defaultProps: productDetailDefaultProps,
+    Component: ProductDetail,
   },
   { type: FORM_BLOCK_TYPE, label: "Form", icon: "📋", fields: formFields, defaultProps: formDefaultProps, Component: Form },
   {

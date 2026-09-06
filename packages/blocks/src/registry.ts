@@ -36,6 +36,10 @@ import { PostList } from "./postlist/PostList.js";
 import { postListBlockDefinition, type PostListProps } from "./postlist/schema.js";
 import { PostDetail } from "./postdetail/PostDetail.js";
 import { postDetailBlockDefinition, type PostDetailProps } from "./postdetail/schema.js";
+import { ProductGrid } from "./productgrid/ProductGrid.js";
+import { productGridBlockDefinition, type ProductGridProps } from "./productgrid/schema.js";
+import { ProductDetail } from "./productdetail/ProductDetail.js";
+import { productDetailBlockDefinition, type ProductDetailProps } from "./productdetail/schema.js";
 import { Form } from "./form/Form.js";
 import { formBlockDefinition, type FormProps } from "./form/schema.js";
 import { Booking } from "./booking/Booking.js";
@@ -121,6 +125,16 @@ const BLOCK_ENTRIES: BlockEntry[] = [
     definition: postDetailBlockDefinition,
     summary: (_props: PostDetailProps) => "post detail template",
     Component: PostDetail,
+  },
+  {
+    definition: productGridBlockDefinition,
+    Component: ProductGrid,
+    summary: (props: ProductGridProps) => `product grid (${props.productsPerPage}/page)`,
+  },
+  {
+    definition: productDetailBlockDefinition,
+    summary: (_props: ProductDetailProps) => "product detail template",
+    Component: ProductDetail,
   },
   {
     definition: formBlockDefinition,

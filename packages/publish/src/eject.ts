@@ -7,6 +7,7 @@ import {
   DEFAULT_THEME_TOKENS,
   type PageDocument,
   type PostDocument,
+  type ProductDocument,
   type SiteManifest,
   type ThemeDocument,
 } from "@prefab/schema";
@@ -30,6 +31,7 @@ export interface EjectSiteInput {
   theme: ThemeDocument;
   pages: PageDocument[];
   posts?: PostDocument[];
+  products?: ProductDocument[];
   runtimeApiUrl?: string;
   turnstileSiteKey?: string;
   outDir: string;
@@ -187,6 +189,27 @@ export interface PostDocument {
   status: "draft" | "published";
 }
 
+// KAN-1244 / ADR-0018: same "type-only companion, never a runtime value"
+// shim as PostDocument above — src/blocks/productgrid, productdetail
+// (vendored verbatim, see this file's own \`cp\` of BLOCKS_SRC_ROOT) import
+// this as \`import type\` from "@prefab/schema" only.
+export interface ProductDocument {
+  id: string;
+  siteId: string;
+  slug: string;
+  title: string;
+  schemaVersion: number;
+  version: number;
+  description: string;
+  images: string[];
+  price: number;
+  currency: string;
+  fulfillmentType: "physical" | "digital_or_service";
+  stockCount: number | null;
+  successMessage: string;
+  status: "draft" | "published";
+}
+
 export interface BlockTypeDefinition<Props = Record<string, unknown>> {
   type: string;
   version: number;
@@ -301,6 +324,11 @@ function sortPostsNewestFirst(posts: PostDocument[]): PostDocument[] {
   return [...posts].sort((a, b) => (a.date === b.date ? (a.id < b.id ? 1 : -1) : a.date < b.date ? 1 : -1));
 }
 
+/** Alphabetical by title, id as a stable tiebreaker — mirrors build-worker.ts's own sortProductsByTitle (KAN-1244 / ADR-0018). */
+function sortProductsByTitle(products: ProductDocument[]): ProductDocument[] {
+  return [...products].sort((a, b) => (a.title === b.title ? (a.id < b.id ? -1 : 1) : a.title < b.title ? -1 : 1));
+}
+
 /**
  * Export tier (c) (ADR-0010): generates a standalone Astro project from a
  * document tree. Reuses `SITE_PAGE_ASTRO` verbatim — the exact same page
@@ -328,6 +356,7 @@ export async function ejectSite(input: EjectSiteInput): Promise<EjectResult> {
     theme: input.theme,
     pages: input.pages,
     posts: sortPostsNewestFirst(input.posts ?? []),
+    products: sortProductsByTitle(input.products ?? []),
     runtimeApiUrl: input.runtimeApiUrl ?? "",
     turnstileSiteKey: input.turnstileSiteKey ?? "",
   };

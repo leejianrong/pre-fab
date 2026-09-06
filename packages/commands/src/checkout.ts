@@ -1,7 +1,7 @@
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { PageDocument, PostDocument, ThemeTokens } from "@prefab/schema";
-import { parsePostFile, serializePostFile } from "@prefab/schema";
+import type { PageDocument, PostDocument, ProductDocument, ThemeTokens } from "@prefab/schema";
+import { parsePostFile, parseProductFile, serializePostFile, serializeProductFile } from "@prefab/schema";
 
 /**
  * The file-tree projection (ADR-0002): a site materialised as readable
@@ -25,6 +25,7 @@ const SITE_FILE = "site.json";
 const THEME_FILE = "theme.json";
 const PAGES_DIR = "pages";
 const POSTS_DIR = "posts";
+const PRODUCTS_DIR = "products";
 
 async function writeJson(filePath: string, value: unknown): Promise<void> {
   await mkdir(path.dirname(filePath), { recursive: true });
@@ -85,5 +86,26 @@ export async function readCheckoutPosts(dir: string): Promise<PostDocument[]> {
   const files = entries.filter((f) => f.endsWith(".md")).sort();
   return Promise.all(
     files.map(async (f) => parsePostFile(await readFile(path.join(postsDir, f), "utf8"))),
+  );
+}
+
+/** KAN-1244 / ADR-0018: a product's file uses frontmatter + Markdown (@prefab/schema's serializeProductFile), the identical "pleasant to hand-edit" format `posts/*.md` already uses. */
+export async function writeCheckoutProduct(dir: string, product: ProductDocument): Promise<void> {
+  const filePath = path.join(dir, PRODUCTS_DIR, `${product.slug}.md`);
+  await mkdir(path.dirname(filePath), { recursive: true });
+  await writeFile(filePath, serializeProductFile(product), "utf8");
+}
+
+export async function readCheckoutProducts(dir: string): Promise<ProductDocument[]> {
+  const productsDir = path.join(dir, PRODUCTS_DIR);
+  let entries: string[];
+  try {
+    entries = await readdir(productsDir);
+  } catch {
+    return [];
+  }
+  const files = entries.filter((f) => f.endsWith(".md")).sort();
+  return Promise.all(
+    files.map(async (f) => parseProductFile(await readFile(path.join(productsDir, f), "utf8"))),
   );
 }

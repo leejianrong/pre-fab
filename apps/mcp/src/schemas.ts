@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { BlockListSchema, LayoutModeSchema, PostStatusSchema, ThemeTokensSchema } from "@prefab/schema";
+import { BlockListSchema, FulfillmentTypeSchema, LayoutModeSchema, PostStatusSchema, ProductStatusSchema, ThemeTokensSchema } from "@prefab/schema";
 
 /**
  * MCP tool input shapes — one per command in @prefab/commands' registry.
@@ -79,6 +79,42 @@ export const schemas = {
     body: z.string(),
     locale: z.string(),
     status: PostStatusSchema,
+    expectedVersion: z.number().int().nonnegative(),
+  },
+
+  "product.create": {
+    siteId: z.string(),
+    title: z.string().min(1),
+    slug: z.string().min(1).optional(),
+    description: z.string().optional(),
+    images: z.array(z.string()).optional(),
+    price: z.number().int().positive(),
+    currency: z.string().optional(),
+    fulfillmentType: FulfillmentTypeSchema.optional(),
+    stockCount: z.number().int().nonnegative().nullable().optional(),
+    successMessage: z.string().optional(),
+    status: ProductStatusSchema.optional(),
+  },
+  "product.list": {
+    siteId: z.string(),
+    limit: z.number().int().optional(),
+    offset: z.number().int().optional(),
+    status: ProductStatusSchema.optional(),
+  },
+  "product.get": { siteId: z.string(), productId: z.string() },
+  "product.write": {
+    siteId: z.string(),
+    productId: z.string(),
+    title: z.string(),
+    slug: z.string(),
+    description: z.string(),
+    images: z.array(z.string()),
+    price: z.number().int().positive(),
+    currency: z.string(),
+    fulfillmentType: FulfillmentTypeSchema,
+    stockCount: z.number().int().nonnegative().nullable(),
+    successMessage: z.string(),
+    status: ProductStatusSchema,
     expectedVersion: z.number().int().nonnegative(),
   },
 

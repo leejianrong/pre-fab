@@ -16,6 +16,9 @@ export const API_MUTATIONS = [
   { name: "page.write", method: "PUT", path: "/v1/sites/:siteId/pages/:pageId" },
   { name: "post.create", method: "POST", path: "/v1/sites/:siteId/posts" },
   { name: "post.write", method: "PUT", path: "/v1/sites/:siteId/posts/:postId" },
+  // ---- KAN-1244 / ADR-0018: the product catalogue collection ----
+  { name: "product.create", method: "POST", path: "/v1/sites/:siteId/products" },
+  { name: "product.write", method: "PUT", path: "/v1/sites/:siteId/products/:productId" },
   { name: "asset.upload", method: "POST", path: "/v1/sites/:siteId/assets" },
   { name: "token.create", method: "POST", path: "/v1/sites/:siteId/tokens" },
   { name: "domain.add", method: "POST", path: "/v1/sites/:siteId/domains" },

@@ -1,7 +1,7 @@
 import type { Command } from "../registry.js";
 import type { CommandContext } from "../context.js";
 import { ApiClientError } from "@prefab/api-client";
-import { readCheckoutPages, readCheckoutPosts, readCheckoutSite, readCheckoutTheme } from "../checkout.js";
+import { readCheckoutPages, readCheckoutPosts, readCheckoutProducts, readCheckoutSite, readCheckoutTheme } from "../checkout.js";
 
 export interface PushArgs {
   dir: string;
@@ -99,6 +99,50 @@ async function runPush(ctx: CommandContext, args: PushArgs): Promise<PushResult>
       expectedVersion,
     });
     pushed.push(`posts/${post.slug}.md`);
+  }
+
+  const products = await readCheckoutProducts(args.dir);
+  for (const product of products) {
+    let productId = product.id;
+    let expectedVersion = product.version;
+
+    try {
+      await ctx.api.getProduct(site.id, product.id);
+    } catch (error) {
+      if (!(await isNotFound(error))) throw error;
+      // Same reasoning as a page/post added to the checkout by hand: the
+      // product's own id is minted fresh server-side, but its slug and
+      // content survive the round trip (R8).
+      const created = await ctx.api.createProduct(site.id, {
+        title: product.title,
+        slug: product.slug,
+        description: product.description,
+        images: product.images,
+        price: product.price,
+        currency: product.currency,
+        fulfillmentType: product.fulfillmentType,
+        stockCount: product.stockCount,
+        successMessage: product.successMessage,
+        status: product.status,
+      });
+      productId = created.id;
+      expectedVersion = created.version;
+    }
+
+    await ctx.api.writeProduct(site.id, productId, {
+      title: product.title,
+      slug: product.slug,
+      description: product.description,
+      images: product.images,
+      price: product.price,
+      currency: product.currency,
+      fulfillmentType: product.fulfillmentType,
+      stockCount: product.stockCount,
+      successMessage: product.successMessage,
+      status: product.status,
+      expectedVersion,
+    });
+    pushed.push(`products/${product.slug}.md`);
   }
 
   return { pushed };

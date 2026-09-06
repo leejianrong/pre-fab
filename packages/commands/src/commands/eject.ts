@@ -14,6 +14,19 @@ async function allPosts(ctx: Parameters<Command<EjectArgs, EjectResult>["run"]>[
   return all;
 }
 
+/** Same shape as `allPosts` above — KAN-1244 / ADR-0018. */
+async function allProducts(ctx: Parameters<Command<EjectArgs, EjectResult>["run"]>[0], siteId: string) {
+  const all: Awaited<ReturnType<typeof ctx.api.listProducts>>["products"] = [];
+  let offset = 0;
+  for (;;) {
+    const page = await ctx.api.listProducts(siteId, { limit: 100, offset });
+    all.push(...page.products);
+    offset += page.products.length;
+    if (page.products.length === 0 || all.length >= page.total) break;
+  }
+  return all;
+}
+
 export interface EjectArgs {
   siteId: string;
   outDir: string;
@@ -37,6 +50,7 @@ async function runEject(ctx: Parameters<Command<EjectArgs, EjectResult>["run"]>[
   const pageRefs = await ctx.api.listPages(args.siteId);
   const pages = await Promise.all(pageRefs.map((p) => ctx.api.getPage(args.siteId, p.id)));
   const posts = await allPosts(ctx, args.siteId);
+  const products = await allProducts(ctx, args.siteId);
 
   return ejectSite({
     site: {
@@ -50,6 +64,7 @@ async function runEject(ctx: Parameters<Command<EjectArgs, EjectResult>["run"]>[
     theme,
     pages,
     posts,
+    products,
     runtimeApiUrl: args.runtimeApiUrl,
     turnstileSiteKey: args.turnstileSiteKey,
     outDir: args.outDir,

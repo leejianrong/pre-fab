@@ -17,6 +17,19 @@ async function allPosts(ctx: Parameters<Command<ExportBundleArgs, ExportBundleRe
   return all;
 }
 
+/** Every product on the site, unpaginated — same reasoning as `allPosts` above (KAN-1244 / ADR-0018). */
+async function allProducts(ctx: Parameters<Command<ExportBundleArgs, ExportBundleResult>["run"]>[0], siteId: string) {
+  const all: Awaited<ReturnType<typeof ctx.api.listProducts>>["products"] = [];
+  let offset = 0;
+  for (;;) {
+    const page = await ctx.api.listProducts(siteId, { limit: 100, offset });
+    all.push(...page.products);
+    offset += page.products.length;
+    if (page.products.length === 0 || all.length >= page.total) break;
+  }
+  return all;
+}
+
 export interface ExportBundleArgs {
   siteId: string;
   /** Where the self-contained static output (plus manifest.json) lands. */
@@ -60,6 +73,7 @@ async function runExportBundle(
   const pageRefs = await ctx.api.listPages(args.siteId);
   const pages = await Promise.all(pageRefs.map((p) => ctx.api.getPage(args.siteId, p.id)));
   const posts = await allPosts(ctx, args.siteId);
+  const products = await allProducts(ctx, args.siteId);
   // Slice 9 (R10): the site's availability rule, carried into the bundle
   // so a self-hosted instance can seed local slot computation with no
   // separate step — see build-worker.ts's own comment.
@@ -79,6 +93,7 @@ async function runExportBundle(
     theme,
     pages,
     posts,
+    products,
     baseUrl: args.baseUrl,
     runtimeApiUrl: args.runtimeApiUrl ?? "http://localhost:8080",
     turnstileSiteKey: args.turnstileSiteKey,

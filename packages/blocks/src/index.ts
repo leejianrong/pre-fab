@@ -21,6 +21,8 @@ export * from "./columns/index.js";
 export * from "./cardgrid/index.js";
 export * from "./postlist/index.js";
 export * from "./postdetail/index.js";
+export * from "./productgrid/index.js";
+export * from "./productdetail/index.js";
 export * from "./form/index.js";
 export * from "./booking/index.js";
 export * from "./eventsignup/index.js";
