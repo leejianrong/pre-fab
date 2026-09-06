@@ -72,6 +72,19 @@ import { subscriptionFields } from "./subscription-fields.js";
 interface BlockEntry<P extends Record<string, unknown>> {
   type: string;
   label: string;
+  /**
+   * KAN-1207: a plain unicode glyph/emoji, matching the "no icon font/SVG
+   * set loaded" call apps/editor/src/ui/IconButton.tsx already made for
+   * this app's own chrome. Puck's `ComponentConfig` (@puckeditor/core
+   * 0.23.0) has no icon field — confirmed against its shipped .d.ts, and
+   * `label` is typed strictly `string` — so this never reaches Puck itself
+   * (`registerBlock` below doesn't forward it into the `ComponentConfig` it
+   * builds). It exists purely to be exported as `BLOCK_ICONS`, keyed by
+   * `entry.type`, for apps/editor to look up inside the `overrides.drawerItem`
+   * render function — the only extension point Puck exposes for a
+   * per-component-list-row render.
+   */
+  icon: string;
   fields: Fields<P>;
   defaultProps: P;
   Component: ComponentType<P>;
@@ -83,10 +96,11 @@ interface BlockEntry<P extends Record<string, unknown>> {
 // happened to pick.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const BLOCK_ENTRIES: BlockEntry<any>[] = [
-  { type: HERO_BLOCK_TYPE, label: "Hero", fields: heroFields, defaultProps: heroDefaultProps, Component: Hero },
+  { type: HERO_BLOCK_TYPE, label: "Hero", icon: "🦸", fields: heroFields, defaultProps: heroDefaultProps, Component: Hero },
   {
     type: HEADING_BLOCK_TYPE,
     label: "Heading",
+    icon: "🔤",
     fields: headingFields,
     defaultProps: headingDefaultProps,
     Component: Heading,
@@ -94,6 +108,7 @@ const BLOCK_ENTRIES: BlockEntry<any>[] = [
   {
     type: BUTTON_BLOCK_TYPE,
     label: "Button",
+    icon: "🔘",
     fields: buttonFields,
     defaultProps: buttonDefaultProps,
     Component: Button,
@@ -101,31 +116,49 @@ const BLOCK_ENTRIES: BlockEntry<any>[] = [
   {
     type: EMBED_BLOCK_TYPE,
     label: "Embed (raw HTML)",
+    icon: "</>",
     fields: embedFields,
     defaultProps: embedDefaultProps,
     Component: Embed,
   },
-  { type: SPACER_BLOCK_TYPE, label: "Spacer", fields: spacerFields, defaultProps: spacerDefaultProps, Component: Spacer },
+  {
+    type: SPACER_BLOCK_TYPE,
+    label: "Spacer",
+    icon: "↕",
+    fields: spacerFields,
+    defaultProps: spacerDefaultProps,
+    Component: Spacer,
+  },
   {
     type: RICHTEXT_BLOCK_TYPE,
     label: "Rich text",
+    icon: "📝",
     fields: richTextFields,
     defaultProps: richTextDefaultProps,
     Component: RichText,
   },
-  { type: FOOTER_BLOCK_TYPE, label: "Footer", fields: footerFields, defaultProps: footerDefaultProps, Component: Footer },
-  { type: NAV_BLOCK_TYPE, label: "Nav", fields: navFields, defaultProps: navDefaultProps, Component: Nav },
+  {
+    type: FOOTER_BLOCK_TYPE,
+    label: "Footer",
+    icon: "🦶",
+    fields: footerFields,
+    defaultProps: footerDefaultProps,
+    Component: Footer,
+  },
+  { type: NAV_BLOCK_TYPE, label: "Nav", icon: "🧭", fields: navFields, defaultProps: navDefaultProps, Component: Nav },
   {
     type: TESTIMONIAL_BLOCK_TYPE,
     label: "Testimonial",
+    icon: "💬",
     fields: testimonialFields,
     defaultProps: testimonialDefaultProps,
     Component: Testimonial,
   },
-  { type: FAQ_BLOCK_TYPE, label: "FAQ", fields: faqFields, defaultProps: faqDefaultProps, Component: Faq },
+  { type: FAQ_BLOCK_TYPE, label: "FAQ", icon: "❓", fields: faqFields, defaultProps: faqDefaultProps, Component: Faq },
   {
     type: CONTACTDETAILS_BLOCK_TYPE,
     label: "Contact details",
+    icon: "📇",
     fields: contactdetailsFields,
     defaultProps: contactdetailsDefaultProps,
     Component: ContactDetails,
@@ -133,14 +166,23 @@ const BLOCK_ENTRIES: BlockEntry<any>[] = [
   {
     type: MAPEMBED_BLOCK_TYPE,
     label: "Map embed",
+    icon: "🗺️",
     fields: mapembedFields,
     defaultProps: mapembedDefaultProps,
     Component: MapEmbed,
   },
-  { type: IMAGE_BLOCK_TYPE, label: "Image", fields: imageFields, defaultProps: imageDefaultProps, Component: Image },
+  {
+    type: IMAGE_BLOCK_TYPE,
+    label: "Image",
+    icon: "🖼️",
+    fields: imageFields,
+    defaultProps: imageDefaultProps,
+    Component: Image,
+  },
   {
     type: GALLERY_BLOCK_TYPE,
     label: "Gallery",
+    icon: "🎞️",
     fields: galleryFields,
     defaultProps: galleryDefaultProps,
     Component: Gallery,
@@ -148,6 +190,7 @@ const BLOCK_ENTRIES: BlockEntry<any>[] = [
   {
     type: COLUMNS_BLOCK_TYPE,
     label: "Columns",
+    icon: "▥",
     fields: columnsFields,
     defaultProps: columnsDefaultProps,
     Component: Columns,
@@ -155,6 +198,7 @@ const BLOCK_ENTRIES: BlockEntry<any>[] = [
   {
     type: CARDGRID_BLOCK_TYPE,
     label: "Card grid",
+    icon: "▦",
     fields: cardGridFields,
     defaultProps: cardGridDefaultProps,
     Component: CardGrid,
@@ -162,6 +206,7 @@ const BLOCK_ENTRIES: BlockEntry<any>[] = [
   {
     type: POSTLIST_BLOCK_TYPE,
     label: "Post list",
+    icon: "📚",
     fields: postListFields,
     defaultProps: postListDefaultProps,
     Component: PostList,
@@ -169,20 +214,36 @@ const BLOCK_ENTRIES: BlockEntry<any>[] = [
   {
     type: POSTDETAIL_BLOCK_TYPE,
     label: "Post detail",
+    icon: "📄",
     fields: postDetailFields,
     defaultProps: postDetailDefaultProps,
     Component: PostDetail,
   },
-  { type: FORM_BLOCK_TYPE, label: "Form", fields: formFields, defaultProps: formDefaultProps, Component: Form },
+  { type: FORM_BLOCK_TYPE, label: "Form", icon: "📋", fields: formFields, defaultProps: formDefaultProps, Component: Form },
   {
     type: EVENTSIGNUP_BLOCK_TYPE,
     label: "Event sign-up",
+    icon: "🎟️",
     fields: eventSignupFields,
     defaultProps: eventSignupDefaultProps,
     Component: EventSignup,
   },
-  { type: PAYMENT_BLOCK_TYPE, label: "Payment", fields: paymentFields, defaultProps: paymentDefaultProps, Component: Payment },
-  { type: SUBSCRIPTION_BLOCK_TYPE, label: "Subscription", fields: subscriptionFields, defaultProps: subscriptionDefaultProps, Component: Subscription },
+  {
+    type: PAYMENT_BLOCK_TYPE,
+    label: "Payment",
+    icon: "💳",
+    fields: paymentFields,
+    defaultProps: paymentDefaultProps,
+    Component: Payment,
+  },
+  {
+    type: SUBSCRIPTION_BLOCK_TYPE,
+    label: "Subscription",
+    icon: "🔁",
+    fields: subscriptionFields,
+    defaultProps: subscriptionDefaultProps,
+    Component: Subscription,
+  },
 ];
 
 // Puck's ComponentConfig<P> constrains P more tightly than a plain object
@@ -229,3 +290,45 @@ export { FreeCanvasPreview } from "./free-canvas.js";
 
 /** The set of block types the Puck canvas can render — everything else is an "unknown block" (R19). */
 export const PUCK_KNOWN_TYPES = new Set(BLOCK_ENTRIES.map((entry) => entry.type));
+
+/**
+ * KAN-1207: `type -> icon` lookup for apps/editor's `overrides.drawerItem`
+ * (docs/adr/0017). Puck has nowhere on `ComponentConfig` to put this, so it
+ * travels out of band from the same `BLOCK_ENTRIES` the Puck config itself
+ * is built from — one array stays the single source of truth for a block
+ * type's label, icon and default render, rather than a second, separately
+ * maintained icon table apps/editor would otherwise have to keep in sync.
+ */
+export const BLOCK_ICONS: Record<string, string> = Object.fromEntries(BLOCK_ENTRIES.map((entry) => [entry.type, entry.icon]));
+
+/**
+ * KAN-1207: `type -> { Component, defaultProps }` for the drawer's hover
+ * preview. Every block is already a plain, SSR-safe React component with a
+ * `defaultProps` object sitting right here in `BLOCK_ENTRIES` — rendering
+ * `<Component {...defaultProps} />` at a small scale is the actual block,
+ * not a hand-drawn stand-in, so it can never drift from what dragging the
+ * same entry onto the canvas produces. Exported as a slim `{ Component,
+ * defaultProps }` pair rather than the whole `BlockEntry` so apps/editor
+ * doesn't also pull in each block's Puck `fields` config it has no use for
+ * here.
+ */
+export interface BlockPreview {
+  Component: ComponentType<any>; // eslint-disable-line @typescript-eslint/no-explicit-any
+  defaultProps: Record<string, unknown>;
+}
+export const BLOCK_PREVIEWS: Record<string, BlockPreview> = Object.fromEntries(
+  BLOCK_ENTRIES.map((entry) => [entry.type, { Component: entry.Component, defaultProps: entry.defaultProps }]),
+);
+
+/**
+ * KAN-1207: the same theme-CSS-variable wrapper `createPuckConfig`'s
+ * `root.render` applies inside the canvas (see that function's own comment),
+ * exposed standalone so the drawer's hover preview — rendered outside the
+ * canvas entirely, in `overrides.drawerItem` — isn't unstyled default black-
+ * on-white. Returns a plain `Record<string, string>` (not a typed
+ * `CSSProperties`) for the same reason `themeRootStyle` itself does: it's
+ * assigned straight into a `style` prop, same as `root.render` already does.
+ */
+export function previewRootStyle(tokens: ThemeTokens): Record<string, string> {
+  return themeRootStyle(resolveThemeTokens(tokens));
+}
