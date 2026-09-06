@@ -43,4 +43,14 @@ describe("Nav block", () => {
     expect(navBlockDefinition.version).toBe(1);
     expect(Object.keys(navBlockDefinition.migrations)).toHaveLength(0);
   });
+
+  it("pads nav links for a real tap target (KAN-1220, WCAG 2.2 SC 2.5.8) — computed height clears 24px at fontSize.sm", () => {
+    const html = renderToStaticMarkup(
+      createElement(Nav, {
+        ...navDefaultProps,
+        links: [{ label: "About", href: "/about" }],
+      }),
+    );
+    expect(html).toMatch(/<a href="\/about" style="[^"]*padding:0\.9em 1\.1em/);
+  });
 });

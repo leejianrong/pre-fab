@@ -25,6 +25,11 @@ describe("classifyBlockingAxeViolations (R6)", () => {
     expect(classifyBlockingAxeViolations(violations)).toHaveLength(1);
   });
 
+  it("blocks target-size even at its fixed non-critical impact (KAN-1220) — axe-core@4.13.0 ships it as always 'serious', never 'critical'", () => {
+    const violations: AxeViolation[] = [{ id: "target-size", impact: "serious", nodes: 1 }];
+    expect(classifyBlockingAxeViolations(violations)).toHaveLength(1);
+  });
+
   it("does not block a non-contrast, non-critical violation", () => {
     const violations: AxeViolation[] = [
       { id: "region", impact: "moderate", nodes: 1 },

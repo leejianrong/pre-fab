@@ -43,4 +43,14 @@ describe("Footer block", () => {
     expect(footerBlockDefinition.version).toBe(1);
     expect(Object.keys(footerBlockDefinition.migrations)).toHaveLength(0);
   });
+
+  it("pads footer links for a real tap target (KAN-1220, WCAG 2.2 SC 2.5.8) — computed height clears 24px at fontSize.sm", () => {
+    const html = renderToStaticMarkup(
+      createElement(Footer, {
+        ...footerDefaultProps,
+        links: [{ label: "Privacy", href: "/privacy" }],
+      }),
+    );
+    expect(html).toMatch(/<a href="\/privacy" style="[^"]*padding:0\.9em 1\.1em/);
+  });
 });

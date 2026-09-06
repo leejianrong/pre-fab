@@ -38,6 +38,8 @@ export function Nav(props: NavProps & BlockRenderProps) {
     color: cssVar("color", "foreground"),
     fontSize: cssVar("fontSize", "sm"),
     textDecoration: "none",
+    display: "inline-block",
+    padding: "0.9em 1.1em",
   };
 
   return (
