@@ -10,6 +10,7 @@ import {
   signUpForEvent,
   createPaymentCheckout,
   createSubscriptionCheckout,
+  createCartCheckout,
   type TurnstileVerifier,
 } from "@prefab/runtime";
 import { newUlid } from "@prefab/schema";
@@ -27,7 +28,8 @@ import { createSqliteEventSignupWidgetStore, createSqliteEventSignupStore } from
 import { renderManageBookingPage } from "./booking-manage-page.js";
 import { createSqlitePaymentBlockStore, createSqliteStripeConnectionStore, createSqlitePaymentRecordStore } from "./payment-adapters.js";
 import { createSqliteSubscriptionBlockStore, createSqliteSubscriptionRecordStore } from "./subscription-adapters.js";
-import { createTenantStripeProvider, FakeTenantStripeProvider, type TenantStripeProvider } from "./lib/tenant-stripe.js";
+import { createSqliteCartProductStore, createSqliteCartCheckoutRecordStore } from "./cart-checkout-adapters.js";
+import { createTenantStripeProvider, FakeTenantStripeProvider, type TenantStripeProvider, type CartShippingConfig } from "./lib/tenant-stripe.js";
 import { EmailSubscriptionNotifier } from "./lib/subscription-notifier.js";
 import {
   applySubscriptionCheckoutCompleted,
@@ -37,6 +39,7 @@ import {
   applySubscriptionDeleted,
   extractSubscriptionEventContext,
 } from "./subscription-webhook.js";
+import { applyCartCheckoutCompleted, getCartCheckoutRecordById } from "./cart-order-webhook.js";
 
 const SubmitFormBodySchema = z.object({
   values: z.record(z.string(), z.unknown()),
@@ -84,6 +87,31 @@ const AdvanceFakeSubscriptionBodySchema = z.object({
   cancelAtPeriodEnd: z.boolean().optional(),
 });
 
+// KAN-1247 / ADR-0018 (part 4 addendum) — mirrors apps/api's own
+// CreateCartCheckoutBodySchema/AdvanceFakeCartBodySchema exactly (see
+// schemas.ts's own comments): `successUrl`/`cancelUrl` are derived from the
+// request's own Referer/Origin header (this route's own `returnUrl`
+// helper), never accepted from the visitor's own request body — the same
+// open-redirect avoidance every existing runtime checkout route here
+// already follows.
+const CreateCartCheckoutBodySchema = z.object({
+  items: z
+    .array(
+      z.object({
+        productId: z.string().min(1).max(64),
+        quantity: z.number().int().positive().max(999),
+      }),
+    )
+    .min(1)
+    .max(50),
+});
+
+const AdvanceFakeCartBodySchema = z.object({
+  sessionId: z.string().min(1),
+  eventId: z.string().min(1).optional(),
+  buyerEmail: z.string().email().optional(),
+});
+
 export interface AppDeps {
   /** The already-exported static bundle this instance serves (R10) — a self-hosted instance is one site, not a multi-tenant store. */
   bundleDir: string;
@@ -100,6 +128,8 @@ export interface AppDeps {
   tenantStripeProvider?: TenantStripeProvider;
   /** KAN-1154 part 2 / ADR-0016 (R10) — Stripe Connect's own webhook signing secret, required only when a real TenantStripeProvider is configured. Defaults to STRIPE_CONNECT_WEBHOOK_SECRET. */
   stripeConnectWebhookSecret?: string;
+  /** KAN-1247 / ADR-0018 (part 4 addendum) — the flat shipping rate applied to a cart checkout with any physical-fulfillment item. Server-configured only, never visitor-supplied. Defaults to CART_SHIPPING_FLAT_RATE_CENTS/CART_SHIPPING_LABEL/CART_SHIPPING_ALLOWED_COUNTRIES, each with a built-in fallback. */
+  cartShipping?: CartShippingConfig;
 }
 
 /**
@@ -173,6 +203,30 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     stripeConnections: stripeConnectionStore,
     subscriptionRecords: subscriptionRecordStore,
     tenantStripe: tenantStripeProvider,
+  };
+
+  // KAN-1247 / ADR-0018 (part 4 addendum) — creation only, the same "part
+  // 1, not part 2" split ADR-0016 already took for subscriptions.
+  // `stripeConnectionStore` is, again, the exact same instance the one-off
+  // payment path above uses. `cartShipping` is server-configured only
+  // (same env vars, same fallback, as apps/api's own copy — see that ADR
+  // addendum's point 4) — never derived from a visitor's own request.
+  const cartShipping: CartShippingConfig = deps.cartShipping ?? {
+    flatRateAmount: Number.parseInt(process.env.CART_SHIPPING_FLAT_RATE_CENTS ?? "", 10) || 500,
+    label: process.env.CART_SHIPPING_LABEL || "Standard shipping",
+    allowedCountries: (process.env.CART_SHIPPING_ALLOWED_COUNTRIES ?? "US")
+      .split(",")
+      .map((c) => c.trim().toUpperCase())
+      .filter((c) => c.length > 0),
+  };
+  const cartProductStore = createSqliteCartProductStore(db);
+  const cartCheckoutRecordStore = createSqliteCartCheckoutRecordStore(db);
+  const cartCheckoutDeps = {
+    products: cartProductStore,
+    stripeConnections: stripeConnectionStore,
+    cartCheckoutRecords: cartCheckoutRecordStore,
+    tenantStripe: tenantStripeProvider,
+    shipping: cartShipping,
   };
 
   // Same limits as apps/api's own runtime route (app.ts): 20/min per site,
@@ -632,6 +686,50 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     return outcome;
   });
 
+  // ---- Dev-only: drive KAN-1247's cart-order webhook consumer
+  // (cart-order-webhook.ts) the same way subscriptions/advance above drives
+  // the subscription lifecycle — needed for e2e testability since no live
+  // Stripe account exists in this environment. Keyed by `sessionId` (the
+  // Stripe Checkout session id the runtime cart-checkout route's own
+  // response url embeds), the same key apps/api's own
+  // `/v1/dev/stripe-connect/:siteId/cart/advance` uses — not this row's own
+  // internal id (see markCartCheckoutRecordCompleted's own comment for
+  // why). No `:siteId` path segment — a self-hosted instance is one site,
+  // so the operator/test scripting this already knows their own site's id
+  // and passes it in the body, same as ConnectStripeBodySchema's own
+  // reasoning. ----
+  app.post("/v1/dev/stripe-connect/cart/advance", async (request, reply) => {
+    if (!(tenantStripeProvider instanceof FakeTenantStripeProvider)) {
+      reply.status(404);
+      return { error: { code: "not_found", message: "the fake tenant-Stripe provider is not in use — nothing to advance" } };
+    }
+    const parsed = AdvanceFakeCartBodySchema.safeParse(request.body);
+    if (!parsed.success) {
+      reply.status(400);
+      return { error: { code: "validation_error", message: "invalid request body", details: parsed.error.issues } };
+    }
+    const body = parsed.data;
+    const eventId = body.eventId ?? newUlid();
+
+    // No siteId in this route's body (unlike ConnectStripeBodySchema) —
+    // apps/api's own equivalent route takes siteId as a path param it
+    // already has from the authenticated owner's request; here there is no
+    // principal at all, so the sessionId itself is resolved to its site
+    // directly off the row the runtime cart-checkout route already wrote.
+    const existing = db.prepare<[string], { site_id: string }>("SELECT site_id FROM cart_checkout_records WHERE stripe_session_id = ?").get(body.sessionId);
+    if (!existing) {
+      reply.status(404);
+      return { error: { code: "not_found", message: "no cart checkout record for that session id (or it is no longer 'pending')" } };
+    }
+
+    const outcome = await applyCartCheckoutCompleted(eventId, { siteId: existing.site_id, stripeSessionId: body.sessionId, buyerEmail: body.buyerEmail ?? null }, db);
+    if (outcome.status === "no_match") {
+      reply.status(404);
+      return { error: { code: "not_found", message: "no cart checkout record for that session id (or it is no longer 'pending')" } };
+    }
+    return outcome;
+  });
+
   // ---- Real Stripe Connect webhooks (KAN-1154 part 2 / ADR-0016):
   // signature-verified, subscription lifecycle only — self-host had NO real
   // webhook consumer of any kind before this card (confirmed: even the
@@ -660,11 +758,8 @@ export function buildApp(deps: AppDeps): FastifyInstance {
         subscription?: string;
         customer?: string;
         customer_details?: { email?: string };
-        metadata?: { siteId?: string };
+        metadata?: { siteId?: string; checkoutType?: string };
       };
-      // Payment-mode (one-off) sessions are deliberately ignored here — see
-      // this route's own comment: that path has no real webhook consumer in
-      // self-host at all yet, and adding one is not this card's job.
       if (object.mode === "subscription" && object.metadata?.siteId && object.id && object.subscription && object.customer) {
         await applySubscriptionCheckoutCompleted(
           event.id,
@@ -678,7 +773,29 @@ export function buildApp(deps: AppDeps): FastifyInstance {
           },
           webhookDeps,
         );
+        reply.status(200);
+        return { ok: true };
       }
+
+      // KAN-1247 / ADR-0018 (part 4 addendum): a cart-mode Checkout session
+      // — also `mode: "payment"` (the same mode a one-off Payment block
+      // session uses), so this is discriminated by `metadata.checkoutType`
+      // (KAN-1245's own createCartCheckoutSession already sets it), NOT by
+      // `mode` alone — mirrors apps/api's own identical branch, inserted in
+      // the same position (after the subscription branch returns early,
+      // before the payment-mode fallthrough immediately below).
+      if (object.metadata?.checkoutType === "cart") {
+        const siteId = object.metadata?.siteId;
+        if (siteId && object.id) {
+          await applyCartCheckoutCompleted(event.id, { siteId, stripeSessionId: object.id, buyerEmail: object.customer_details?.email ?? null }, db);
+        }
+        reply.status(200);
+        return { ok: true };
+      }
+
+      // Payment-mode (one-off) sessions are deliberately ignored here — see
+      // this route's own comment: that path has no real webhook consumer in
+      // self-host at all yet, and adding one is not this card's job.
       reply.status(200);
       return { ok: true };
     }
@@ -825,6 +942,149 @@ export function buildApp(deps: AppDeps): FastifyInstance {
         reply.status(500);
         return { error: { code: "internal", message: "the payment provider could not create a checkout session" } };
     }
+  });
+
+  // ---- The runtime API (KAN-1247 / ADR-0018 part 4 addendum, mirroring
+  // KAN-1245/1246) — same shape as apps/api's equivalent routes, calling
+  // the exact same @prefab/runtime function (createCartCheckout) unchanged;
+  // only what's behind CartProductStore/CartCheckoutRecordStore/
+  // TenantCartCheckoutProvider differs (SQLite, and this file's own trimmed
+  // tenant-stripe.ts). Deliberately NOT registered anywhere CLI/MCP-parity-
+  // checked — same reasoning as booking.create/payment-blocks checkout: no
+  // signed-in principal. ----
+  app.options("/v1/runtime/sites/:siteId/cart-checkout", async (_request, reply) => {
+    reply
+      .header("access-control-allow-origin", "*")
+      .header("access-control-allow-methods", "POST, OPTIONS")
+      .header("access-control-allow-headers", "content-type")
+      .status(204)
+      .send();
+  });
+
+  app.post<{ Params: { siteId: string } }>("/v1/runtime/sites/:siteId/cart-checkout", async (request, reply) => {
+    reply.header("access-control-allow-origin", "*");
+    const { siteId } = request.params;
+    const parsed = CreateCartCheckoutBodySchema.safeParse(request.body);
+    if (!parsed.success) {
+      reply.status(400);
+      return { error: { code: "validation_error", message: "invalid request body", details: parsed.error.issues } };
+    }
+    const referer = (request.headers.referer as string | undefined) ?? (request.headers.origin as string | undefined) ?? runtimeApiUrl;
+    // KAN-1246 / ADR-0018 (part 3 addendum) — generated up front so the
+    // success redirect can carry it as `pf_cart_id`, the same mechanism
+    // apps/api's own route uses for CartDrawer's post-purchase receipt
+    // fetch (see the receipt route below).
+    const cartCheckoutRecordId = newUlid();
+
+    function returnUrl(outcome: "success" | "cancel"): string {
+      let url: URL;
+      try {
+        url = new URL(referer);
+      } catch {
+        url = new URL(runtimeApiUrl);
+      }
+      url.searchParams.set("pf_cart", outcome);
+      if (outcome === "success") url.searchParams.set("pf_cart_id", cartCheckoutRecordId);
+      return url.toString();
+    }
+
+    const result = await createCartCheckout(
+      { id: cartCheckoutRecordId, siteId, items: parsed.data.items, successUrl: returnUrl("success"), cancelUrl: returnUrl("cancel") },
+      cartCheckoutDeps,
+    );
+
+    switch (result.status) {
+      case "created":
+        reply.status(201);
+        return { url: result.url };
+      case "empty_cart":
+        reply.status(400);
+        return { error: { code: "validation_error", message: "cart is empty" } };
+      case "invalid_items":
+        reply.status(400);
+        return { error: { code: "validation_error", message: "one or more cart items failed validation", details: result.issues } };
+      case "mixed_currency":
+        reply.status(400);
+        return { error: { code: "validation_error", message: "a single checkout cannot mix products priced in different currencies" } };
+      case "no_connection":
+        reply.status(404);
+        return { error: { code: "not_found", message: "this site has not connected a Stripe account" } };
+      case "provider_error":
+        reply.status(500);
+        return { error: { code: "internal", message: "the payment provider could not create a checkout session" } };
+    }
+  });
+
+  // ---- KAN-1246 / ADR-0018 (part 3 addendum): the post-purchase receipt
+  // read — no principal, keyed by the cart-checkout record id the create
+  // route above carries on its success redirect (`pf_cart_id`). Mirrors
+  // apps/api's own equivalent route's trust model exactly: `siteId` taken
+  // directly from the URL, no separate public-read policy needed — a
+  // self-hosted instance has no RLS at all, so this is simply a direct
+  // `WHERE site_id = ? AND id = ?` lookup. Returns only what a visitor
+  // needs to see their own post-purchase message. ----
+  app.options("/v1/runtime/sites/:siteId/cart-checkout/:cartCheckoutRecordId/receipt", async (_request, reply) => {
+    reply
+      .header("access-control-allow-origin", "*")
+      .header("access-control-allow-methods", "GET, OPTIONS")
+      .header("access-control-allow-headers", "content-type")
+      .status(204)
+      .send();
+  });
+
+  app.get<{ Params: { siteId: string; cartCheckoutRecordId: string } }>(
+    "/v1/runtime/sites/:siteId/cart-checkout/:cartCheckoutRecordId/receipt",
+    async (request, reply) => {
+      reply.header("access-control-allow-origin", "*");
+      const { siteId, cartCheckoutRecordId } = request.params;
+
+      const record = getCartCheckoutRecordById(db, siteId, cartCheckoutRecordId);
+      if (!record || record.status !== "completed") {
+        reply.status(404);
+        return { error: { code: "not_found", message: "no completed cart checkout for that id on this site" } };
+      }
+
+      const items = record.items.map((line) => {
+        const product = db
+          .prepare<[string], { success_message: string }>("SELECT success_message FROM products WHERE id = ? AND status = 'published'")
+          .get(line.productId);
+        return {
+          productId: line.productId,
+          title: line.title,
+          fulfillmentType: line.fulfillmentType,
+          successMessage: product?.success_message ?? "Thank you for your purchase.",
+        };
+      });
+      return { items };
+    },
+  );
+
+  // ---- KAN-1246 / ADR-0018 (part 3 addendum): live stock display for
+  // productDetail — no principal, presentational only (the actual source of
+  // truth at purchase time remains createCartCheckout's own server-side
+  // stock revalidation). Mirrors apps/api's equivalent exactly. ----
+  app.options("/v1/runtime/sites/:siteId/products/:productId/stock", async (_request, reply) => {
+    reply
+      .header("access-control-allow-origin", "*")
+      .header("access-control-allow-methods", "GET, OPTIONS")
+      .header("access-control-allow-headers", "content-type")
+      .status(204)
+      .send();
+  });
+
+  app.get<{ Params: { siteId: string; productId: string } }>("/v1/runtime/sites/:siteId/products/:productId/stock", async (request, reply) => {
+    reply.header("access-control-allow-origin", "*");
+    const { siteId, productId } = request.params;
+    const product = db
+      .prepare<[string], { site_id: string; fulfillment_type: "physical" | "digital_or_service"; stock_count: number | null }>(
+        "SELECT site_id, fulfillment_type, stock_count FROM products WHERE id = ? AND status = 'published'",
+      )
+      .get(productId);
+    if (!product || product.site_id !== siteId) {
+      reply.status(404);
+      return { error: { code: "not_found", message: "product not found" } };
+    }
+    return { fulfillmentType: product.fulfillment_type, stockCount: product.stock_count };
   });
 
   // ---- Serving the static bundle: everything else falls through here,

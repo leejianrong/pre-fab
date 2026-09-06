@@ -55,6 +55,35 @@ export interface CreateSubscriptionCheckoutSessionInput {
   siteId: string;
 }
 
+/** KAN-1247 / ADR-0018 (part 4 addendum): mirrors apps/api/src/lib/tenant-stripe-provider.ts's own `CartCheckoutSessionLineItem` — see that file for the fully-documented original this trims. */
+export interface CartCheckoutSessionLineItem {
+  unitAmount: number;
+  currency: string;
+  title: string;
+  quantity: number;
+}
+
+/** Server-configured (CART_SHIPPING_FLAT_RATE_CENTS/CART_SHIPPING_LABEL/CART_SHIPPING_ALLOWED_COUNTRIES — see app.ts), never visitor-supplied — same reasoning as apps/api's own copy. */
+export interface CartShippingConfig {
+  flatRateAmount: number;
+  label: string;
+  allowedCountries: string[];
+}
+
+/** KAN-1247 / ADR-0018 (part 4 addendum): mirrors apps/api/src/lib/tenant-stripe-provider.ts's own `CreateCartCheckoutSessionInput` — see that file for the fully-documented original this trims. */
+export interface CreateCartCheckoutSessionInput {
+  accessToken: string;
+  stripeAccountId: string;
+  items: CartCheckoutSessionLineItem[];
+  currency: string;
+  successUrl: string;
+  cancelUrl: string;
+  cartCheckoutRecordId: string;
+  siteId: string;
+  requiresShipping: boolean;
+  shipping: CartShippingConfig;
+}
+
 export interface StripeEvent {
   id: string;
   type: string;
@@ -67,6 +96,8 @@ export interface TenantStripeProvider {
   createCheckoutSession(input: CreateCheckoutSessionInput): Promise<CheckoutSession>;
   /** KAN-1154 / ADR-0016 — a sibling method, not a `mode` param on createCheckoutSession above (see apps/api's own copy for the full reasoning). */
   createSubscriptionCheckoutSession(input: CreateSubscriptionCheckoutSessionInput): Promise<CheckoutSession>;
+  /** KAN-1247 / ADR-0018 (part 4 addendum) — a third sibling method, keeps createCheckoutSession/createSubscriptionCheckoutSession (and every existing call to either) completely unchanged. */
+  createCartCheckoutSession(input: CreateCartCheckoutSessionInput): Promise<CheckoutSession>;
   constructEvent(rawBody: Buffer, signature: string | undefined, webhookSecret: string): StripeEvent;
 }
 
@@ -82,6 +113,11 @@ export class FakeTenantStripeProvider implements TenantStripeProvider {
 
   async createSubscriptionCheckoutSession(): Promise<CheckoutSession> {
     const sessionId = `fake_cs_sub_${randomUUID()}`;
+    return { sessionId, url: `https://checkout.stripe.example/fake/${sessionId}` };
+  }
+
+  async createCartCheckoutSession(): Promise<CheckoutSession> {
+    const sessionId = `fake_cs_cart_${randomUUID()}`;
     return { sessionId, url: `https://checkout.stripe.example/fake/${sessionId}` };
   }
 
@@ -163,6 +199,49 @@ export class RealTenantStripeProvider implements TenantStripeProvider {
     });
     if (input.trialPeriodDays > 0) {
       body.set("subscription_data[trial_period_days]", String(input.trialPeriodDays));
+    }
+
+    const response = await this.fetchImpl("https://api.stripe.com/v1/checkout/sessions", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${this.platformSecretKey}`,
+        "content-type": "application/x-www-form-urlencoded",
+        "stripe-account": input.stripeAccountId,
+      },
+      body,
+    });
+    if (!response.ok) throw new Error(`Stripe API error (${response.status})`);
+    const result = (await response.json()) as StripeCheckoutSessionResponse;
+    return { sessionId: result.id, url: result.url };
+  }
+
+  /** KAN-1247 / ADR-0018 (part 4 addendum) — mirrors apps/api's own copy exactly (multi-line-item `line_items[N]`, `mode: "payment"`, `metadata[checkoutType] = "cart"`, conditional `shipping_address_collection`/`shipping_options` when `requiresShipping`). UNVERIFIED against a live Stripe account. */
+  async createCartCheckoutSession(input: CreateCartCheckoutSessionInput): Promise<CheckoutSession> {
+    const body = new URLSearchParams({
+      mode: "payment",
+      success_url: input.successUrl,
+      cancel_url: input.cancelUrl,
+      client_reference_id: input.cartCheckoutRecordId,
+      "metadata[checkoutType]": "cart",
+      "metadata[siteId]": input.siteId,
+      "metadata[cartCheckoutRecordId]": input.cartCheckoutRecordId,
+    });
+
+    input.items.forEach((item, index) => {
+      body.set(`line_items[${index}][price_data][currency]`, item.currency);
+      body.set(`line_items[${index}][price_data][product_data][name]`, item.title || "Item");
+      body.set(`line_items[${index}][price_data][unit_amount]`, String(item.unitAmount));
+      body.set(`line_items[${index}][quantity]`, String(item.quantity));
+    });
+
+    if (input.requiresShipping) {
+      input.shipping.allowedCountries.forEach((country, index) => {
+        body.set(`shipping_address_collection[allowed_countries][${index}]`, country);
+      });
+      body.set("shipping_options[0][shipping_rate_data][type]", "fixed_amount");
+      body.set("shipping_options[0][shipping_rate_data][fixed_amount][amount]", String(input.shipping.flatRateAmount));
+      body.set("shipping_options[0][shipping_rate_data][fixed_amount][currency]", input.currency);
+      body.set("shipping_options[0][shipping_rate_data][display_name]", input.shipping.label);
     }
 
     const response = await this.fetchImpl("https://api.stripe.com/v1/checkout/sessions", {

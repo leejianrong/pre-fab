@@ -73,6 +73,7 @@ All configuration is environment variables — no config file, no signup:
 | `TURNSTILE_SECRET_KEY` | unset | Enables real Cloudflare Turnstile verification for forms that have it turned on. Unset uses a verifier that always succeeds (UNVERIFIED against a live account — same discipline as the hosted platform's own adapter) |
 | `RESEND_API_KEY` / `RESEND_FROM_ADDRESS` | unset | Enables real email notifications via Resend (UNVERIFIED against a live account). Unset logs notification emails to stdout instead — visible via `docker logs`, submissions and bookings are never lost either way (R7.4) |
 | `BOOKING_OWNER_EMAIL` | unset | Slice 9 — where a new/canceled/rescheduled booking's owner-side copy is emailed. Unset means only the visitor gets notified (no accounts/sessions exist here to resolve an owner's email from automatically, unlike the hosted platform) |
+| `CART_SHIPPING_FLAT_RATE_CENTS` / `CART_SHIPPING_LABEL` / `CART_SHIPPING_ALLOWED_COUNTRIES` | `500` / `Standard shipping` / `US` | KAN-1247 — the flat shipping rate a cart checkout offers when it contains any physical product. Server-configured only (never visitor-supplied); `CART_SHIPPING_ALLOWED_COUNTRIES` is a comma-separated list of ISO 3166-1 alpha-2 codes |
 
 ### Forms: what's portable, what's local
 
@@ -120,10 +121,47 @@ themselves (visitor name/email/notes, the manage-link token) are never
 portable at all — visitor PII, R20's platform equivalent — they only ever
 exist in `$DATA_DIR/prefab.db`, same as submissions.
 
+### Products and orders: what's portable, what's local (KAN-1247)
+
+A product's own catalogue fields (title, price, currency, fulfillment
+type, success message, status) travel inside the bundle in
+`prefab-products.json`, seeded into this instance's own `products` table on
+every start — re-export a changed site and restart to pick up a price
+change, the same "redeploy" story every other manifest here already has.
+**`stock_count` is the one exception**: once this instance starts taking
+real orders it decrements locally (a completed physical-line order
+consumes real inventory), so a reseed does **not** overwrite it — the same
+"survive a restart" guarantee `availability_rules` already gets, applied to
+one column rather than a whole row. Switching a product between physical
+and digital/service (rare) does reset the stock count from the fresh
+manifest, since a stale count can't mean anything sensible across that
+change.
+
+Cart checkouts and orders (`cart_checkout_records`/`order_items` —
+buyer email, what was bought, shipping/fulfillment status) are never
+portable at all — the platform equivalent of R20 — they only ever exist in
+`$DATA_DIR/prefab.db`. Unlike the hosted product, **this instance has no
+order-management surface of any kind**: no accounts, no admin UI, no CLI
+wired to a running instance, so there is nothing here to mark an order
+shipped from. Do it directly against SQLite:
+
+```
+sqlite3 "$DATA_DIR/prefab.db" \
+  "UPDATE order_items SET status = 'shipped', tracking_number = '1Z999AA10123456784' WHERE id = '<orderItemId>';"
+```
+
+`SELECT * FROM cart_checkout_records WHERE status = 'completed';` and the
+matching `SELECT * FROM order_items WHERE cart_checkout_record_id = '<id>';`
+are how you find what to ship in the first place — the same escape hatch
+this README already documents for `form_settings`/`availability_rules`, now
+covering the sharpest edge of it: a self-hosted storefront owner gets a
+fully working checkout with no dashboard to fulfill orders from at all.
+
 ## Backups
 
 Everything that isn't the bundle itself (submissions, bookings, availability,
-webhook delivery history, form/booking settings) lives in one file:
+webhook delivery history, form/booking settings, orders, and the one
+locally-mutated product column — `stock_count`) lives in one file:
 `$DATA_DIR/prefab.db`. Back it up like any SQLite file — copy it while the
 server is stopped, or use `sqlite3 prefab.db ".backup backup.db"` for an
 online-safe copy while it's running. There is no separate secrets store to

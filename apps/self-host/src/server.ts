@@ -6,6 +6,7 @@ import { seedAvailabilityFromBundle, seedBookingWidgetsFromBundle } from "./book
 import { seedEventSignupWidgetsFromBundle } from "./event-signup-seed.js";
 import { seedPaymentBlocksFromBundle } from "./payments-seed.js";
 import { seedSubscriptionBlocksFromBundle } from "./subscriptions-seed.js";
+import { seedProductsFromBundle } from "./products-seed.js";
 import { retryDueWebhookDeliveries } from "./lib/webhooks.js";
 
 /**
@@ -32,6 +33,8 @@ async function main(): Promise<void> {
   console.log(`prefab self-host: seeded ${paymentBlockCount} payment block(s) from ${bundleDir}`);
   const subscriptionBlockCount = await seedSubscriptionBlocksFromBundle(db, bundleDir);
   console.log(`prefab self-host: seeded ${subscriptionBlockCount} subscription block(s) from ${bundleDir}`);
+  const productCount = await seedProductsFromBundle(db, bundleDir);
+  console.log(`prefab self-host: seeded ${productCount} product(s) from ${bundleDir}`);
 
   const app = buildApp({ bundleDir, db });
 
