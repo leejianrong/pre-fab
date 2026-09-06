@@ -876,3 +876,264 @@ snapshot (part 1's own read-only display), refreshed on the next publish —
 unchanged from today. Flagged as a deliberate, narrower-than-literally-asked
 scope call rather than left to be discovered; revisit if a future card
 finds shoppers actually hitting sold-out adds from the grid itself.
+
+## Addendum (part 4, KAN-1247): self-host, export/eject verification, containment/parity verification
+
+The last card of EPIC-178. Three claims in this card's own brief were
+verified against the current code before writing anything (all three
+confirmed true, one materially corrected — see below), and the remainder is
+apps/self-host's own reimplementation of every KAN-1245/1246 runtime
+endpoint against SQLite, the same "narrow port, injected, duplicated rather
+than imported" discipline every self-host adapter in this repo already
+follows (ADR-0010).
+
+### 0. Verifying the brief's own claims
+
+**Export/eject already thread products through, byte-identical.** Confirmed
+by reading `export-bundle.ts`/`eject.ts`'s own `allProducts` helpers and
+`packages/publish/src/eject.ts`'s `products: sortProductsByTitle(...)` —
+exactly as the brief described. Added: a product to the existing R8
+byte-identity round trip (`packages/commands/test/commands.integration.test.ts`),
+since one didn't already cover a site with catalogue content.
+
+**`orders`/`cart_checkout_records` never appear in an export, by
+construction.** Confirmed: neither table's repository functions are
+imported anywhere in `export-bundle.ts`, `eject.ts`, `pull.ts`, or
+`push.ts`. Added a regression test creating a real completed order (product
+→ Stripe Checkout → dev-advance → `order_items` row) against a live test
+database, then asserting `exportSite`/`eject`'s own output trees contain
+neither an order-shaped file nor an order-shaped string anywhere in their
+output — the "by construction" claim proven against a real order, not just
+against the absence of an import.
+
+**Containment and parity already pass, unchanged.** Ran both before writing
+any code: `pnpm run ci:containment` (five green checks, including
+`checkRuntimeContainment(files, ["packages/runtime", "apps/self-host"])`,
+which already watches `apps/self-host` and finds nothing to flag) and `pnpm
+run ci:parity` (33/33 API mutations have CLI/MCP parity). **Correction to
+the brief's own framing**: the brief describes an "R20's CI-enforced
+no-visitor-PII check" as something to "extend... to cover order data if it
+doesn't already." No such check exists — `tools/checks/src/cli/` has
+`containment.ts`, `parity.ts`, `fidelity.ts`, and `budgets.ts`, and none of
+them scan for PII or enforce R20 at all; R20 is discipline plus code review
+today, not a CI gate. This card does not add one (a general-purpose
+"no-PII-shaped-column-name-in-an-export" static scanner is a real, separate
+piece of infrastructure nothing in this card's own scope asked for) — it
+adds the regression test described above instead, which is what the card's
+own corrected instructions actually ask for ("add a regression test... not
+[build] a new CI tool").
+
+### 1. How self-host sources its own product price/stock mirror: a manifest for content, a preserved column for locally-mutated state
+
+Every existing self-host "manifest" (`prefab-forms.json`,
+`prefab-payment-blocks.json`, `prefab-subscription-blocks.json`,
+`prefab-booking-widgets.json`, `prefab-event-signups.json`) is written by
+`build-worker.ts` from page-scraped block props and fully overwritten on
+every reseed (`ON CONFLICT ... DO UPDATE SET` on every column) — correct
+for all of them, because none of those rows have any locally-mutated state
+of their own to protect (a payment block's `amount` never changes except by
+republishing the page it's on). `availability_rules` is the one existing
+exception: seeded once (`ON CONFLICT (site_id) DO NOTHING`) and never
+touched by a later reseed, because an operator's local edit to it must
+survive a re-export.
+
+`products` is neither shape cleanly. `title`/`price`/`currency`/
+`fulfillmentType`/`successMessage` are owner-authored catalogue content —
+exactly like a payment block's `amount`, they should track the next
+export/restart. `stockCount`, once a self-hosted instance is actually
+taking orders, is **locally-mutated state** — every completed physical-line
+order decrements it (see part 3 below) — and must survive a reseed/restart
+the same way `availability_rules` survives one, or a container restart
+after a real sale would silently un-sell the very unit that was just
+bought.
+
+**Decision**: a new `prefab-products.json` manifest (written by
+`build-worker.ts` via a new `packages/publish/src/product-manifest.ts`,
+mirroring `payment-manifest.ts`'s shape but reading `input.products`
+directly rather than scraping page blocks — products aren't page-scoped,
+they're the site's own whole collection, already assembled by the caller)
+carries **every** product on the site, draft included: `export-bundle`'s
+own `allProducts` helper is unfiltered (mirrors `posts`), so a bundle
+produced for self-hosting can genuinely contain draft products, unlike a
+Payment/Subscription block (which only ever exists already-placed on an
+already-published page). `products-seed.ts`'s own upsert
+(`seedProductsFromBundle`) therefore mirrors `products_public_read`'s own
+defense-in-depth reasoning (ADR-0018 cart addendum, point 1) rather than
+trusting that a draft product's id can never reach a visitor: every column
+is seeded, but `CartProductStore.getProduct()` (`cart-checkout-adapters.ts`)
+only ever resolves a row with `status = 'published'` — the same "the
+database is the last line of defense" posture the Postgres RLS policy
+takes, reimplemented as a plain `WHERE` clause since SQLite has no RLS to
+lean on (this file's own header comment already explains why: one site, no
+tenant to isolate from).
+
+The upsert itself is column-selective, a third shape distinct from both
+existing precedents above:
+
+```sql
+INSERT INTO products (id, site_id, title, price, currency, fulfillment_type, stock_count, success_message, status)
+VALUES (...)
+ON CONFLICT (id) DO UPDATE SET
+  site_id = excluded.site_id, title = excluded.title, price = excluded.price,
+  currency = excluded.currency, fulfillment_type = excluded.fulfillment_type,
+  success_message = excluded.success_message, status = excluded.status,
+  stock_count = CASE WHEN fulfillment_type = excluded.fulfillment_type
+                     THEN stock_count ELSE excluded.stock_count END
+```
+
+`stock_count` is deliberately absent from the plain column list and instead
+computed: when this row's `fulfillment_type` is unchanged from what the
+bundle now says, the *existing* (possibly locally-decremented) value wins;
+only when `fulfillment_type` itself changed (an owner switched a product
+from physical to digital or back — rare, but the schema allows it) does the
+fresh manifest value win, because a stale stock count carried across a
+fulfillment-type change would either violate the CHECK constraint below
+(non-null required for physical, null required for digital/service) or
+silently mean something the row no longer claims to be. A brand-new product
+id (first time this instance has ever seen it) has no existing row to
+preserve, so the plain `INSERT` branch seeds `stock_count` from the
+manifest, same as everything else.
+
+### 2. SQLite schema: `products`, `cart_checkout_records`, `order_items`
+
+Three tables added to `apps/self-host/src/schema.sql`, each a direct
+mirror of its Postgres migration (`0013_kan1244_products.sql`/
+`0014_kan1245_cart_checkout.sql`/`0015_kan1246_orders.sql`) minus RLS,
+`ulid`/`jsonb` column types, and `site_id`-as-tenant-scope — the same
+translation every earlier self-host table in this file already documents.
+`site_id` stays as a plain column on all three (present for parity with the
+multi-tenant shape and because `order_items`/`cart_checkout_records` still
+key some reads by it), never used for isolation — a self-hosted instance
+serves exactly one site (this file's own header comment). `items` (jsonb on
+Postgres) is stored as `TEXT` (JSON-serialized), parsed/stringified at the
+call site exactly like `weekly_windows`/`date_overrides` on
+`availability_rules` already are.
+
+`products_stock_count_matches_fulfillment_type`'s CHECK constraint is
+carried over unchanged — SQLite supports the same `CHECK (...)` syntax —
+because it's exactly the kind of "the database is the last line of
+defense" invariant this schema file's existing tables already keep even
+though the RLS layer they'd normally sit inside doesn't exist here.
+
+`cart_checkout_records`/`order_items` need no new webhook-dedup table:
+`stripe_webhook_events` (added to this schema by KAN-1154 part 2) is
+already the shared, event-type-agnostic table subscriptions and payments
+use, and stays that way — a cart checkout's dedup guard is `recordStripeWebhookEvent`
+(imported from `subscription-webhook.ts`, not duplicated a second time)
+against the same table.
+
+### 3. `cart-order-webhook.ts`: the SQLite mirror of apps/api's cart-order-webhook.ts
+
+`apps/self-host/src/cart-order-webhook.ts` mirrors
+`apps/api/src/lib/cart-order-webhook.ts` function-for-function
+(`applyCartCheckoutCompleted`), against SQLite instead of
+`withTenantContext`/Postgres:
+
+- **Exact redelivery**: the same `recordStripeWebhookEvent` guard
+  `subscription-webhook.ts` already exports and this file imports
+  unchanged (one dedup table, every webhook consumer this instance has).
+- **Out-of-order/duplicate delivery**: a `markCartCheckoutRecordCompleted`
+  SQLite function with the identical `AND status = 'pending'` guard as the
+  Postgres original — a redelivery matches no row, returns `null`, and the
+  caller's `if (record)` guard skips order_items creation and the stock
+  decrement a second time.
+- **Oversell-safe decrement**: `decrementProductStock` mirrors
+  `packages/db/src/repositories/products.ts`'s own two-UPDATE shape (a
+  strict `stock_count >= quantity` conditional UPDATE first, a
+  `MAX(stock_count - quantity, 0)` floor when that matches zero rows —
+  SQLite's `MAX()` in place of Postgres' `GREATEST()`), reporting `oversold`
+  back to the caller exactly the same way.
+- **Atomicity**: no explicit `db.transaction()` wrapper. Every write in
+  this function is a single synchronous `better-sqlite3` statement with no
+  `await` between the status transition and the last `order_items` insert —
+  the same reasoning `event-signup-adapters.ts`'s own module comment
+  already gives for why this runtime needs no concurrency guard at all
+  ("better-sqlite3 is synchronous, so a single JS process can never
+  interleave two [operations] mid-transaction the way two concurrent
+  Postgres connections can"): nothing else can run on Node's single thread
+  between two synchronous statements with no intervening `await`, so there
+  is no window for a second request to observe a half-applied order. A
+  thrown error partway (a bug, not a race) would still leave a partial
+  write with no automatic rollback — the one respect in which this is
+  weaker than the Postgres original's real transaction — flagged here
+  rather than silently assumed away; wrapping the core writes in
+  `db.transaction()` would close that gap and is a one-line follow-up if it
+  ever matters in practice.
+
+### 4. `TenantStripeProvider.createCartCheckoutSession`: a third sibling method, same as apps/api's
+
+`apps/self-host/src/lib/tenant-stripe.ts` gets the identical
+`createCartCheckoutSession` method apps/api's `tenant-stripe-provider.ts`
+already has (multi-line-item, `mode: "payment"`,
+`metadata[checkoutType] = "cart"`, conditional
+`shipping_address_collection`/`shipping_options` when `requiresShipping`),
+implemented in both `FakeTenantStripeProvider` (a fake session id, driven
+forward by a new dev-advance route) and `RealTenantStripeProvider`
+(UNVERIFIED against a live account, same posture as every other real
+adapter here). Shipping defaults come from the same
+`CART_SHIPPING_FLAT_RATE_CENTS`/`CART_SHIPPING_LABEL`/
+`CART_SHIPPING_ALLOWED_COUNTRIES` env vars apps/api reads, with the
+identical built-in fallback (500 cents, "Standard shipping", `["US"]`) —
+one operator-configured knob, not a per-site setting, same reasoning as the
+cart addendum's own point 4.
+
+### 5. Runtime routes and the webhook's third branch
+
+Three new routes in `apps/self-host/src/app.ts`, identical in
+request/response shape to apps/api's equivalents (same status codes, same
+error bodies, same CORS headers) since a published page's client-side code
+must work unmodified against either host:
+
+- `POST /v1/runtime/sites/:siteId/cart-checkout`
+- `GET /v1/runtime/sites/:siteId/products/:productId/stock`
+- `GET /v1/runtime/sites/:siteId/cart-checkout/:cartCheckoutRecordId/receipt`
+
+None of the three are registered anywhere CLI/MCP-parity-checked — same
+reasoning `mutations.ts`'s own comments give for why `booking.create` and
+the payment/subscription checkout routes are absent from `API_MUTATIONS`:
+no signed-in principal, so there is no owner-facing mutation here for a
+CLI/MCP surface to mirror. This card's self-host routes are not part of
+`apps/api` at all, so they were never candidates for that registry in the
+first place; noted for completeness, not because anything needed to
+change.
+
+The self-host `/v1/webhooks/stripe-connect` route gets a third branch,
+inserted in the same position apps/api's own route uses (after the
+subscription branch returns early, before the pre-existing one-off-payment
+code) — `object.metadata?.checkoutType === "cart"` dispatches to
+`applyCartCheckoutCompleted`. Confirmed before touching this file: the
+one-off payment webhook path in self-host was still exactly what KAN-1154
+part 2's own comment says it is ("even the one-off payment path... only
+ever had the dev-advance route... that gap is pre-existing and out of this
+card's scope") — untouched by this addition, same as the brief instructed.
+A `/v1/dev/stripe-connect/:siteId/cart/advance`-shaped route (no `:siteId`
+param, since self-host is one site) drives the same
+`applyCartCheckoutCompleted` for e2e testability with no live Stripe
+account, mirroring the existing `/v1/dev/stripe-connect/subscriptions/advance`
+pattern.
+
+### 6. A known, pre-existing gap this card does not fix: self-host has no order-management surface at all
+
+`order.markShipped` (and `order.list`/`order.get`) are owner-facing
+mutations/reads with a full API/CLI/MCP surface on the hosted platform.
+Self-host has no owner-authenticated surface of any kind — no accounts, no
+sessions, no admin UI, no CLI wired to a running instance — so there is
+nothing for these to attach to there, and this card does not invent one.
+This is the exact same shape as the pre-existing gap ADR-0018's own part 2
+addendum already flagged for `BookingsPanel`'s status-change actions in
+self-host, and the same one apps/self-host's own README already documents
+for form/booking data ("Bookings themselves... are never portable at all
+... they only ever exist in `$DATA_DIR/prefab.db`"): an operator who needs
+to mark a self-hosted order shipped, or read a submission, does so directly
+against `$DATA_DIR/prefab.db` with `sqlite3` — the same escape hatch this
+README already documents for `form_settings`/`availability_rules`. Worth
+naming as a real, if narrow, product gap: a self-hosted storefront owner
+gets a fully working checkout and no dashboard to fulfill orders from at
+all, not even a read-only one — PLAN.md's own affordances table is explicit
+that self-host is "serves the bundle, implements the runtime API," not the
+editor, so this is consistent with the product's own stated shape rather
+than an oversight, but it is the sharpest edge of that shape milestone 3
+has produced so far (a booking or form submission an operator merely reads
+locally is a smaller ask than fulfilling and shipping a physical order by
+hand-editing SQLite rows). Flagged for a future card, not fixed here — the
+same "note only, don't fix" instruction this card's own brief gives.

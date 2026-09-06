@@ -29,6 +29,7 @@ import { extractPublishSafeBookingWidgets } from "./booking-manifest.js";
 import { extractPublishSafeEventSignups } from "./event-signup-manifest.js";
 import { extractPublishSafePaymentBlocks } from "./payment-manifest.js";
 import { extractPublishSafeSubscriptionBlocks } from "./subscription-manifest.js";
+import { extractPublishSafeProducts } from "./product-manifest.js";
 import type { PublishableAvailabilityRule } from "./build.js";
 
 interface WorkerInput {
@@ -175,6 +176,21 @@ async function main(): Promise<void> {
     await writeFile(
       path.join(workspace.outDir, "prefab-subscription-blocks.json"),
       JSON.stringify(extractPublishSafeSubscriptionBlocks(input.site.id, input.pages)),
+      "utf8",
+    );
+
+    // KAN-1247 / ADR-0018 (part 4 addendum): every product's publish-safe
+    // manifest — the same "self-host needs a bundle to seed its own
+    // runtime store from" reasoning as every prefab-*.json above, but
+    // mapped straight from the site's own product collection rather than
+    // scraped from page blocks (see product-manifest.ts's own comment for
+    // why). Includes drafts — `export-bundle`'s own `allProducts` helper is
+    // unfiltered — because self-host's own seed/adapter enforces
+    // "published only" itself, the same defense-in-depth reasoning
+    // `products_public_read` already takes on the platform side.
+    await writeFile(
+      path.join(workspace.outDir, "prefab-products.json"),
+      JSON.stringify(extractPublishSafeProducts(input.products)),
       "utf8",
     );
 

@@ -154,6 +154,57 @@ describe("product catalogue publish (KAN-1244 / ADR-0018): grid/detail routing, 
     expect(sitemap).toContain("https://demo.prefab.app/shop/visible");
   }, 60_000);
 
+  // KAN-1247 / ADR-0018 (part 4 addendum): the manifest apps/self-host
+  // seeds its own SQLite `products` table from at start — mirrors
+  // form.integration.test.ts's own "writes prefab-forms.json with every
+  // Form block's publish-safe manifest, and nothing else" test.
+  it("writes prefab-products.json with every product's publish-safe manifest, draft included", async () => {
+    bundleStoreDir = await mkdtemp(path.join(tmpdir(), "pf-bundles-shop-manifest-"));
+    const published = product({ slug: "published-item", title: "Published item", status: "published" });
+    const draft = product({ slug: "draft-item", title: "Draft item", status: "draft", stockCount: 3 });
+    const { site, theme, pages } = shopSite([published]);
+
+    const result = await buildSiteBundle({
+      site,
+      theme,
+      pages,
+      posts: [],
+      products: [published, draft],
+      baseUrl: "https://demo.prefab.app",
+      bundleStoreDir,
+    });
+
+    const productsJson = JSON.parse(await readFile(path.join(result.bundlePath, "prefab-products.json"), "utf8"));
+    // Alphabetical by title (build-worker.ts's own sortProductsByTitle,
+    // applied before extraction) — "Draft item" sorts before "Published
+    // item" — proving this manifest respects the same pipeline-owned
+    // ordering invariant every other collection here does.
+    expect(productsJson).toEqual([
+      {
+        id: draft.id,
+        siteId: draft.siteId,
+        title: "Draft item",
+        price: draft.price,
+        currency: draft.currency,
+        fulfillmentType: draft.fulfillmentType,
+        stockCount: 3,
+        successMessage: draft.successMessage,
+        status: "draft",
+      },
+      {
+        id: published.id,
+        siteId: published.siteId,
+        title: "Published item",
+        price: published.price,
+        currency: published.currency,
+        fulfillmentType: published.fulfillmentType,
+        stockCount: published.stockCount,
+        successMessage: published.successMessage,
+        status: "published",
+      },
+    ]);
+  }, 60_000);
+
   it("shows an out-of-stock indicator for a physical product with zero stock, on both grid and detail", async () => {
     bundleStoreDir = await mkdtemp(path.join(tmpdir(), "pf-bundles-shop-oos-"));
     const outOfStock = product({ slug: "sold-out", title: "Sold out item", stockCount: 0 });

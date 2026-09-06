@@ -237,3 +237,82 @@ CREATE TABLE IF NOT EXISTS stripe_webhook_events (
   type TEXT NOT NULL,
   processed_at TEXT NOT NULL
 );
+
+-- KAN-1247 / ADR-0018 (part 4 addendum): mirrors
+-- packages/db/migrations/0013_kan1244_products.sql minus RLS/ulid/jsonb,
+-- same reasoning as every other table above. Seeded from the exported
+-- bundle's own `prefab-products.json` (products-seed.ts) — every product,
+-- draft included, exactly like the live Postgres `products` table. There is
+-- no `products_public_read` RLS policy to lean on here, so
+-- cart-checkout-adapters.ts's own `CartProductStore.getProduct()` filters
+-- `status = 'published'` itself — a plain SQL WHERE clause standing in for
+-- what the Postgres policy enforces there (see that migration's own header
+-- comment for the full "why scoped, not USING (true)" reasoning, which
+-- applies here unchanged). `stock_count` is the one column products-seed.ts
+-- deliberately does NOT blindly overwrite on a reseed — see that file's own
+-- comment for why (a real, locally-decremented order count must survive a
+-- restart/re-export the same way `availability_rules` already does).
+CREATE TABLE IF NOT EXISTS products (
+  id TEXT PRIMARY KEY,
+  site_id TEXT NOT NULL,
+  title TEXT NOT NULL,
+  price INTEGER NOT NULL CHECK (price > 0),
+  currency TEXT NOT NULL DEFAULT 'usd',
+  fulfillment_type TEXT NOT NULL DEFAULT 'physical' CHECK (fulfillment_type IN ('physical', 'digital_or_service')),
+  stock_count INTEGER CHECK (stock_count IS NULL OR stock_count >= 0),
+  success_message TEXT NOT NULL DEFAULT 'Thank you for your purchase.',
+  status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'published')),
+  CONSTRAINT products_stock_count_matches_fulfillment_type CHECK (
+    (fulfillment_type = 'physical' AND stock_count IS NOT NULL)
+    OR (fulfillment_type = 'digital_or_service' AND stock_count IS NULL)
+  )
+);
+
+-- KAN-1247 / ADR-0018 (part 4 addendum): mirrors
+-- packages/db/migrations/0014_kan1245_cart_checkout.sql minus RLS/ulid/
+-- jsonb, same reasoning as every other table above. `items` (jsonb on
+-- Postgres) is stored as JSON-serialized TEXT, parsed/stringified at the
+-- call site — same convention `weekly_windows`/`date_overrides` on
+-- `availability_rules` already use.
+CREATE TABLE IF NOT EXISTS cart_checkout_records (
+  id TEXT PRIMARY KEY,
+  site_id TEXT NOT NULL,
+  stripe_session_id TEXT NOT NULL UNIQUE,
+  items TEXT NOT NULL,
+  currency TEXT NOT NULL,
+  amount_subtotal INTEGER NOT NULL CHECK (amount_subtotal >= 0),
+  requires_shipping INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'completed', 'failed')),
+  buyer_email TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS cart_checkout_records_site_id_created_at_idx ON cart_checkout_records (site_id, created_at DESC, id);
+
+-- KAN-1247 / ADR-0018 (part 4 addendum): mirrors
+-- packages/db/migrations/0015_kan1246_orders.sql minus RLS/ulid, same
+-- reasoning as every other table above. `cart_checkout_records` IS the
+-- order header once its own `status` moves to 'completed' (no separate
+-- `orders` table here either — see that migration's own header comment);
+-- this table is only the per-line fulfillment state a header's own
+-- `items` blob can't cleanly mutate.
+CREATE TABLE IF NOT EXISTS order_items (
+  id TEXT PRIMARY KEY,
+  cart_checkout_record_id TEXT NOT NULL REFERENCES cart_checkout_records (id) ON DELETE CASCADE,
+  site_id TEXT NOT NULL,
+  product_id TEXT NOT NULL REFERENCES products (id),
+  quantity INTEGER NOT NULL CHECK (quantity > 0),
+  unit_amount INTEGER NOT NULL CHECK (unit_amount >= 0),
+  currency TEXT NOT NULL,
+  title TEXT NOT NULL,
+  fulfillment_type TEXT NOT NULL CHECK (fulfillment_type IN ('physical', 'digital_or_service')),
+  status TEXT NOT NULL DEFAULT 'unfulfilled' CHECK (status IN ('unfulfilled', 'shipped', 'delivered')),
+  tracking_number TEXT,
+  oversold INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS order_items_cart_checkout_record_id_idx ON order_items (cart_checkout_record_id);
+CREATE INDEX IF NOT EXISTS order_items_site_id_created_at_idx ON order_items (site_id, created_at DESC, id);

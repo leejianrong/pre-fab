@@ -9,7 +9,7 @@ import { buildApp } from "@prefab/api";
 import { withTenantContext, runMigrations, createAccount } from "@prefab/db";
 import { newUlid } from "@prefab/schema";
 import { createContext } from "../src/context.js";
-import { build, diff, exportSite, pageWrite, preview, publishCreate, pull, push, siteCreate } from "../src/commands/index.js";
+import { build, diff, eject, exportSite, pageWrite, preview, productCreate, publishCreate, pull, push, siteCreate, stripeConnect } from "../src/commands/index.js";
 import type { CommandContext } from "../src/context.js";
 
 const { Pool } = pg;
@@ -35,7 +35,9 @@ afterEach(() => {
 
 beforeAll(async () => {
   await runMigrations(migratePool);
-  await migratePool.query("TRUNCATE publishes, blocks, pages, themes, sites, api_tokens, sessions, accounts CASCADE");
+  await migratePool.query(
+    "TRUNCATE order_items, cart_checkout_records, products, stripe_connections, publishes, blocks, pages, themes, sites, api_tokens, sessions, accounts CASCADE",
+  );
   bundleStoreDir = await mkdtemp(path.join(tmpdir(), "pf-cmd-bundles-"));
   app = buildApp({ pool: appPool, bundleStoreDir });
   await app.listen({ port: 0, host: "127.0.0.1" });
@@ -190,5 +192,133 @@ describe("packages/commands — the slice 1 demo script end to end", () => {
     const exported = JSON.parse(await readFile(path.join(dir1, "pages", `${page.slug}.json`), "utf8"));
     expect(exported.layoutMode).toBe("free");
     expect(exported.blocks[0].position).toEqual({ base: { x: 10, y: 15, w: 80, h: 30, rotate: 5, opacity: 1 } });
+  }, 30_000);
+
+  // KAN-1247 / ADR-0018 (part 4 addendum): confirms the brief's own "export/
+  // eject already thread products through" claim actually round-trips
+  // byte-identically — a product carries the same R8 guarantee pages
+  // already do, verified here rather than assumed from reading the code.
+  it("export -> push (no-op re-import) -> export is byte-identical for a site with a product (R8, ADR-0018)", async () => {
+    const ctx = await loggedInContext(`kan1247-r8-${newUlid()}@example.com`);
+    const created = await siteCreate.run(ctx, { slug: `kan1247-r8-${newUlid()}`, name: "KAN-1247 R8" });
+
+    await productCreate.run(ctx, {
+      siteId: created.site.id,
+      title: "Mug",
+      price: 1500,
+      currency: "usd",
+      fulfillmentType: "physical",
+      stockCount: 5,
+      status: "published",
+    });
+
+    const dir1 = await tempDir();
+    await exportSite.run(ctx, { siteId: created.site.id, dir: dir1 });
+
+    const productFiles1 = (await readdir(path.join(dir1, "products"))).sort();
+    expect(productFiles1).toEqual(["mug.md"]);
+
+    // Re-importing an unmodified export must be a true no-op — same R8
+    // guarantee pages already get.
+    await push.run(ctx, { dir: dir1 });
+
+    const dir2 = await tempDir();
+    await exportSite.run(ctx, { siteId: created.site.id, dir: dir2 });
+
+    const productFiles2 = (await readdir(path.join(dir2, "products"))).sort();
+    expect(productFiles2).toEqual(productFiles1);
+
+    for (const file of productFiles1) {
+      const a = await readFile(path.join(dir1, "products", file), "utf8");
+      const b = await readFile(path.join(dir2, "products", file), "utf8");
+      expect(b).toBe(a);
+    }
+  }, 30_000);
+
+  // KAN-1247 / ADR-0018 (part 4 addendum): confirms the brief's own
+  // "orders/cart_checkout_records never appear in an export, by
+  // construction" claim against a REAL completed order, not just against
+  // the absence of an import in export-bundle.ts/eject.ts/pull.ts/push.ts.
+  it("a completed cart order never appears in a file-tree export or an eject (R20)", async () => {
+    const ctx = await loggedInContext(`kan1247-r20-${newUlid()}@example.com`);
+    const created = await siteCreate.run(ctx, { slug: `kan1247-r20-${newUlid()}`, name: "KAN-1247 R20" });
+    const siteId = created.site.id;
+
+    await stripeConnect.run(ctx, { siteId, authorizationCode: "fake-code" });
+    const product = await productCreate.run(ctx, {
+      siteId,
+      title: "Sensitive Mug",
+      price: 1500,
+      currency: "usd",
+      fulfillmentType: "physical",
+      stockCount: 5,
+      status: "published",
+    });
+
+    const checkoutResponse = await fetch(`${baseUrl}/v1/runtime/sites/${siteId}/cart-checkout`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ items: [{ productId: product.id, quantity: 1 }] }),
+    });
+    expect(checkoutResponse.status).toBe(201);
+    const { url } = (await checkoutResponse.json()) as { url: string };
+    const sessionId = new URL(url).pathname.split("/").pop()!;
+    const buyerEmail = "definitely-not-exported@example.com";
+
+    const advanceResponse = await fetch(`${baseUrl}/v1/dev/stripe-connect/${siteId}/cart/advance`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ sessionId, buyerEmail }),
+    });
+    expect(advanceResponse.status).toBe(200);
+    const advanced = (await advanceResponse.json()) as { status: string; cartCheckoutRecord: { id: string } };
+    expect(advanced.status).toBe("applied");
+    const orderMarker = advanced.cartCheckoutRecord.id;
+
+    // Excludes `src/blocks`/`src/prefab-schema` (eject.ts copies the block
+    // library's own SOURCE CODE there verbatim — CartDrawer.tsx legitimately
+    // references identifiers like `cartCheckoutRecordId` as client-side
+    // code, which is not site data and not what this test is checking for)
+    // — restricted to the site-specific generated content files this card's
+    // export-bundle.ts/eject.ts/pull.ts/push.ts actually assemble per site.
+    async function walk(dir: string, excludeDirs: string[] = []): Promise<string[]> {
+      const entries = await readdir(dir, { recursive: true });
+      const files: string[] = [];
+      for (const entry of entries) {
+        if (excludeDirs.some((excluded) => entry === excluded || entry.startsWith(`${excluded}${path.sep}`))) continue;
+        const full = path.join(dir, entry);
+        const info = await import("node:fs/promises").then((fs) => fs.stat(full));
+        if (info.isFile()) files.push(full);
+      }
+      return files;
+    }
+
+    async function assertNoOrderData(dir: string, excludeDirs: string[] = []): Promise<void> {
+      for (const file of await walk(dir, excludeDirs)) {
+        const content = await readFile(file, "utf8");
+        expect(content).not.toContain(orderMarker);
+        expect(content).not.toContain(buyerEmail);
+        expect(content).not.toContain("oversold");
+      }
+    }
+
+    const exportDir = await tempDir();
+    await exportSite.run(ctx, { siteId, dir: exportDir });
+    // Only the known catalogue/content file-tree shape — no order/cart file
+    // of any kind (mirrors export-bundle.ts/eject.ts never importing either
+    // repository's functions at all).
+    const exportEntries = (await readdir(exportDir)).sort();
+    expect(exportEntries).toEqual(["pages", "products", "site.json", "theme.json"]);
+    await assertNoOrderData(exportDir);
+
+    const ejectDir = await tempDir();
+    await eject.run(ctx, { siteId, outDir: ejectDir });
+    await assertNoOrderData(path.join(ejectDir, "src"), ["blocks", "prefab-schema"]);
+    // The one file eject.ts writes catalogue/content into — confirm it
+    // parses as JSON with no order-shaped keys, not just "no substring
+    // match" (a stronger check than the generic walk above).
+    const data = JSON.parse(await readFile(path.join(ejectDir, "src", "data.json"), "utf8"));
+    expect(Object.keys(data).sort()).toEqual(["pages", "posts", "products", "runtimeApiUrl", "site", "theme", "turnstileSiteKey"]);
+    expect(data.products.map((p: { title: string }) => p.title)).toContain("Sensitive Mug");
   }, 30_000);
 });
