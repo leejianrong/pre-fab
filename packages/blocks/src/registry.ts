@@ -50,6 +50,8 @@ import { Payment } from "./payment/Payment.js";
 import { paymentBlockDefinition, type PaymentProps } from "./payment/schema.js";
 import { Subscription } from "./subscription/Subscription.js";
 import { subscriptionBlockDefinition, type SubscriptionProps } from "./subscription/schema.js";
+import { CartDrawer } from "./cartdrawer/CartDrawer.js";
+import { cartDrawerBlockDefinition, type CartDrawerProps } from "./cartdrawer/schema.js";
 
 /**
  * One entry per first-party block: its schema-half definition
@@ -161,6 +163,11 @@ const BLOCK_ENTRIES: BlockEntry[] = [
     Component: Subscription,
     summary: (props: SubscriptionProps) =>
       `${props.heading} (${(props.price / 100).toFixed(2)} ${props.currency.toUpperCase()}/${props.interval})`,
+  },
+  {
+    definition: cartDrawerBlockDefinition,
+    Component: CartDrawer,
+    summary: (props: CartDrawerProps) => props.heading || "cart",
   },
 ];
 

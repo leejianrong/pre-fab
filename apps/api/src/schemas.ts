@@ -339,3 +339,27 @@ export const ListSubscriptionsQuerySchema = z.object({
   limit: z.coerce.number().int().optional(),
   offset: z.coerce.number().int().optional(),
 });
+
+// ---- KAN-1245 / ADR-0018 cart addendum: cart, multi-item checkout ----
+/**
+ * The runtime API's own cart-checkout body — deliberately just `{items}`.
+ * No `successUrl`/`cancelUrl` (derived server-side from the request's own
+ * Referer/Origin header, same as the existing payment/subscription-blocks
+ * routes — accepting a visitor-supplied redirect target is an open-redirect
+ * surface those routes already avoid) and no `shippingCountries` (a
+ * money/fraud-adjacent knob that stays server-configured — see the ADR
+ * addendum's points 4/5). Bounded to 50 distinct lines and a sane
+ * per-line quantity — @prefab/runtime's createCartCheckout does its own
+ * merge-duplicates/stock/currency validation on top of this shape check.
+ */
+export const CreateCartCheckoutBodySchema = z.object({
+  items: z
+    .array(
+      z.object({
+        productId: z.string().min(1).max(64),
+        quantity: z.number().int().positive().max(999),
+      }),
+    )
+    .min(1)
+    .max(50),
+});

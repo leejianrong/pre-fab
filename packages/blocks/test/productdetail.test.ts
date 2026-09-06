@@ -4,6 +4,7 @@ import { createElement } from "react";
 import { ProductDetail, productDetailBlockDefinition, productDetailDefaultProps, ProductDetailPropsSchema } from "../src/productdetail/index.js";
 
 const sampleProduct = {
+  id: "01ARZ3NDEKTSV4RRFFQ69G5FAV",
   title: "Mug",
   description: "# A heading\n\nA paragraph.\n\n- one\n- two",
   images: ["https://example.com/mug-1.png", "https://example.com/mug-2.png"],
@@ -31,17 +32,18 @@ describe("ProductDetail block", () => {
     expect(html).toContain("No product selected");
   });
 
-  it("renders a disabled, non-functional add-to-cart stub (card 2's scope, not this card's)", () => {
+  it("renders a working add-to-cart button for an in-stock product (KAN-1245 / ADR-0018 cart addendum)", () => {
     const html = renderToStaticMarkup(createElement(ProductDetail, { ...productDetailDefaultProps, product: sampleProduct }));
     expect(html).toContain("Add to cart");
-    expect(html).toMatch(/<button[^>]*disabled/);
+    expect(html).not.toMatch(/<button[^>]*disabled/);
   });
 
-  it("shows an out-of-stock indicator for a physical product with zero stock", () => {
+  it("shows an out-of-stock indicator and disables add-to-cart for a physical product with zero stock", () => {
     const html = renderToStaticMarkup(
       createElement(ProductDetail, { ...productDetailDefaultProps, product: { ...sampleProduct, stockCount: 0 } }),
     );
     expect(html).toContain("Out of stock");
+    expect(html).toMatch(/<button[^>]*disabled/);
   });
 
   it("never shows out-of-stock for a digital/service product", () => {

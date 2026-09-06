@@ -143,6 +143,7 @@ import {
   signUpForEvent,
   createPaymentCheckout,
   createSubscriptionCheckout,
+  createCartCheckout,
   type TurnstileVerifier,
 } from "@prefab/runtime";
 import { ApiError, conflict, forbidden, notFound, planRequired, rateLimited, unauthorized, validationError } from "./errors.js";
@@ -183,12 +184,18 @@ import {
 } from "./lib/booking-adapters.js";
 import { EmailBookingNotifier } from "./lib/booking-notifier.js";
 import { renderManageBookingPage } from "./lib/booking-manage-page.js";
-import { createTenantStripeProvider, FakeTenantStripeProvider, type TenantStripeProvider } from "./lib/tenant-stripe-provider.js";
+import {
+  createTenantStripeProvider,
+  FakeTenantStripeProvider,
+  type TenantStripeProvider,
+  type CartShippingConfig,
+} from "./lib/tenant-stripe-provider.js";
 import {
   createPostgresPaymentBlockStore,
   createPostgresStripeConnectionStore,
   createPostgresPaymentRecordStore,
 } from "./lib/payment-adapters.js";
+import { createPostgresCartProductStore, createPostgresCartCheckoutRecordStore } from "./lib/cart-checkout-adapters.js";
 import { EmailPaymentNotifier } from "./lib/payment-notifier.js";
 import { EmailSubscriptionNotifier } from "./lib/subscription-notifier.js";
 import {
@@ -243,6 +250,7 @@ import {
   ListPaymentsQuerySchema,
   AdvanceFakeSubscriptionBodySchema,
   ListSubscriptionsQuerySchema,
+  CreateCartCheckoutBodySchema,
 } from "./schemas.js";
 
 export interface AppDeps {
@@ -280,6 +288,8 @@ export interface AppDeps {
   paymentEmailSender?: EmailSender;
   /** KAN-1154 part 2 — the sender used for subscription-lifecycle owner notifications (new subscriber/past-due/canceled) specifically, same reasoning as paymentEmailSender. Defaults to createEmailSender()'s env-based choice. */
   subscriptionEmailSender?: EmailSender;
+  /** KAN-1245 / ADR-0018 cart addendum — the flat shipping rate applied to a cart checkout with any physical-fulfillment item. Server-configured only, never visitor-supplied (see that ADR addendum's point 4). Defaults to CART_SHIPPING_FLAT_RATE_CENTS/CART_SHIPPING_LABEL/CART_SHIPPING_ALLOWED_COUNTRIES, each with a built-in fallback. */
+  cartShipping?: CartShippingConfig;
 }
 
 function parseBody<T>(schema: z.ZodType<T>, body: unknown): T {
@@ -447,6 +457,29 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     stripeConnections: stripeConnectionStore,
     subscriptionRecords: subscriptionRecordStore,
     tenantStripe: tenantStripeProvider,
+  };
+  // KAN-1245 / ADR-0018 cart addendum — creation only, the same "part 1,
+  // not part 2" split ADR-0016 already took for subscriptions.
+  // `stripeConnections` is, again, the exact same store instance the
+  // one-off payment path above uses. `cartShipping` is server-configured
+  // only (see that ADR addendum's point 4) — never derived from a visitor's
+  // own request.
+  const cartShipping: CartShippingConfig = deps.cartShipping ?? {
+    flatRateAmount: Number.parseInt(process.env.CART_SHIPPING_FLAT_RATE_CENTS ?? "", 10) || 500,
+    label: process.env.CART_SHIPPING_LABEL || "Standard shipping",
+    allowedCountries: (process.env.CART_SHIPPING_ALLOWED_COUNTRIES ?? "US")
+      .split(",")
+      .map((c) => c.trim().toUpperCase())
+      .filter((c) => c.length > 0),
+  };
+  const cartProductStore = createPostgresCartProductStore(pool);
+  const cartCheckoutRecordStore = createPostgresCartCheckoutRecordStore(pool);
+  const cartCheckoutDeps = {
+    products: cartProductStore,
+    stripeConnections: stripeConnectionStore,
+    cartCheckoutRecords: cartCheckoutRecordStore,
+    tenantStripe: tenantStripeProvider,
+    shipping: cartShipping,
   };
   // Default is 1 MiB — too small for asset.upload's JSON+base64 body (up
   // to ~10.9 MiB for an 8 MiB file at base64's ~4/3 expansion). Comfortably
@@ -2696,6 +2729,65 @@ export function buildApp(deps: AppDeps): FastifyInstance {
         return { url: result.url };
       case "not_found":
         throw notFound("subscription block not found");
+      case "no_connection":
+        throw notFound("this site has not connected a Stripe account");
+      case "provider_error":
+        throw new ApiError("internal", "the payment provider could not create a checkout session");
+    }
+  });
+
+  // ---- The runtime API (KAN-1245 / ADR-0018 cart addendum): multi-item
+  // cart checkout — the same shape as the Payment/Subscription routes
+  // immediately above (no principal, CORS opened explicitly), but keyed by
+  // siteId rather than a single blockId: a cart spans however many
+  // products a visitor added, off any one page's block, not one block's
+  // own publish-safe snapshot. Every price/currency/stock decision lives in
+  // @prefab/runtime's createCartCheckout; this route is just the
+  // HTTP-and-CORS shell around it, same as every other runtime route here.
+  // Deliberately NOT registered in mutations.ts's API_MUTATIONS (see that
+  // file's own comments on booking.create/payment-blocks checkout for why:
+  // no signed-in principal — a visitor, not an owner). ----
+  app.options("/v1/runtime/sites/:siteId/cart-checkout", async (_request, reply) => {
+    reply
+      .header("access-control-allow-origin", "*")
+      .header("access-control-allow-methods", "POST, OPTIONS")
+      .header("access-control-allow-headers", "content-type")
+      .status(204)
+      .send();
+  });
+
+  app.post<{ Params: { siteId: string } }>("/v1/runtime/sites/:siteId/cart-checkout", async (request, reply) => {
+    reply.header("access-control-allow-origin", "*");
+    const { siteId } = request.params;
+    const body = parseBody(CreateCartCheckoutBodySchema, request.body);
+    const referer = (request.headers.referer as string | undefined) ?? (request.headers.origin as string | undefined) ?? runtimeApiUrl ?? "http://localhost/";
+
+    function returnUrl(outcome: "success" | "cancel"): string {
+      let url: URL;
+      try {
+        url = new URL(referer);
+      } catch {
+        url = new URL("http://localhost/");
+      }
+      url.searchParams.set("pf_cart", outcome);
+      return url.toString();
+    }
+
+    const result = await createCartCheckout(
+      { id: newUlid(), siteId, items: body.items, successUrl: returnUrl("success"), cancelUrl: returnUrl("cancel") },
+      cartCheckoutDeps,
+    );
+
+    switch (result.status) {
+      case "created":
+        reply.status(201);
+        return { url: result.url };
+      case "empty_cart":
+        throw validationError("cart is empty");
+      case "invalid_items":
+        throw validationError("one or more cart items failed validation", result.issues);
+      case "mixed_currency":
+        throw validationError("a single checkout cannot mix products priced in different currencies");
       case "no_connection":
         throw notFound("this site has not connected a Stripe account");
       case "provider_error":

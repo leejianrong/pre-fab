@@ -97,6 +97,52 @@ export interface CreateSubscriptionCheckoutSessionInput {
   siteId: string;
 }
 
+/**
+ * KAN-1245 / ADR-0018 cart addendum: the multi-item counterpart to
+ * CreateCheckoutSessionInput above — `items` generalizes that input's single
+ * hard-coded `line_items[0]` to however many lines a cart resolves to, still
+ * `mode: "payment"` only (no subscription products in a cart this
+ * milestone). Every field here is already server-resolved by
+ * @prefab/runtime's createCartCheckout (re-validated against the CURRENT
+ * `products` row on every call) — never accepted from the visitor's own
+ * checkout request, the identical reasoning CreateCheckoutSessionInput's own
+ * comment gives for `amount`.
+ */
+export interface CartCheckoutSessionLineItem {
+  /** Cents. */
+  unitAmount: number;
+  /** Lowercase ISO 4217 — every item here already shares this one currency (@prefab/runtime's createCartCheckout rejects a mixed-currency cart before ever calling this method). */
+  currency: string;
+  title: string;
+  quantity: number;
+}
+
+/** Server-configured (apps/api's own env-derived default), never visitor-supplied — see ADR-0018's cart addendum, point 4, for why a real per-site owner setting is deferred. */
+export interface CartShippingConfig {
+  /** Cents — applied verbatim regardless of the cart's own resolved currency (see the ADR addendum). */
+  flatRateAmount: number;
+  /** Stripe's `shipping_options[0][shipping_rate_data][display_name]`. */
+  label: string;
+  /** ISO 3166-1 alpha-2, uppercase, e.g. ["US"]. */
+  allowedCountries: string[];
+}
+
+export interface CreateCartCheckoutSessionInput {
+  /** See CreateCheckoutSessionInput.accessToken's own comment — identical reasoning, unchanged for a cart. */
+  accessToken: string;
+  stripeAccountId: string;
+  items: CartCheckoutSessionLineItem[];
+  currency: string;
+  successUrl: string;
+  cancelUrl: string;
+  /** Threaded through Checkout's `client_reference_id`/`metadata[cartCheckoutRecordId]` — same reasoning as CreateCheckoutSessionInput.paymentRecordId's own comment, so a future webhook (KAN-1246) can resolve tenant context with no siteId in its own URL. */
+  cartCheckoutRecordId: string;
+  siteId: string;
+  /** When true, the Checkout Session collects a shipping address and offers `shipping` below as the one flat-rate option — see ADR-0018's cart addendum, point 4. When false (every item digital/service), neither field is sent to Stripe at all. */
+  requiresShipping: boolean;
+  shipping: CartShippingConfig;
+}
+
 /** Real Connect webhook events additionally carry `account`, naming which connected account the event is for (https://docs.stripe.com/connect/webhooks) — absent from lib/stripe.ts's own StripeEvent because platform billing's webhook has no connected accounts at all. */
 export interface StripeEvent {
   id: string;
@@ -110,6 +156,8 @@ export interface TenantStripeProvider {
   createCheckoutSession(input: CreateCheckoutSessionInput): Promise<CheckoutSession>;
   /** KAN-1154 / ADR-0016: a sibling method, not a `mode` param on createCheckoutSession above — keeps the existing one-off method (and every existing call to it) completely unchanged. */
   createSubscriptionCheckoutSession(input: CreateSubscriptionCheckoutSessionInput): Promise<CheckoutSession>;
+  /** KAN-1245 / ADR-0018 cart addendum: a third sibling method — keeps createCheckoutSession/createSubscriptionCheckoutSession (and every existing call to either) completely unchanged. */
+  createCartCheckoutSession(input: CreateCartCheckoutSessionInput): Promise<CheckoutSession>;
   /** Verifies and parses an inbound Connect webhook body. Throws if the signature does not match. */
   constructEvent(rawBody: Buffer, signature: string | undefined, webhookSecret: string): StripeEvent;
 }
@@ -134,6 +182,11 @@ export class FakeTenantStripeProvider implements TenantStripeProvider {
 
   async createSubscriptionCheckoutSession(_input: CreateSubscriptionCheckoutSessionInput): Promise<CheckoutSession> {
     const sessionId = `fake_cs_sub_${newUlid()}`;
+    return { sessionId, url: `https://checkout.stripe.example/fake/${sessionId}` };
+  }
+
+  async createCartCheckoutSession(_input: CreateCartCheckoutSessionInput): Promise<CheckoutSession> {
+    const sessionId = `fake_cs_cart_${newUlid()}`;
     return { sessionId, url: `https://checkout.stripe.example/fake/${sessionId}` };
   }
 
@@ -294,6 +347,69 @@ export class RealTenantStripeProvider implements TenantStripeProvider {
     });
     if (input.trialPeriodDays > 0) {
       body.set("subscription_data[trial_period_days]", String(input.trialPeriodDays));
+    }
+
+    const response = await this.fetchImpl("https://api.stripe.com/v1/checkout/sessions", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${this.platformSecretKey}`,
+        "content-type": "application/x-www-form-urlencoded",
+        "stripe-account": input.stripeAccountId,
+      },
+      body,
+    });
+    if (!response.ok) {
+      const responseBody = await response.text().catch(() => "");
+      throw new Error(`Stripe API error (${response.status}): ${responseBody}`);
+    }
+    const result = (await response.json()) as StripeCheckoutSessionResponse;
+    return { sessionId: result.id, url: result.url };
+  }
+
+  /**
+   * KAN-1245 / ADR-0018 cart addendum. Same direct-charge shell as
+   * createCheckoutSession above (`stripe-account` header, platform's own
+   * secret key, `mode: "payment"`), generalized from one hard-coded
+   * `line_items[0]` to one `line_items[N]` per cart line — Stripe's
+   * documented array-of-line-items shape
+   * (https://docs.stripe.com/api/checkout/sessions/create#create_checkout_session-line_items).
+   * `shipping_address_collection`/`shipping_options` are only sent when
+   * `requiresShipping` is true (ADR-0018's cart addendum, point 4) —
+   * https://docs.stripe.com/api/checkout/sessions/create#create_checkout_session-shipping_address_collection,
+   * https://docs.stripe.com/api/checkout/sessions/create#create_checkout_session-shipping_options.
+   * `metadata[checkoutType] = "cart"` is the one field neither
+   * createCheckoutSession nor createSubscriptionCheckoutSession sets — see
+   * ADR-0018's cart addendum, point 6, for why a future webhook consumer
+   * (KAN-1246) needs it to tell a cart session apart from a one-off/
+   * subscription one on the same Connect webhook endpoint. UNVERIFIED
+   * against a live Stripe account — see this module's own comment.
+   */
+  async createCartCheckoutSession(input: CreateCartCheckoutSessionInput): Promise<CheckoutSession> {
+    const body = new URLSearchParams({
+      mode: "payment",
+      success_url: input.successUrl,
+      cancel_url: input.cancelUrl,
+      client_reference_id: input.cartCheckoutRecordId,
+      "metadata[checkoutType]": "cart",
+      "metadata[siteId]": input.siteId,
+      "metadata[cartCheckoutRecordId]": input.cartCheckoutRecordId,
+    });
+
+    input.items.forEach((item, index) => {
+      body.set(`line_items[${index}][price_data][currency]`, item.currency);
+      body.set(`line_items[${index}][price_data][product_data][name]`, item.title || "Item");
+      body.set(`line_items[${index}][price_data][unit_amount]`, String(item.unitAmount));
+      body.set(`line_items[${index}][quantity]`, String(item.quantity));
+    });
+
+    if (input.requiresShipping) {
+      input.shipping.allowedCountries.forEach((country, index) => {
+        body.set(`shipping_address_collection[allowed_countries][${index}]`, country);
+      });
+      body.set("shipping_options[0][shipping_rate_data][type]", "fixed_amount");
+      body.set("shipping_options[0][shipping_rate_data][fixed_amount][amount]", String(input.shipping.flatRateAmount));
+      body.set("shipping_options[0][shipping_rate_data][fixed_amount][currency]", input.currency);
+      body.set("shipping_options[0][shipping_rate_data][display_name]", input.shipping.label);
     }
 
     const response = await this.fetchImpl("https://api.stripe.com/v1/checkout/sessions", {
