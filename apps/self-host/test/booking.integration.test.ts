@@ -17,9 +17,18 @@ let sentEmails: Array<{ to: string; subject: string; text: string; attachments?:
 const WIDGET_ID = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
 const SITE_ID = "01ARZ3NDEKTSV4RRFFQ69G5FAW";
 
-// A Monday safely in the future — R10's own local slot computation clamps
-// against the real wall clock exactly like apps/api's equivalent test.
-const A_MONDAY = "2026-09-07";
+// A Monday computed relative to whenever this suite actually runs, not
+// hardcoded — R10's own local slot computation clamps against the real wall
+// clock exactly like apps/api's equivalent test, so a fixed date eventually
+// starts failing (KAN-1251). Same approach as e2e/tests/bookings.spec.ts's
+// futureMonday helper.
+function futureMonday(weeksAhead: number): string {
+  const now = new Date();
+  const daysUntilMonday = (8 - now.getUTCDay()) % 7 || 7;
+  const d = new Date(now.getTime() + (daysUntilMonday + weeksAhead * 7) * 24 * 60 * 60 * 1000);
+  return d.toISOString().slice(0, 10);
+}
+const A_MONDAY = futureMonday(3);
 
 async function seedBundle(): Promise<void> {
   bundleDir = path.join(dir, "bundle");
