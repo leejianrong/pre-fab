@@ -82,8 +82,19 @@ async function seedAccountAndLogin(email: string) {
   return cookie!.split(";")[0]!;
 }
 
-/** UTC. A Monday safely in the future (minNoticeMinutes/maxHorizonDays clamp against the real wall clock) and clear of any DST transition, so slot-boundary math in this file is easy to reason about by hand. */
-const A_MONDAY = "2026-09-07"; // 2026-09-07 is a Monday
+/**
+ * UTC. A Monday computed relative to whenever this suite actually runs, not
+ * hardcoded — a fixed date eventually clamps against minNoticeMinutes/
+ * maxHorizonDays's real wall-clock check and starts failing (KAN-1251).
+ * Same approach as e2e/tests/bookings.spec.ts's futureMonday helper.
+ */
+function futureMonday(weeksAhead: number): string {
+  const now = new Date();
+  const daysUntilMonday = (8 - now.getUTCDay()) % 7 || 7;
+  const d = new Date(now.getTime() + (daysUntilMonday + weeksAhead * 7) * 24 * 60 * 60 * 1000);
+  return d.toISOString().slice(0, 10);
+}
+const A_MONDAY = futureMonday(3);
 const WEEKDAY_9_TO_5 = [{ dayOfWeek: 1, startMinute: 9 * 60, endMinute: 17 * 60 }]; // Monday only, keeps fixtures small
 
 async function setUtcAvailability(cookie: string, siteId: string, overrides: Record<string, unknown> = {}) {
