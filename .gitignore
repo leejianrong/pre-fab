@@ -7,6 +7,8 @@ build/
 .astro-workspace/
 .data/
 tools/design-review/output/
+tools/uat-driver/sessions/*
+!tools/uat-driver/sessions/.gitkeep
 *.tsbuildinfo
 .env
 .env.local
