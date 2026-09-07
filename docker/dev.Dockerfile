@@ -39,6 +39,7 @@ RUN mkdir -p \
       /repo/packages/templates/node_modules \
       /repo/tools/checks/node_modules \
       /repo/tools/design-review/node_modules \
+      /repo/tools/uat-driver/node_modules \
     && chown -R 1000:1000 /pnpm-store /repo
 USER 1000:1000
 ENV HOME=/tmp
