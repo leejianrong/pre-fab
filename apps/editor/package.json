@@ -10,7 +10,7 @@
     "test:unit": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@material/material-color-utilities": "0.3.0",
+    "@material/material-color-utilities": "0.4.0",
     "@material/web": "2.4.0",
     "@prefab/api-client": "workspace:*",
     "@prefab/blocks": "workspace:*",
