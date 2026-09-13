@@ -3,6 +3,16 @@ import { ApiClientError, type CustomDomainStatus, type DomainWithInstruction } f
 import { api } from "./api.js";
 import { Card, FilledButton, OutlinedButton, SideSheet, StatusBadge, TextButton, TextField } from "./ui/index.js";
 
+/**
+ * KAN-1267: `addDomain` failing with the API's `plan_required` code
+ * (apps/api/src/app.ts's `throw planRequired(...)`, ~line 1553) used to
+ * render as the same plain `pf-error-text` every other error gets, with no
+ * way forward except the CLI's own `prefab plan upgrade`. Tracked
+ * separately from the generic `error` string below so only this one error
+ * shape gets the actionable "Upgrade to Pro" button in its place.
+ */
+type AddDomainError = { kind: "plan_required"; message: string } | { kind: "other"; message: string };
+
 const STATUS_LABEL: Record<CustomDomainStatus, string> = {
   pending_dns: "Pending DNS",
   active: "Active",
@@ -27,6 +37,7 @@ export function DomainsPanel({
   siteId,
   publicUrl,
   onClose,
+  onOpenBilling,
 }: {
   siteId: string;
   /**
@@ -39,11 +50,14 @@ export function DomainsPanel({
    */
   publicUrl?: string;
   onClose: () => void;
+  /** KAN-1267: closes this panel and opens SiteEditor's BillingPanel — wired to the actionable button the `plan_required` gate error renders below. */
+  onOpenBilling: () => void;
 }) {
   const [domains, setDomains] = useState<DomainWithInstruction[] | null>(null);
   const [hostname, setHostname] = useState("");
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [addError, setAddError] = useState<AddDomainError | null>(null);
   const [busyDomainId, setBusyDomainId] = useState<string | null>(null);
 
   async function refresh() {
@@ -69,13 +83,17 @@ export function DomainsPanel({
   async function submitAdd(event: React.FormEvent) {
     event.preventDefault();
     setAdding(true);
-    setError(null);
+    setAddError(null);
     try {
       await api.addDomain(siteId, hostname);
       setHostname("");
       await refresh();
     } catch (err) {
-      setError(err instanceof ApiClientError ? err.message : err instanceof Error ? err.message : String(err));
+      if (err instanceof ApiClientError && err.code === "plan_required") {
+        setAddError({ kind: "plan_required", message: err.message });
+      } else {
+        setAddError({ kind: "other", message: err instanceof ApiClientError ? err.message : err instanceof Error ? err.message : String(err) });
+      }
     } finally {
       setAdding(false);
     }
@@ -107,6 +125,7 @@ export function DomainsPanel({
 
   return (
     <SideSheet title="Domains" ariaLabel="Custom domains" closeLabel="Close domains panel" onClose={onClose} width={440}>
+      {error ? <p className="pf-error-text">{error}</p> : null}
       {/* KAN-1253: the free <slug>.<platformHost> address every site already
           gets at first publish — unauthenticated, host-header-routed (see
           apps/api/src/app.ts's "Host-based public routing"). In a bare
@@ -177,7 +196,18 @@ export function DomainsPanel({
         <FilledButton type="submit" disabled={adding || hostname.trim() === ""}>
           {adding ? "Adding…" : "Add domain"}
         </FilledButton>
-        {error ? <p className="pf-error-text">{error}</p> : null}
+        {addError?.kind === "plan_required" ? (
+          <Card variant="filled" style={{ padding: "0.6rem", display: "grid", gap: "0.4rem" }}>
+            <p className="pf-error-text" style={{ margin: 0 }}>
+              {addError.message}
+            </p>
+            <FilledButton onClick={onOpenBilling} style={{ justifySelf: "start" }}>
+              Upgrade to Pro
+            </FilledButton>
+          </Card>
+        ) : addError ? (
+          <p className="pf-error-text">{addError.message}</p>
+        ) : null}
       </form>
 
       <details className="pf-supporting-text">
