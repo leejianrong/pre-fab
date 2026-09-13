@@ -203,13 +203,30 @@ function AvailabilitySection({ siteId }: { siteId: string }) {
 
         <div style={{ display: "grid", gap: "0.4rem" }}>
           {DAY_LABELS.map((label, i) => (
-            <div key={label} style={{ display: "grid", gridTemplateColumns: "6rem 1fr 1fr", gap: "0.5rem", alignItems: "end" }}>
-              <span className="pf-supporting-text" style={{ margin: 0, alignSelf: "center" }}>
+            // A <fieldset>/<legend> pair rather than a plain label on each
+            // time field — "Start"/"End" repeated across seven otherwise
+            // identical rows would give a screen-reader user seven
+            // indistinguishable "Start" fields; grouping by day gives each
+            // pair its own accessible context without visually repeating
+            // the day name inside every field's own label text.
+            <fieldset
+              key={label}
+              style={{
+                display: "grid",
+                gridTemplateColumns: "6rem 1fr 1fr",
+                gap: "0.5rem",
+                alignItems: "end",
+                margin: 0,
+                border: "none",
+                padding: 0,
+              }}
+            >
+              <legend className="pf-supporting-text" style={{ margin: 0, gridColumn: "1 / 2", gridRow: "1 / 2", padding: 0 }}>
                 {label}
-              </span>
+              </legend>
               <TimeField id={`availability-start-${i}`} label="Start" value={days[i]!.start} onChange={(v) => setDay(i, { start: v })} />
               <TimeField id={`availability-end-${i}`} label="End" value={days[i]!.end} onChange={(v) => setDay(i, { end: v })} />
-            </div>
+            </fieldset>
           ))}
         </div>
 
