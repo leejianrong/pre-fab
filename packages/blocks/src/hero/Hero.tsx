@@ -64,14 +64,40 @@ export function Hero(props: HeroProps & BlockRenderProps) {
         </>
       ) : null}
       <div style={{ position: "relative", zIndex: 1 }}>
+        {/*
+          KAN-1254: `lineHeight` was missing here — every other block that
+          sets an explicit `fontSize` (Heading, Testimonial, RichText, ...)
+          pairs it with `cssVar("lineHeight", <same name>)` per KAN-1204's
+          token group (packages/schema/src/theme.ts), but Hero was missed
+          from that rollout. Without it, this h1 fell through to whatever
+          ambient line-height the page happened to inherit (~24px from the
+          root's body-sized default) while `fontSize` scaled up to the much
+          larger "heading" token (e.g. ~51px) — a line-height far shorter
+          than the glyphs it holds. On a short heading this only looked
+          cramped; on a heading long enough to wrap (e.g. the tutor
+          template's seed heading), the second line rendered stacked at
+          that too-tight 24px instead of a full line's height below the
+          first, so it visually overlapped whatever block came next. Same
+          bug, same fix, for the subheading below (body-sized text with no
+          lineHeight pairing).
+        */}
         <h1
           className="pf-hero-heading"
-          style={{ fontSize: cssVar("fontSize", "heading"), fontFamily: cssVar("fontFamily", "heading"), margin: 0, color: "inherit" }}
+          style={{
+            fontSize: cssVar("fontSize", "heading"),
+            lineHeight: cssVar("lineHeight", "heading"),
+            fontFamily: cssVar("fontFamily", "heading"),
+            margin: 0,
+            color: "inherit",
+          }}
         >
           {heading}
         </h1>
         {subheading ? (
-          <p className="pf-hero-subheading" style={{ fontSize: cssVar("fontSize", "body"), color: "inherit" }}>
+          <p
+            className="pf-hero-subheading"
+            style={{ fontSize: cssVar("fontSize", "body"), lineHeight: cssVar("lineHeight", "body"), color: "inherit" }}
+          >
             {subheading}
           </p>
         ) : null}
