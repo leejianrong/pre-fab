@@ -178,7 +178,7 @@ test.describe("editor billing UI (KAN-1267)", () => {
     await createBlankSiteAndOpen(page, `Billing UI ${Date.now()}`);
 
     await page.getByRole("button", { name: /^domains$/i }).click();
-    await expect(page.getByRole("dialog", { name: /custom domains/i })).toBeVisible();
+    await expect(page.getByRole("complementary", { name: /custom domains/i })).toBeVisible();
 
     const hostname = `www.billing-ui-${Date.now()}.test`;
     await page.getByRole("textbox", { name: /^domain$/i }).fill(hostname);
@@ -191,7 +191,7 @@ test.describe("editor billing UI (KAN-1267)", () => {
     await expect(gateUpgradeButton).toBeVisible();
 
     await gateUpgradeButton.click();
-    await expect(page.getByRole("dialog", { name: /^billing$/i })).toBeVisible();
+    await expect(page.getByRole("complementary", { name: /^billing$/i })).toBeVisible();
     await expect(page.getByText(/^free plan$/i)).toBeVisible();
 
     await page.getByRole("button", { name: /^upgrade to pro$/i }).click();
@@ -230,7 +230,7 @@ test.describe("editor billing UI (KAN-1267)", () => {
     await request.post(`${API_URL}/v1/dev/stripe/${accountId}/advance`, { data: { event: "checkout_completed" } });
 
     await page.getByRole("button", { name: /^billing$/i }).click();
-    await expect(page.getByRole("dialog", { name: /^billing$/i })).toBeVisible();
+    await expect(page.getByRole("complementary", { name: /^billing$/i })).toBeVisible();
     await expect(page.getByText(/^pro plan$/i)).toBeVisible({ timeout: 10_000 });
 
     await page.getByRole("button", { name: /^cancel plan$/i }).click();

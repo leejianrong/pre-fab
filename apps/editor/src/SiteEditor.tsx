@@ -515,6 +515,38 @@ export function SiteEditor({
     );
   }
 
+  // Audit H4: exactly one of these is ever true at once (openPanel above
+  // enforces it), so this resolves to at most one docked panel — laid out
+  // as a flex sibling of `.pf-puck-canvas` below, not stacked overlays.
+  const dockedPanel = themeEditorOpen ? (
+    <ThemeEditor tokens={theme.tokens} onSave={handleSaveTheme} onClose={() => setThemeEditorOpen(false)} />
+  ) : pagesPanelOpen ? (
+    <PagesPanel
+      siteId={siteId}
+      pages={pages}
+      currentPageId={page.id}
+      onSelect={handleSelectPage}
+      onCreated={handlePageCreated}
+      onClose={() => setPagesPanelOpen(false)}
+    />
+  ) : domainsPanelOpen ? (
+    <DomainsPanel siteId={siteId} publicUrl={site.publicUrl} onClose={() => setDomainsPanelOpen(false)} onOpenBilling={openBillingFromDomains} />
+  ) : blogPanelOpen ? (
+    <BlogPanel siteId={siteId} onClose={() => setBlogPanelOpen(false)} />
+  ) : productsPanelOpen ? (
+    <ProductsPanel siteId={siteId} onClose={() => setProductsPanelOpen(false)} />
+  ) : ordersPanelOpen ? (
+    <OrdersPanel siteId={siteId} onClose={() => setOrdersPanelOpen(false)} />
+  ) : submissionsPanelOpen ? (
+    <SubmissionsPanel siteId={siteId} page={page} onClose={() => setSubmissionsPanelOpen(false)} />
+  ) : bookingsPanelOpen ? (
+    <BookingsPanel siteId={siteId} pages={pages} onClose={() => setBookingsPanelOpen(false)} />
+  ) : paymentsPanelOpen ? (
+    <PaymentsPanel siteId={siteId} pages={pages} onClose={() => setPaymentsPanelOpen(false)} />
+  ) : billingPanelOpen ? (
+    <BillingPanel onClose={() => setBillingPanelOpen(false)} />
+  ) : null;
+
   return (
     <div style={{ height: "100vh", display: "flex", flexDirection: "column" }}>
       <TopAppBar
@@ -631,74 +663,57 @@ export function SiteEditor({
         </div>
       ) : null}
       <UnknownBlockList blocks={unknownBlocks} />
-      <div ref={puckCanvasRef} className="pf-puck-canvas" style={{ flex: 1, minHeight: 0 }}>
-        <FreeCanvasContext.Provider value={{ layoutMode, positions, onRectChange: handleRectChange, idBridge }}>
-          <Puck
-            key={page.id}
-            config={config}
-            data={initialPuckData}
-            overrides={{
-              preview: FreeCanvasPreview,
-              // KAN-1205: Puck ships its own header chrome — dark-leaning,
-              // styled from its own CSS namespace, unrelated to this app's
-              // --md-sys-color-* tokens (ui/tokens.css) — plus a built-in
-              // "Publish" button that isn't wired to handlePublish above.
-              // Suppressing it entirely leaves pre-fab's own TopAppBar (and
-              // its working FilledButton onClick={handlePublish}) as the
-              // only chrome above the canvas.
-              header: () => <></>,
-              // KAN-1207 / docs/adr/0017: the only per-row extension point
-              // Puck's ComponentConfig/Overrides expose — it wraps Puck's
-              // own default inner content (name label + drag-grip icon,
-              // `children` here), it doesn't replace the outer row element
-              // (padding/hover background/shape — that's handled by the
-              // `--puck-drawer-item-*` custom-property overrides + the
-              // `.pf-puck-canvas` rules in ui/tokens.css instead). Adds a
-              // per-block-type glyph and a hover-revealed live preview of
-              // the actual block component at its default props —
-              // `DrawerItemContent` (module scope, above) owns the "is this
-              // row hovered" state itself, so the preview only ever mounts
-              // for the row actually under the pointer, not all 44 at once.
-              drawerItem: ({ children, name }) => (
-                <DrawerItemContent name={name} previewStyle={previewStyle}>
-                  {children}
-                </DrawerItemContent>
-              ),
-            }}
-            onChange={(data) => {
-              latestPuckData.current = data;
-            }}
-          />
-        </FreeCanvasContext.Provider>
+      {/* Audit H4: `dockedPanel` (computed above) sits beside the canvas as
+          a plain flex sibling now, not a `position: fixed` overlay on top
+          of it — `minWidth: 0` on the canvas child is the same fix C3
+          already applied to the TopAppBar's own actions row (ui/tokens.css)
+          for the same reason: without it, a flex item's default min-width
+          is its own content's min-content width, which can force this row
+          wider than the viewport instead of letting the canvas shrink to
+          make room for the docked panel. */}
+      <div style={{ flex: 1, minHeight: 0, display: "flex" }}>
+        <div ref={puckCanvasRef} className="pf-puck-canvas" style={{ flex: 1, minHeight: 0, minWidth: 0 }}>
+          <FreeCanvasContext.Provider value={{ layoutMode, positions, onRectChange: handleRectChange, idBridge }}>
+            <Puck
+              key={page.id}
+              config={config}
+              data={initialPuckData}
+              overrides={{
+                preview: FreeCanvasPreview,
+                // KAN-1205: Puck ships its own header chrome — dark-leaning,
+                // styled from its own CSS namespace, unrelated to this app's
+                // --md-sys-color-* tokens (ui/tokens.css) — plus a built-in
+                // "Publish" button that isn't wired to handlePublish above.
+                // Suppressing it entirely leaves pre-fab's own TopAppBar (and
+                // its working FilledButton onClick={handlePublish}) as the
+                // only chrome above the canvas.
+                header: () => <></>,
+                // KAN-1207 / docs/adr/0017: the only per-row extension point
+                // Puck's ComponentConfig/Overrides expose — it wraps Puck's
+                // own default inner content (name label + drag-grip icon,
+                // `children` here), it doesn't replace the outer row element
+                // (padding/hover background/shape — that's handled by the
+                // `--puck-drawer-item-*` custom-property overrides + the
+                // `.pf-puck-canvas` rules in ui/tokens.css instead). Adds a
+                // per-block-type glyph and a hover-revealed live preview of
+                // the actual block component at its default props —
+                // `DrawerItemContent` (module scope, above) owns the "is this
+                // row hovered" state itself, so the preview only ever mounts
+                // for the row actually under the pointer, not all 44 at once.
+                drawerItem: ({ children, name }) => (
+                  <DrawerItemContent name={name} previewStyle={previewStyle}>
+                    {children}
+                  </DrawerItemContent>
+                ),
+              }}
+              onChange={(data) => {
+                latestPuckData.current = data;
+              }}
+            />
+          </FreeCanvasContext.Provider>
+        </div>
+        {dockedPanel}
       </div>
-      {themeEditorOpen ? (
-        <ThemeEditor tokens={theme.tokens} onSave={handleSaveTheme} onClose={() => setThemeEditorOpen(false)} />
-      ) : null}
-      {pagesPanelOpen ? (
-        <PagesPanel
-          siteId={siteId}
-          pages={pages}
-          currentPageId={page.id}
-          onSelect={handleSelectPage}
-          onCreated={handlePageCreated}
-          onClose={() => setPagesPanelOpen(false)}
-        />
-      ) : null}
-      {domainsPanelOpen ? (
-        <DomainsPanel
-          siteId={siteId}
-          publicUrl={site.publicUrl}
-          onClose={() => setDomainsPanelOpen(false)}
-          onOpenBilling={openBillingFromDomains}
-        />
-      ) : null}
-      {blogPanelOpen ? <BlogPanel siteId={siteId} onClose={() => setBlogPanelOpen(false)} /> : null}
-      {productsPanelOpen ? <ProductsPanel siteId={siteId} onClose={() => setProductsPanelOpen(false)} /> : null}
-      {ordersPanelOpen ? <OrdersPanel siteId={siteId} onClose={() => setOrdersPanelOpen(false)} /> : null}
-      {submissionsPanelOpen ? <SubmissionsPanel siteId={siteId} page={page} onClose={() => setSubmissionsPanelOpen(false)} /> : null}
-      {bookingsPanelOpen ? <BookingsPanel siteId={siteId} pages={pages} onClose={() => setBookingsPanelOpen(false)} /> : null}
-      {paymentsPanelOpen ? <PaymentsPanel siteId={siteId} pages={pages} onClose={() => setPaymentsPanelOpen(false)} /> : null}
-      {billingPanelOpen ? <BillingPanel onClose={() => setBillingPanelOpen(false)} /> : null}
       <Dialog open={celebration !== null} onClose={() => setCelebration(null)} ariaLabel="Site published">
         <h2 className="pf-dialog-headline">🎉 Your site is live!</h2>
         <p className="pf-supporting-text">

@@ -57,7 +57,7 @@ test("adding a domain shows DNS instructions, and the domain serves the site onc
   await createSiteAndOpen(page, siteName);
 
   await page.getByRole("button", { name: /^domains$/i }).click();
-  await expect(page.getByRole("dialog", { name: /custom domains/i })).toBeVisible();
+  await expect(page.getByRole("complementary", { name: /custom domains/i })).toBeVisible();
 
   const hostname = `www.e2e-domain-${Date.now()}.test`;
   await page.getByRole("textbox", { name: /^domain$/i }).fill(hostname);

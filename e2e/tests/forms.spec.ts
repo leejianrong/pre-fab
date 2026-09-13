@@ -230,7 +230,7 @@ test.describe("editor UI: Submissions panel webhook config + delivery status (KA
 
       const header = page.locator("header").first();
       await header.getByRole("button", { name: /^submissions$/i }).click();
-      const panel = page.getByRole("dialog", { name: /form submissions/i });
+      const panel = page.getByRole("complementary", { name: /form submissions/i });
       await expect(panel).toBeVisible();
 
       // Only one Form block on this page, so the panel auto-selects it —
@@ -274,7 +274,7 @@ test.describe("editor UI: Submissions panel webhook config + delivery status (KA
       await panel.getByRole("button", { name: /close submissions panel/i }).click();
       await expect(panel).not.toBeVisible();
       await header.getByRole("button", { name: /^submissions$/i }).click();
-      const reopened = page.getByRole("dialog", { name: /form submissions/i });
+      const reopened = page.getByRole("complementary", { name: /form submissions/i });
       await expect(reopened.getByText(/^success$/i)).toBeVisible({ timeout: 10_000 });
       await expect(reopened.getByText(/1 attempt/i)).toBeVisible();
     } finally {
