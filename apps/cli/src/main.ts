@@ -586,7 +586,7 @@ plan
   .action(() => runCommand(globalOptions(), async () => planUpgrade.run(await resolveContext(), {})));
 plan
   .command("cancel")
-  .description("Cancel the pro plan — data and export keep working for a 30-day retention window (R7)")
+  .description("Cancel the pro plan — data and export access are guaranteed for a 30-day retention window (R7); prints the exact export deadline")
   .action(() => runCommand(globalOptions(), async () => planCancel.run(await resolveContext(), {})));
 
 const availability = program.command("availability").description("Manage a site's booking availability (Slice 9, ADR-0009)");
