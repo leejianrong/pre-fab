@@ -290,10 +290,13 @@ test.describe("editor UI: Bookings panel (KAN-1257)", () => {
     const reopened = page.getByRole("dialog", { name: /^bookings$/i });
     await expect(reopened.getByText("Panel Visitor")).toBeVisible({ timeout: 10_000 });
     await expect(reopened.getByText("panel@example.com")).toBeVisible();
-    await expect(reopened.getByText(/^confirmed$/i)).toBeVisible();
+    // Exact, case-sensitive text — the status filter's own <option> reads
+    // "Confirmed"/"Canceled" (StatusBadge renders lowercase), so a
+    // case-insensitive match is ambiguous between the two.
+    await expect(reopened.getByText("confirmed", { exact: true })).toBeVisible();
 
     await reopened.getByRole("button", { name: /cancel booking/i }).click();
-    await expect(reopened.getByText(/^canceled$/i)).toBeVisible({ timeout: 10_000 });
+    await expect(reopened.getByText("canceled", { exact: true })).toBeVisible({ timeout: 10_000 });
 
     const bookings = await ctx.api.listBookings(site.site.id);
     expect(bookings.bookings[0]?.status).toBe("canceled");
