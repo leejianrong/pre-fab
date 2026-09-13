@@ -52,6 +52,8 @@ import type {
   StripeConnectionStatus,
   ListPaymentsQuery,
   ListPaymentsResult,
+  ListSubscriptionsQuery,
+  ListSubscriptionsResult,
   ListOrdersQuery,
   ListOrdersResult,
   OrderWithItems,
@@ -536,6 +538,15 @@ export class ApiClient {
     if (query.offset !== undefined) params.set("offset", String(query.offset));
     const qs = params.toString();
     return this.request("GET", `/v1/sites/${siteId}/payment-blocks/${blockId}/payments${qs ? `?${qs}` : ""}`);
+  }
+
+  // ---- subscription.list (KAN-1154 part 2) — mirrors listPayments exactly. ----
+  listSubscriptions(siteId: string, blockId: string, query: ListSubscriptionsQuery = {}): Promise<ListSubscriptionsResult> {
+    const params = new URLSearchParams();
+    if (query.limit !== undefined) params.set("limit", String(query.limit));
+    if (query.offset !== undefined) params.set("offset", String(query.offset));
+    const qs = params.toString();
+    return this.request("GET", `/v1/sites/${siteId}/subscription-blocks/${blockId}/subscriptions${qs ? `?${qs}` : ""}`);
   }
 
   // ---- order.list / order.get / order.export / order.markShipped
