@@ -24,6 +24,7 @@ import { BlogPanel } from "./BlogPanel.js";
 import { ProductsPanel } from "./ProductsPanel.js";
 import { OrdersPanel } from "./OrdersPanel.js";
 import { SubmissionsPanel } from "./SubmissionsPanel.js";
+import { PaymentsPanel } from "./PaymentsPanel.js";
 import { api } from "./api.js";
 import {
   Card,
@@ -186,6 +187,7 @@ export function SiteEditor({
   const [productsPanelOpen, setProductsPanelOpen] = useState(false);
   const [ordersPanelOpen, setOrdersPanelOpen] = useState(false);
   const [submissionsPanelOpen, setSubmissionsPanelOpen] = useState(false);
+  const [paymentsPanelOpen, setPaymentsPanelOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -474,6 +476,7 @@ export function SiteEditor({
             <OutlinedButton onClick={() => setProductsPanelOpen(true)}>Products</OutlinedButton>
             <OutlinedButton onClick={() => setOrdersPanelOpen(true)}>Orders</OutlinedButton>
             <OutlinedButton onClick={() => setSubmissionsPanelOpen(true)}>Submissions</OutlinedButton>
+            <OutlinedButton onClick={() => setPaymentsPanelOpen(true)}>Payments</OutlinedButton>
             {/* ADR-0014 / KAN-1129: local UI state only until Save — switching
                 to "free" (or back to "flow") never touches the document until
                 handleSave runs applyFreePositions over whatever this is set
@@ -581,6 +584,7 @@ export function SiteEditor({
       {productsPanelOpen ? <ProductsPanel siteId={siteId} onClose={() => setProductsPanelOpen(false)} /> : null}
       {ordersPanelOpen ? <OrdersPanel siteId={siteId} onClose={() => setOrdersPanelOpen(false)} /> : null}
       {submissionsPanelOpen ? <SubmissionsPanel siteId={siteId} page={page} onClose={() => setSubmissionsPanelOpen(false)} /> : null}
+      {paymentsPanelOpen ? <PaymentsPanel siteId={siteId} pages={pages} onClose={() => setPaymentsPanelOpen(false)} /> : null}
       <Dialog open={celebration !== null} onClose={() => setCelebration(null)} ariaLabel="Site published">
         <h2 className="pf-dialog-headline">🎉 Your site is live!</h2>
         <p className="pf-supporting-text">
