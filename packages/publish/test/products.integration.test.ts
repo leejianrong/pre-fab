@@ -32,6 +32,16 @@ function product(overrides: Partial<ProductDocument> = {}): ProductDocument {
   };
 }
 
+/**
+ * KAN-1271: grid page and detail page have DIFFERENT slugs — the only
+ * shape a real site can have, since `pages(site_id, slug)` is UNIQUE. This
+ * fixture used to give both "shop", which hid the broken grid->detail
+ * links this file now asserts on (blog.integration.test.ts's own fixture
+ * had the identical flaw for the identical reason).
+ */
+const GRID_SLUG = "shop";
+const DETAIL_SLUG = "item";
+
 function shopSite(products: ProductDocument[], productsPerPage = 12) {
   const siteId = newUlid();
   const gridPageId = newUlid();
@@ -44,8 +54,8 @@ function shopSite(products: ProductDocument[], productsPerPage = 12) {
       ownerId: newUlid(),
       schemaVersion: 1,
       pages: [
-        { id: gridPageId, slug: "shop" },
-        { id: detailPageId, slug: "shop" },
+        { id: gridPageId, slug: GRID_SLUG },
+        { id: detailPageId, slug: DETAIL_SLUG },
       ],
     },
     theme: { id: newUlid(), siteId, schemaVersion: 1, tokens: DEFAULT_THEME_TOKENS },
@@ -53,7 +63,7 @@ function shopSite(products: ProductDocument[], productsPerPage = 12) {
       {
         id: gridPageId,
         siteId,
-        slug: "shop",
+        slug: GRID_SLUG,
         title: "Shop",
         schemaVersion: 1,
         version: 0,
@@ -72,7 +82,7 @@ function shopSite(products: ProductDocument[], productsPerPage = 12) {
       {
         id: detailPageId,
         siteId,
-        slug: "shop",
+        slug: DETAIL_SLUG,
         title: "Product",
         schemaVersion: 1,
         version: 0,
@@ -105,20 +115,41 @@ describe("product catalogue publish (KAN-1244 / ADR-0018): grid/detail routing, 
 
     const result = await buildSiteBundle({ site, theme, pages, posts: [], products, baseUrl: "https://demo.prefab.app", bundleStoreDir });
 
-    const detailHtml = await readFile(path.join(result.bundlePath, "shop", "alpha", "index.html"), "utf8");
+    const detailHtml = await readFile(path.join(result.bundlePath, DETAIL_SLUG, "alpha", "index.html"), "utf8");
     expect(detailHtml).toContain("Alpha");
     expect(detailHtml).toContain('data-pf-block-type="productdetail"');
     expect(detailHtml).toContain("Add to cart");
 
-    const gridPage1 = await readFile(path.join(result.bundlePath, "shop", "index.html"), "utf8");
+    const gridPage1 = await readFile(path.join(result.bundlePath, GRID_SLUG, "index.html"), "utf8");
     // Alphabetical, 2 per page: page 1 has Alpha and Bravo.
     expect(gridPage1).toContain("Alpha");
     expect(gridPage1).toContain("Bravo");
     expect(gridPage1).not.toContain("Charlie");
     expect(gridPage1).toContain("pf-productgrid-pagination");
 
-    const gridPage2 = await readFile(path.join(result.bundlePath, "shop", "page", "2", "index.html"), "utf8");
+    const gridPage2 = await readFile(path.join(result.bundlePath, GRID_SLUG, "page", "2", "index.html"), "utf8");
     expect(gridPage2).toContain("Charlie");
+  }, 60_000);
+
+  // KAN-1271: the catalogue's half of the same regression test
+  // blog.integration.test.ts carries — every grid link must resolve to a
+  // route this same build actually wrote.
+  it("emits product links that resolve to the detail page's real routes, not the grid page's own slug", async () => {
+    bundleStoreDir = await mkdtemp(path.join(tmpdir(), "pf-bundles-shop-links-"));
+    const products = [product({ slug: "alpha", title: "Alpha" }), product({ slug: "bravo", title: "Bravo" })];
+    const { site, theme, pages } = shopSite(products);
+
+    const result = await buildSiteBundle({ site, theme, pages, posts: [], products, baseUrl: "https://demo.prefab.app", bundleStoreDir });
+
+    const gridHtml = await readFile(path.join(result.bundlePath, GRID_SLUG, "index.html"), "utf8");
+    const hrefs = [...gridHtml.matchAll(/class="pf-productgrid-item-title"\s+href="([^"]+)"/g)].map((m) => m[1]!);
+    expect(hrefs).toEqual(expect.arrayContaining([`/${DETAIL_SLUG}/alpha/`, `/${DETAIL_SLUG}/bravo/`]));
+    expect(gridHtml).not.toContain(`href="/${GRID_SLUG}/alpha`);
+
+    for (const href of hrefs) {
+      const onDisk = path.join(result.bundlePath, href.replace(/^\//, ""), "index.html");
+      await expect(readFile(onDisk, "utf8")).resolves.toContain('data-pf-block-type="productdetail"');
+    }
   }, 60_000);
 
   it("builds correctly with zero products (empty grid, no detail routes)", async () => {
@@ -126,7 +157,7 @@ describe("product catalogue publish (KAN-1244 / ADR-0018): grid/detail routing, 
     const { site, theme, pages } = shopSite([]);
 
     const result = await buildSiteBundle({ site, theme, pages, posts: [], products: [], baseUrl: "https://demo.prefab.app", bundleStoreDir });
-    const gridHtml = await readFile(path.join(result.bundlePath, "shop", "index.html"), "utf8");
+    const gridHtml = await readFile(path.join(result.bundlePath, GRID_SLUG, "index.html"), "utf8");
     expect(gridHtml).toContain("No products yet");
   }, 60_000);
 
@@ -147,11 +178,12 @@ describe("product catalogue publish (KAN-1244 / ADR-0018): grid/detail routing, 
       bundleStoreDir,
     });
 
-    const gridHtml = await readFile(path.join(result.bundlePath, "shop", "index.html"), "utf8");
+    const gridHtml = await readFile(path.join(result.bundlePath, GRID_SLUG, "index.html"), "utf8");
     expect(gridHtml).toContain("Visible product");
 
     const sitemap = await readFile(path.join(result.bundlePath, "sitemap.xml"), "utf8");
-    expect(sitemap).toContain("https://demo.prefab.app/shop/visible");
+    // KAN-1262: trailing-slashed permalink, under the *detail* page's slug.
+    expect(sitemap).toContain(`<loc>https://demo.prefab.app/${DETAIL_SLUG}/visible/</loc>`);
   }, 60_000);
 
   // KAN-1247 / ADR-0018 (part 4 addendum): the manifest apps/self-host
@@ -220,10 +252,10 @@ describe("product catalogue publish (KAN-1244 / ADR-0018): grid/detail routing, 
       bundleStoreDir,
     });
 
-    const gridHtml = await readFile(path.join(result.bundlePath, "shop", "index.html"), "utf8");
+    const gridHtml = await readFile(path.join(result.bundlePath, GRID_SLUG, "index.html"), "utf8");
     expect(gridHtml).toContain("Out of stock");
 
-    const detailHtml = await readFile(path.join(result.bundlePath, "shop", "sold-out", "index.html"), "utf8");
+    const detailHtml = await readFile(path.join(result.bundlePath, DETAIL_SLUG, "sold-out", "index.html"), "utf8");
     expect(detailHtml).toContain("Out of stock");
   }, 60_000);
 });

@@ -16,11 +16,27 @@ const sampleProduct = {
 
 describe("ProductGrid block", () => {
   it("server-renders with react-dom/server — SSR-safe (ADR-0004)", () => {
-    const html = renderToStaticMarkup(createElement(ProductGrid, { ...productGridDefaultProps, products: [sampleProduct], basePath: "shop" }));
+    const html = renderToStaticMarkup(createElement(ProductGrid, { ...productGridDefaultProps, products: [sampleProduct], basePath: "shop", detailBasePath: "product" }));
     expect(html).toContain('data-pf-block-type="productgrid"');
     expect(html).toContain("Mug");
-    expect(html).toContain('href="/shop/mug"');
+    expect(html).toContain('href="/product/mug/"');
     expect(html).toContain("$15.00");
+  });
+
+  // KAN-1271: the identical bug PostList had, copied forward by the
+  // catalogue — see postlist.test.ts's own version of this test.
+  it("links a product to the DETAIL page's slug, never its own grid page's", () => {
+    const html = renderToStaticMarkup(
+      createElement(ProductGrid, { ...productGridDefaultProps, products: [sampleProduct], basePath: "shop", detailBasePath: "item" }),
+    );
+    expect(html).toContain('href="/item/mug/"');
+    expect(html).not.toContain('href="/shop/mug');
+  });
+
+  it("renders a product title as plain text, not a broken link, when the site has no productdetail page", () => {
+    const html = renderToStaticMarkup(createElement(ProductGrid, { ...productGridDefaultProps, products: [sampleProduct], basePath: "shop" }));
+    expect(html).toContain("Mug");
+    expect(html).not.toContain("<a");
   });
 
   it("renders an empty state with no products", () => {
@@ -35,7 +51,7 @@ describe("ProductGrid block", () => {
 
   it("hides the price when showPrice is false", () => {
     const html = renderToStaticMarkup(
-      createElement(ProductGrid, { ...productGridDefaultProps, showPrice: false, products: [sampleProduct], basePath: "shop" }),
+      createElement(ProductGrid, { ...productGridDefaultProps, showPrice: false, products: [sampleProduct], basePath: "shop", detailBasePath: "product" }),
     );
     expect(html).not.toContain("pf-productgrid-item-price");
   });
@@ -45,7 +61,7 @@ describe("ProductGrid block", () => {
       createElement(ProductGrid, {
         ...productGridDefaultProps,
         products: [{ ...sampleProduct, stockCount: 0 }],
-        basePath: "shop",
+        basePath: "shop", detailBasePath: "product",
       }),
     );
     expect(html).toContain("Out of stock");
@@ -56,7 +72,7 @@ describe("ProductGrid block", () => {
       createElement(ProductGrid, {
         ...productGridDefaultProps,
         products: [{ ...sampleProduct, fulfillmentType: "digital_or_service" as const, stockCount: null }],
-        basePath: "shop",
+        basePath: "shop", detailBasePath: "product",
       }),
     );
     expect(html).not.toContain("Out of stock");
@@ -64,19 +80,19 @@ describe("ProductGrid block", () => {
 
   it("shows pagination links only when there is more than one page", () => {
     const single = renderToStaticMarkup(
-      createElement(ProductGrid, { ...productGridDefaultProps, products: [sampleProduct], basePath: "shop", pageNumber: 1, totalPages: 1 }),
+      createElement(ProductGrid, { ...productGridDefaultProps, products: [sampleProduct], basePath: "shop", detailBasePath: "product", pageNumber: 1, totalPages: 1 }),
     );
     expect(single).not.toContain("pf-productgrid-pagination");
 
     const multi = renderToStaticMarkup(
-      createElement(ProductGrid, { ...productGridDefaultProps, products: [sampleProduct], basePath: "shop", pageNumber: 1, totalPages: 2 }),
+      createElement(ProductGrid, { ...productGridDefaultProps, products: [sampleProduct], basePath: "shop", detailBasePath: "product", pageNumber: 1, totalPages: 2 }),
     );
     expect(multi).toContain("pf-productgrid-pagination");
     expect(multi).toContain("Older");
   });
 
   it("references theme tokens only, never a raw value (invariant 2)", () => {
-    const html = renderToStaticMarkup(createElement(ProductGrid, { ...productGridDefaultProps, products: [sampleProduct], basePath: "shop" }));
+    const html = renderToStaticMarkup(createElement(ProductGrid, { ...productGridDefaultProps, products: [sampleProduct], basePath: "shop", detailBasePath: "product" }));
     expect(html).toMatch(/var\(--pf-fontSize-heading\)/);
     expect(html).not.toMatch(/#[0-9a-fA-F]{3,8}/);
   });

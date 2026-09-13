@@ -104,11 +104,28 @@ export function getStaticPaths() {
     return blocks.find((b) => b.type === type) ?? null;
   }
 
+  // KAN-1271: the page whose slug a detail route is actually minted under,
+  // a few lines below — which is emphatically NOT the list/grid page's own
+  // slug (\`pages(site_id, slug)\` is UNIQUE, so the two can never be
+  // equal). A list block therefore cannot derive an item's URL from where
+  // *it* lives; it has to be handed the detail page's slug, which is what
+  // \`postDetailBasePath\`/\`productDetailBasePath\` below carry into the
+  // block's render props. Deriving the link and the route from this one
+  // lookup, in this one function, is what stops them drifting apart again
+  // — the same "first page in document order carrying the detail block"
+  // rule feeds.ts's findPostDetailPage/findProductDetailPage use for the
+  // RSS/sitemap permalinks, so all three agree by construction.
+  function findPageWithBlockOfType(pages, type) {
+    return pages.find((p) => findBlockOfType(p.blocks, type) !== null) ?? null;
+  }
+
   function routeSlug(slug) {
     return slug === "home" ? undefined : slug;
   }
 
   const products = data.products ?? [];
+  const postDetailPage = findPageWithBlockOfType(data.pages, POSTDETAIL_TYPE);
+  const productDetailPage = findPageWithBlockOfType(data.pages, PRODUCTDETAIL_TYPE);
   const paths = [];
 
   for (const page of data.pages) {
@@ -149,6 +166,10 @@ export function getStaticPaths() {
             listBlockId: listBlock.id,
             listPageNumber: pageNumber,
             listTotalPages: totalPages,
+            // null when the site has no postdetail page at all: there is
+            // no per-post route to link to, so PostList renders each title
+            // as plain text rather than a link that could only 404.
+            postDetailBasePath: postDetailPage ? postDetailPage.slug : null,
           },
         });
       }
@@ -170,6 +191,9 @@ export function getStaticPaths() {
             productGridBlockId: productGridBlock.id,
             productGridPageNumber: pageNumber,
             productGridTotalPages: totalPages,
+            // Same "null means no detail route exists" contract as
+            // postDetailBasePath above.
+            productDetailBasePath: productDetailPage ? productDetailPage.slug : null,
           },
         });
       }
@@ -193,10 +217,12 @@ const {
   listBlockId,
   listPageNumber,
   listTotalPages,
+  postDetailBasePath,
   detailProduct,
   productGridBlockId,
   productGridPageNumber,
   productGridTotalPages,
+  productDetailBasePath,
 } = Astro.props;
 const themeVars = themeRootStyle(resolveThemeTokens(theme.tokens));
 
@@ -255,7 +281,14 @@ const pageGutterStyle = {
             posts: data.posts.slice(start, start + postsPerPage),
             pageNumber: listPageNumber,
             totalPages: listTotalPages,
+            // KAN-1271: \`basePath\` is this list page's own slug and only
+            // ever anchors *its own* pagination routes
+            // (\${page.slug}/page/N, minted right above in
+            // getStaticPaths). An individual post's permalink lives under
+            // a different page entirely — \`detailBasePath\` — computed by
+            // the same lookup that minted those detail routes.
             basePath: page.slug,
+            detailBasePath: postDetailBasePath,
           };
         } else if (block.type === "productgrid" && block.id === productGridBlockId) {
           const productsPerPage = block.props?.productsPerPage ?? 12;
@@ -264,7 +297,9 @@ const pageGutterStyle = {
             products: (data.products ?? []).slice(start, start + productsPerPage),
             pageNumber: productGridPageNumber,
             totalPages: productGridTotalPages,
+            // Same split as postlist immediately above (KAN-1271).
             basePath: page.slug,
+            detailBasePath: productDetailBasePath,
           };
         }
 

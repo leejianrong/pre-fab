@@ -15,10 +15,28 @@ const samplePost = {
 
 describe("PostList block", () => {
   it("server-renders with react-dom/server — SSR-safe (ADR-0004)", () => {
-    const html = renderToStaticMarkup(createElement(PostList, { ...postListDefaultProps, posts: [samplePost], basePath: "blog" }));
+    const html = renderToStaticMarkup(createElement(PostList, { ...postListDefaultProps, posts: [samplePost], basePath: "blog", detailBasePath: "post" }));
     expect(html).toContain('data-pf-block-type="postlist"');
     expect(html).toContain("Hello, world");
-    expect(html).toContain('href="/blog/hello-world"');
+    expect(html).toContain('href="/post/hello-world/"');
+  });
+
+  // KAN-1271: the link used to be built from `basePath` — the *list*
+  // page's own slug — which can never equal the detail page's slug, since
+  // `pages(site_id, slug)` is UNIQUE. Every post link on a real two-page
+  // blog therefore 404'd.
+  it("links a post to the DETAIL page's slug, never its own list page's", () => {
+    const html = renderToStaticMarkup(
+      createElement(PostList, { ...postListDefaultProps, posts: [samplePost], basePath: "posts", detailBasePath: "article" }),
+    );
+    expect(html).toContain('href="/article/hello-world/"');
+    expect(html).not.toContain('href="/posts/hello-world');
+  });
+
+  it("renders a post title as plain text, not a broken link, when the site has no postdetail page", () => {
+    const html = renderToStaticMarkup(createElement(PostList, { ...postListDefaultProps, posts: [samplePost], basePath: "posts" }));
+    expect(html).toContain("Hello, world");
+    expect(html).not.toContain("<a");
   });
 
   it("renders an empty state with no posts", () => {
@@ -33,26 +51,26 @@ describe("PostList block", () => {
 
   it("hides the excerpt when showExcerpt is false", () => {
     const html = renderToStaticMarkup(
-      createElement(PostList, { ...postListDefaultProps, showExcerpt: false, posts: [samplePost], basePath: "blog" }),
+      createElement(PostList, { ...postListDefaultProps, showExcerpt: false, posts: [samplePost], basePath: "blog", detailBasePath: "post" }),
     );
     expect(html).not.toContain("pf-postlist-item-excerpt");
   });
 
   it("shows pagination links only when there is more than one page", () => {
     const single = renderToStaticMarkup(
-      createElement(PostList, { ...postListDefaultProps, posts: [samplePost], basePath: "blog", pageNumber: 1, totalPages: 1 }),
+      createElement(PostList, { ...postListDefaultProps, posts: [samplePost], basePath: "blog", detailBasePath: "post", pageNumber: 1, totalPages: 1 }),
     );
     expect(single).not.toContain("pf-postlist-pagination");
 
     const multi = renderToStaticMarkup(
-      createElement(PostList, { ...postListDefaultProps, posts: [samplePost], basePath: "blog", pageNumber: 1, totalPages: 2 }),
+      createElement(PostList, { ...postListDefaultProps, posts: [samplePost], basePath: "blog", detailBasePath: "post", pageNumber: 1, totalPages: 2 }),
     );
     expect(multi).toContain("pf-postlist-pagination");
     expect(multi).toContain("Older");
   });
 
   it("references theme tokens only, never a raw value (invariant 2)", () => {
-    const html = renderToStaticMarkup(createElement(PostList, { ...postListDefaultProps, posts: [samplePost], basePath: "blog" }));
+    const html = renderToStaticMarkup(createElement(PostList, { ...postListDefaultProps, posts: [samplePost], basePath: "blog", detailBasePath: "post" }));
     expect(html).toMatch(/var\(--pf-fontSize-heading\)/);
     expect(html).not.toMatch(/#[0-9a-fA-F]{3,8}/);
   });

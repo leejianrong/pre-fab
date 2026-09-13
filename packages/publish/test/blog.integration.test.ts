@@ -31,6 +31,17 @@ function post(overrides: Partial<PostDocument>): PostDocument {
   };
 }
 
+/**
+ * KAN-1271: the list page and the detail page have DIFFERENT slugs, which
+ * is the only shape a real site can have — `pages(site_id, slug)` is
+ * UNIQUE (0001_init.sql), so the two pages cannot share one. This fixture
+ * used to give both the slug "blog", which is exactly why the broken
+ * list->detail links this file now asserts on went unnoticed for two
+ * milestones: with identical slugs the bug is invisible.
+ */
+const LIST_SLUG = "blog";
+const DETAIL_SLUG = "post";
+
 function blogSite(posts: PostDocument[], postsPerPage = 10) {
   const siteId = newUlid();
   const listPageId = newUlid();
@@ -43,8 +54,8 @@ function blogSite(posts: PostDocument[], postsPerPage = 10) {
       ownerId: newUlid(),
       schemaVersion: 1,
       pages: [
-        { id: listPageId, slug: "blog" },
-        { id: detailPageId, slug: "blog" },
+        { id: listPageId, slug: LIST_SLUG },
+        { id: detailPageId, slug: DETAIL_SLUG },
       ],
     },
     theme: { id: newUlid(), siteId, schemaVersion: 1, tokens: DEFAULT_THEME_TOKENS },
@@ -52,7 +63,7 @@ function blogSite(posts: PostDocument[], postsPerPage = 10) {
       {
         id: listPageId,
         siteId,
-        slug: "blog",
+        slug: LIST_SLUG,
         title: "Blog",
         schemaVersion: 1,
         version: 0,
@@ -71,7 +82,7 @@ function blogSite(posts: PostDocument[], postsPerPage = 10) {
       {
         id: detailPageId,
         siteId,
-        slug: "blog",
+        slug: DETAIL_SLUG,
         title: "Blog post",
         schemaVersion: 1,
         version: 0,
@@ -96,19 +107,47 @@ describe("blog publish (Slice 5): list/detail routing, RSS, sitemap", () => {
 
     const result = await buildSiteBundle({ site, theme, pages, posts, baseUrl: "https://demo.prefab.app", bundleStoreDir });
 
-    const firstDetailHtml = await readFile(path.join(result.bundlePath, "blog", "first-post", "index.html"), "utf8");
+    const firstDetailHtml = await readFile(path.join(result.bundlePath, DETAIL_SLUG, "first-post", "index.html"), "utf8");
     expect(firstDetailHtml).toContain("First post");
     expect(firstDetailHtml).toContain('data-pf-block-type="postdetail"');
 
-    const listPage1 = await readFile(path.join(result.bundlePath, "blog", "index.html"), "utf8");
+    const listPage1 = await readFile(path.join(result.bundlePath, LIST_SLUG, "index.html"), "utf8");
     // Newest-first, 2 per page: page 1 has the two newest posts.
     expect(listPage1).toContain("Third post");
     expect(listPage1).toContain("Second post");
     expect(listPage1).not.toContain("First post");
     expect(listPage1).toContain("pf-postlist-pagination");
 
-    const listPage2 = await readFile(path.join(result.bundlePath, "blog", "page", "2", "index.html"), "utf8");
+    const listPage2 = await readFile(path.join(result.bundlePath, LIST_SLUG, "page", "2", "index.html"), "utf8");
     expect(listPage2).toContain("First post");
+  }, 60_000);
+
+  // KAN-1271: the regression test that would have caught this. Every link
+  // the list page emits for a post has to point at a route the very same
+  // build actually wrote to disk — asserted by resolving each href against
+  // the bundle directory, rather than by restating the expected URL shape a
+  // second time (which is how the link and the route drifted apart in the
+  // first place).
+  it("emits post links that resolve to the detail page's real routes, not the list page's own slug", async () => {
+    bundleStoreDir = await mkdtemp(path.join(tmpdir(), "pf-bundles-blog-links-"));
+    const posts = [
+      post({ slug: "first-post", title: "First post", date: "2024-01-01" }),
+      post({ slug: "second-post", title: "Second post", date: "2024-01-02" }),
+    ];
+    const { site, theme, pages } = blogSite(posts);
+
+    const result = await buildSiteBundle({ site, theme, pages, posts, baseUrl: "https://demo.prefab.app", bundleStoreDir });
+
+    const listHtml = await readFile(path.join(result.bundlePath, LIST_SLUG, "index.html"), "utf8");
+    const hrefs = [...listHtml.matchAll(/class="pf-postlist-item-title"\s+href="([^"]+)"/g)].map((m) => m[1]!);
+    expect(hrefs).toEqual(expect.arrayContaining([`/${DETAIL_SLUG}/first-post/`, `/${DETAIL_SLUG}/second-post/`]));
+    // Never the list page's own slug — the bug this test exists for.
+    expect(listHtml).not.toContain(`href="/${LIST_SLUG}/first-post`);
+
+    for (const href of hrefs) {
+      const onDisk = path.join(result.bundlePath, href.replace(/^\//, ""), "index.html");
+      await expect(readFile(onDisk, "utf8")).resolves.toContain('data-pf-block-type="postdetail"');
+    }
   }, 60_000);
 
   it("builds correctly with zero posts (empty list, no detail routes)", async () => {
@@ -116,7 +155,7 @@ describe("blog publish (Slice 5): list/detail routing, RSS, sitemap", () => {
     const { site, theme, pages } = blogSite([]);
 
     const result = await buildSiteBundle({ site, theme, pages, posts: [], baseUrl: "https://demo.prefab.app", bundleStoreDir });
-    const listHtml = await readFile(path.join(result.bundlePath, "blog", "index.html"), "utf8");
+    const listHtml = await readFile(path.join(result.bundlePath, LIST_SLUG, "index.html"), "utf8");
     expect(listHtml).toContain("No posts yet");
   }, 60_000);
 
@@ -129,7 +168,7 @@ describe("blog publish (Slice 5): list/detail routing, RSS, sitemap", () => {
 
     const result = await buildSiteBundle({ site, theme, pages, posts: [visiblePost], baseUrl: "https://demo.prefab.app", bundleStoreDir });
 
-    const listHtml = await readFile(path.join(result.bundlePath, "blog", "index.html"), "utf8");
+    const listHtml = await readFile(path.join(result.bundlePath, LIST_SLUG, "index.html"), "utf8");
     expect(listHtml).toContain("Visible post");
 
     const rss = await readFile(path.join(result.bundlePath, "rss.xml"), "utf8");
@@ -149,13 +188,15 @@ describe("blog publish (Slice 5): list/detail routing, RSS, sitemap", () => {
     expect(rss).toContain("<rss version=\"2.0\">");
     expect(rss).toContain("<title>One</title>");
     expect(rss).toContain("<title>Two</title>");
-    expect(rss).toContain("https://demo.prefab.app/blog/one");
-    expect(rss).toContain("https://demo.prefab.app/blog/two");
+    // KAN-1262: a post permalink is trailing-slashed, exactly like a page
+    // URL already was — the directory-format route Astro actually writes.
+    expect(rss).toContain(`<link>https://demo.prefab.app/${DETAIL_SLUG}/one/</link>`);
+    expect(rss).toContain(`<link>https://demo.prefab.app/${DETAIL_SLUG}/two/</link>`);
 
     const sitemap = await readFile(path.join(result.bundlePath, "sitemap.xml"), "utf8");
     expect(sitemap).toContain("<urlset");
-    expect(sitemap).toContain("https://demo.prefab.app/blog/one");
-    expect(sitemap).toContain("https://demo.prefab.app/blog/two");
-    expect(sitemap).toContain("https://demo.prefab.app/blog/");
+    expect(sitemap).toContain(`<loc>https://demo.prefab.app/${DETAIL_SLUG}/one/</loc>`);
+    expect(sitemap).toContain(`<loc>https://demo.prefab.app/${DETAIL_SLUG}/two/</loc>`);
+    expect(sitemap).toContain(`<loc>https://demo.prefab.app/${LIST_SLUG}/</loc>`);
   }, 60_000);
 });
