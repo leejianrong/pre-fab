@@ -21,7 +21,16 @@ export interface ProductGridRenderProps {
   products?: ProductGridEntry[];
   pageNumber?: number;
   totalPages?: number;
+  /** This grid page's own slug. Anchors *this block's* pagination routes (`${basePath}/page/N`) and nothing else. */
   basePath?: string;
+  /**
+   * KAN-1271: the slug of the page carrying the site's `productdetail`
+   * block — the identical split PostListRenderProps' own `detailBasePath`
+   * documents (this block inherited the same bug from PostList and is
+   * fixed the same way). `null`/absent means no per-product route exists,
+   * so titles render as plain text rather than links that could only 404.
+   */
+  detailBasePath?: string | null;
 }
 
 const MOBILE_MIN_CARD_PX = 160;
@@ -52,7 +61,7 @@ export function ProductGrid(props: ProductGridProps & BlockRenderProps & Product
   // page-template.ts) already slices `products` to the right page before
   // this renders — it only exists as a stored prop so getStaticPaths can
   // compute pagination from it (mirrors PostList's own comment).
-  const { heading, columns, showPrice, blockId, responsive, products, pageNumber = 1, totalPages = 1, basePath = "" } = props;
+  const { heading, columns, showPrice, blockId, responsive, products, pageNumber = 1, totalPages = 1, basePath = "", detailBasePath } = props;
 
   const gridStyle: CSSProperties = {
     display: "grid",
@@ -117,6 +126,11 @@ export function ProductGrid(props: ProductGridProps & BlockRenderProps & Product
   const prevHref = pageNumber > 1 ? (pageNumber - 1 === 1 ? `/${basePath}` : `/${basePath}/page/${pageNumber - 1}`) : null;
   const nextHref = pageNumber < totalPages ? `/${basePath}/page/${pageNumber + 1}` : null;
 
+  /** KAN-1271/KAN-1262: the product's real permalink, under the *detail* page's slug, trailing-slashed to match the directory-format route the publish pipeline emits (and the sitemap entry for the same product). `null` when no detail page exists. */
+  function productHref(slug: string): string | null {
+    return detailBasePath ? `/${detailBasePath}/${slug}/` : null;
+  }
+
   return (
     <div className="pf-block pf-productgrid" style={gridStyle} data-pf-block-type="productgrid" data-pf-block-id={blockId}>
       <ResponsiveStyle
@@ -137,14 +151,22 @@ export function ProductGrid(props: ProductGridProps & BlockRenderProps & Product
         </p>
       ) : (
         <>
-          {products.map((product) => (
+          {products.map((product) => {
+            const href = productHref(product.slug);
+            return (
             <div key={product.id} className="pf-productgrid-item" style={cardStyle}>
               {product.images[0] ? (
                 <img className="pf-productgrid-item-image" src={product.images[0]} alt="" style={imageStyle} />
               ) : null}
-              <a className="pf-productgrid-item-title" href={`/${basePath}/${product.slug}`} style={titleStyle}>
-                {product.title}
-              </a>
+              {href ? (
+                <a className="pf-productgrid-item-title" href={href} style={titleStyle}>
+                  {product.title}
+                </a>
+              ) : (
+                <span className="pf-productgrid-item-title" style={titleStyle}>
+                  {product.title}
+                </span>
+              )}
               {showPrice ? (
                 <p className="pf-productgrid-item-price" style={priceStyle}>
                   {formatPrice(product.price, product.currency)}
@@ -156,7 +178,8 @@ export function ProductGrid(props: ProductGridProps & BlockRenderProps & Product
                 </p>
               ) : null}
             </div>
-          ))}
+            );
+          })}
           {totalPages > 1 ? (
             <nav className="pf-productgrid-pagination" style={paginationStyle} aria-label="Pagination">
               {prevHref ? (

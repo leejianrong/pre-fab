@@ -18,7 +18,19 @@ export interface PostListRenderProps {
   posts?: PostListEntry[];
   pageNumber?: number;
   totalPages?: number;
+  /** This list page's own slug. Anchors *this block's* pagination routes (`${basePath}/page/N`) and nothing else. */
   basePath?: string;
+  /**
+   * KAN-1271: the slug of the page carrying the site's `postdetail` block
+   * — where an individual post's route actually lives. It is never this
+   * list page's own slug: `pages(site_id, slug)` is UNIQUE, so a list page
+   * and a detail page cannot share one, which is exactly why deriving an
+   * item's href from `basePath` (as this block did until KAN-1271) could
+   * never resolve. `null`/absent means the site has no postdetail page at
+   * all, so no per-post route exists and titles render as plain text
+   * rather than as links that could only 404.
+   */
+  detailBasePath?: string | null;
 }
 
 function formatDate(date: string): string {
@@ -30,7 +42,7 @@ export function PostList(props: PostListProps & BlockRenderProps & PostListRende
   // page-template.ts) already slices `posts` to the right page before this
   // renders — it only exists as a stored prop so getStaticPaths can compute
   // pagination from it.
-  const { heading, showExcerpt, blockId, responsive, posts, pageNumber = 1, totalPages = 1, basePath = "" } = props;
+  const { heading, showExcerpt, blockId, responsive, posts, pageNumber = 1, totalPages = 1, basePath = "", detailBasePath } = props;
 
   const sectionStyle: CSSProperties = {
     padding: `${cssVar("spacing", "section")} ${cssVar("spacing", "element")}`,
@@ -63,6 +75,11 @@ export function PostList(props: PostListProps & BlockRenderProps & PostListRende
   const prevHref = pageNumber > 1 ? (pageNumber - 1 === 1 ? `/${basePath}` : `/${basePath}/page/${pageNumber - 1}`) : null;
   const nextHref = pageNumber < totalPages ? `/${basePath}/page/${pageNumber + 1}` : null;
 
+  /** KAN-1271/KAN-1262: the post's real permalink, under the *detail* page's slug, trailing-slashed to match the directory-format route the publish pipeline actually emits (and the RSS/sitemap permalink for the same post). `null` when no detail page exists. */
+  function postHref(slug: string): string | null {
+    return detailBasePath ? `/${detailBasePath}/${slug}/` : null;
+  }
+
   return (
     <section className="pf-block pf-postlist" style={sectionStyle} data-pf-block-type="postlist" data-pf-block-id={blockId}>
       <ResponsiveStyle blockId={blockId ?? ""} responsive={responsive ?? {}} />
@@ -78,11 +95,19 @@ export function PostList(props: PostListProps & BlockRenderProps & PostListRende
       ) : (
         <>
           <ul className="pf-postlist-items" style={listStyle}>
-            {posts.map((post) => (
+            {posts.map((post) => {
+              const href = postHref(post.slug);
+              return (
               <li key={post.id} className="pf-postlist-item">
-                <a className="pf-postlist-item-title" href={`/${basePath}/${post.slug}`} style={{ ...titleStyle, textDecoration: "none" }}>
-                  {post.title}
-                </a>
+                {href ? (
+                  <a className="pf-postlist-item-title" href={href} style={{ ...titleStyle, textDecoration: "none" }}>
+                    {post.title}
+                  </a>
+                ) : (
+                  <span className="pf-postlist-item-title" style={titleStyle}>
+                    {post.title}
+                  </span>
+                )}
                 <div className="pf-postlist-item-meta" style={metaStyle}>
                   <time dateTime={post.date}>{formatDate(post.date)}</time>
                   {post.author ? <span> · {post.author}</span> : null}
@@ -94,7 +119,8 @@ export function PostList(props: PostListProps & BlockRenderProps & PostListRende
                   </p>
                 ) : null}
               </li>
-            ))}
+              );
+            })}
           </ul>
           {totalPages > 1 ? (
             <nav className="pf-postlist-pagination" style={paginationStyle} aria-label="Pagination">

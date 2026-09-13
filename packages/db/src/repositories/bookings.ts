@@ -1,4 +1,10 @@
 import type { PoolClient } from "pg";
+// A losing concurrent INSERT/UPDATE against
+// `bookings_site_id_starts_at_confirmed_idx` surfaces as Postgres'
+// unique-violation SQLSTATE (ADR-0006, applied to slot exclusivity rather
+// than a version counter) — classified by the package-level helper so the
+// SQLSTATE itself is written down exactly once (KAN-1272).
+import { isUniqueViolation } from "../pg-errors.js";
 
 export type BookingStatus = "confirmed" | "canceled";
 
@@ -53,13 +59,6 @@ function rowToBooking(row: RawBookingRow): Booking {
     createdAt: row.created_at,
     canceledAt: row.canceled_at,
   };
-}
-
-/** Postgres' unique-violation SQLSTATE — how a losing concurrent INSERT/UPDATE against `bookings_site_id_starts_at_confirmed_idx` actually surfaces (ADR-0006, applied to slot exclusivity rather than a version counter). */
-const UNIQUE_VIOLATION = "23505";
-
-function isUniqueViolation(error: unknown): boolean {
-  return typeof error === "object" && error !== null && "code" in error && (error as { code?: unknown }).code === UNIQUE_VIOLATION;
 }
 
 export type CreateBookingResult = { ok: true; booking: Booking } | { ok: false; reason: "slot_taken" };

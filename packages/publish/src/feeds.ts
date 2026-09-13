@@ -21,9 +21,17 @@ function pageUrl(baseUrl: string, slug: string): string {
   return slug === "home" ? `${baseUrl}/` : `${baseUrl}/${slug}/`;
 }
 
+/**
+ * KAN-1262: trailing-slashed, exactly like `pageUrl` above. Astro builds
+ * in directory format, so a post's route is really
+ * `${detailPage.slug}/${post.slug}/index.html` — the slashless form is a
+ * bare directory path, which only resolves via a redirect. A feed's
+ * `<link>`/`<guid>` and a sitemap `<loc>` are canonical permalinks, so
+ * they name the canonical form directly.
+ */
 function postUrl(baseUrl: string, detailPage: PageDocument | undefined, post: PostDocument): string | undefined {
   if (!detailPage) return undefined;
-  return `${baseUrl}/${detailPage.slug}/${post.slug}`;
+  return `${baseUrl}/${detailPage.slug}/${post.slug}/`;
 }
 
 /** The first page (in document order) carrying a `productdetail` block — mirrors `findPostDetailPage` for the catalogue's own per-product URL (KAN-1244 / ADR-0018). */
@@ -31,9 +39,10 @@ function findProductDetailPage(pages: PageDocument[]): PageDocument | undefined 
   return pages.find((page) => page.blocks.some((block) => block.type === PRODUCTDETAIL_BLOCK_TYPE));
 }
 
+/** Trailing-slashed for the same reason `postUrl` above is (KAN-1262). */
 function productUrl(baseUrl: string, detailPage: PageDocument | undefined, product: ProductDocument): string | undefined {
   if (!detailPage) return undefined;
-  return `${baseUrl}/${detailPage.slug}/${product.slug}`;
+  return `${baseUrl}/${detailPage.slug}/${product.slug}/`;
 }
 
 /**

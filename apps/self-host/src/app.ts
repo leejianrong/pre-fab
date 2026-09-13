@@ -1095,7 +1095,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
       return reply.status(404).send({ error: { code: "not_found", message: "not found" } });
     }
     const wildcardPath = request.url.split("?")[0]?.replace(/^\//, "") ?? "";
-    return serveBundleFile(bundleDir, wildcardPath, reply);
+    return serveBundleFile(bundleDir, wildcardPath, reply, request.url);
   });
 
   return app;
