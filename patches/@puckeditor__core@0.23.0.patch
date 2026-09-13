@@ -1,0 +1,143 @@
+diff --git a/dist/chunk-55V3NZVF.mjs b/dist/chunk-55V3NZVF.mjs
+index 01fc32e03adc11d014291a99cc8dbee1806880f8..61ece0cb2e5f5ba292b5e093874e80f127881e11 100644
+--- a/dist/chunk-55V3NZVF.mjs
++++ b/dist/chunk-55V3NZVF.mjs
+@@ -12593,9 +12593,23 @@ var Canvas = () => {
+   useEffect26(() => {
+     const { height: frameHeight } = getFrameDimensions();
+     if (viewports.current.height === "auto") {
+-      setZoomConfig(__spreadProps(__spreadValues({}, zoomConfig), {
+-        rootHeight: frameHeight / zoomConfig.zoom
+-      }));
++      // pre-fab patch (KAN-1261): frameHeight is 0 whenever the canvas
++      // frame ref isn't measurable yet (unmounted, or measured before
++      // layout settles — see getZoomConfig's own matching guard in
++      // chunk-K2LNXU54.mjs), and zoomConfig.zoom can independently be 0
++      // for the same reason right after a re-render. Either alone is
++      // harmless; both at once divide 0/0 = NaN, which React then rejects
++      // as a raw NaN `height` style on #puck-canvas-root (a real
++      // console.error in dev, and an invalid style write either way).
++      // Skipping the update here just leaves rootHeight at its last valid
++      // value for one frame — the next real measurement (this effect's own
++      // `zoomConfig.zoom` dependency, or getFrameDimensions once the frame
++      // has real layout) supersedes it exactly as before.
++      if (frameHeight > 0 && zoomConfig.zoom > 0) {
++        setZoomConfig(__spreadProps(__spreadValues({}, zoomConfig), {
++          rootHeight: frameHeight / zoomConfig.zoom
++        }));
++      }
+     }
+   }, [zoomConfig.zoom, getFrameDimensions, setZoomConfig]);
+   useEffect26(() => {
+diff --git a/dist/chunk-K2LNXU54.mjs b/dist/chunk-K2LNXU54.mjs
+index 81075c39650a79a9eccf7cefffdc7a65cbd00c97..03c29d0a90e70edb09f59c2e8e27e31889d7fce6 100644
+--- a/dist/chunk-K2LNXU54.mjs
++++ b/dist/chunk-K2LNXU54.mjs
+@@ -1605,6 +1605,19 @@ var RESET_ZOOM_SMALLER_THAN_FRAME = true;
+ var getZoomConfig = (uiViewport, frame, zoom) => {
+   const box = getBox(frame);
+   const { width: frameWidth, height: frameHeight } = box.contentBox;
++  // pre-fab patch (KAN-1261): a frame measured before layout has settled
++  // (a 0x0 contentBox — transient right after this component mounts or
++  // its content is swapped, e.g. right after Save/Publish re-renders the
++  // canvas) must not feed the zoom math below: it would compute a zoom of
++  // 0, which the caller's own rootHeight effect then divides frameHeight
++  // by, landing on 0/0 = NaN and setting #puck-canvas-root's CSS height to
++  // the literal value NaN. Skip this pass and keep the current zoom —
++  // Puck's own ResizeObserver and this hook's other effect dependencies
++  // both re-run once the frame is actually laid out, so this only ever
++  // skips one meaningless measurement.
++  if (frameWidth <= 0 || frameHeight <= 0) {
++    return { autoZoom: zoom, rootHeight: 0, zoom };
++  }
+   const viewportHeight = uiViewport.height === "auto" ? frameHeight : uiViewport.height;
+   let rootHeight = 0;
+   let autoZoom = 1;
+diff --git a/dist/index.js b/dist/index.js
+index aebc9c0e4d4eed1a407ea72d0d1469d16544d834..29e07138b1754fd3ace96bd754514a0b894ec691 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -3780,6 +3780,19 @@ var init_get_zoom_config = __esm({
+     getZoomConfig = (uiViewport, frame, zoom) => {
+       const box = getBox(frame);
+       const { width: frameWidth, height: frameHeight } = box.contentBox;
++      // pre-fab patch (KAN-1261): a frame measured before layout has settled
++      // (a 0x0 contentBox — transient right after this component mounts or
++      // its content is swapped, e.g. right after Save/Publish re-renders the
++      // canvas) must not feed the zoom math below: it would compute a zoom
++      // of 0, which the caller's own rootHeight effect then divides
++      // frameHeight by, landing on 0/0 = NaN and setting #puck-canvas-root's
++      // CSS height to the literal value NaN. Skip this pass and keep the
++      // current zoom — Puck's own ResizeObserver and this hook's other
++      // effect dependencies both re-run once the frame is actually laid
++      // out, so this only ever skips one meaningless measurement.
++      if (frameWidth <= 0 || frameHeight <= 0) {
++        return { autoZoom: zoom, rootHeight: 0, zoom };
++      }
+       const viewportHeight = uiViewport.height === "auto" ? frameHeight : uiViewport.height;
+       let rootHeight = 0;
+       let autoZoom = 1;
+@@ -18729,9 +18742,16 @@ var Canvas = () => {
+   (0, import_react102.useEffect)(() => {
+     const { height: frameHeight } = getFrameDimensions();
+     if (viewports.current.height === "auto") {
+-      setZoomConfig(__spreadProps(__spreadValues({}, zoomConfig), {
+-        rootHeight: frameHeight / zoomConfig.zoom
+-      }));
++      // pre-fab patch (KAN-1261): see the matching guard in
++      // chunk-55V3NZVF.mjs's ESM build of this same effect for the full
++      // explanation — frameHeight/zoomConfig.zoom can both independently
++      // be 0 right after a re-render, and 0/0 = NaN then lands on
++      // #puck-canvas-root's CSS height as a raw NaN.
++      if (frameHeight > 0 && zoomConfig.zoom > 0) {
++        setZoomConfig(__spreadProps(__spreadValues({}, zoomConfig), {
++          rootHeight: frameHeight / zoomConfig.zoom
++        }));
++      }
+     }
+   }, [zoomConfig.zoom, getFrameDimensions, setZoomConfig]);
+   (0, import_react102.useEffect)(() => {
+diff --git a/dist/no-external.js b/dist/no-external.js
+index af3fa6755f42679605e6805aa46fdeb90df48281..19c5eab94a1d277df09225a2b693054850d97fbf 100644
+--- a/dist/no-external.js
++++ b/dist/no-external.js
+@@ -3780,6 +3780,19 @@ var init_get_zoom_config = __esm({
+     getZoomConfig = (uiViewport, frame, zoom) => {
+       const box = getBox(frame);
+       const { width: frameWidth, height: frameHeight } = box.contentBox;
++      // pre-fab patch (KAN-1261): a frame measured before layout has settled
++      // (a 0x0 contentBox — transient right after this component mounts or
++      // its content is swapped, e.g. right after Save/Publish re-renders the
++      // canvas) must not feed the zoom math below: it would compute a zoom
++      // of 0, which the caller's own rootHeight effect then divides
++      // frameHeight by, landing on 0/0 = NaN and setting #puck-canvas-root's
++      // CSS height to the literal value NaN. Skip this pass and keep the
++      // current zoom — Puck's own ResizeObserver and this hook's other
++      // effect dependencies both re-run once the frame is actually laid
++      // out, so this only ever skips one meaningless measurement.
++      if (frameWidth <= 0 || frameHeight <= 0) {
++        return { autoZoom: zoom, rootHeight: 0, zoom };
++      }
+       const viewportHeight = uiViewport.height === "auto" ? frameHeight : uiViewport.height;
+       let rootHeight = 0;
+       let autoZoom = 1;
+@@ -18729,9 +18742,16 @@ var Canvas = () => {
+   (0, import_react102.useEffect)(() => {
+     const { height: frameHeight } = getFrameDimensions();
+     if (viewports.current.height === "auto") {
+-      setZoomConfig(__spreadProps(__spreadValues({}, zoomConfig), {
+-        rootHeight: frameHeight / zoomConfig.zoom
+-      }));
++      // pre-fab patch (KAN-1261): see the matching guard in
++      // chunk-55V3NZVF.mjs's ESM build of this same effect for the full
++      // explanation — frameHeight/zoomConfig.zoom can both independently
++      // be 0 right after a re-render, and 0/0 = NaN then lands on
++      // #puck-canvas-root's CSS height as a raw NaN.
++      if (frameHeight > 0 && zoomConfig.zoom > 0) {
++        setZoomConfig(__spreadProps(__spreadValues({}, zoomConfig), {
++          rootHeight: frameHeight / zoomConfig.zoom
++        }));
++      }
+     }
+   }, [zoomConfig.zoom, getFrameDimensions, setZoomConfig]);
+   (0, import_react102.useEffect)(() => {
