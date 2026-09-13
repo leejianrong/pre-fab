@@ -8,6 +8,7 @@ import { launchChromium } from "./chromium.js";
 import { ConsoleErrorBuffer } from "./console-buffer.js";
 import { createSession, appendResultLog } from "./session.js";
 import { executeCommand, type DriverState } from "./commands.js";
+import { acquireFifoLock, type FifoLock } from "./fifo-lock.js";
 
 /**
  * tools/uat-driver's REPL: launches one browser+context+page for the whole
@@ -76,6 +77,15 @@ async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   const session = await createSession(args.sessionsRoot, args.session);
 
+  // KAN-1270: refuses to start (rather than silently corrupting a session
+  // — see fifo-lock.ts's own comment) if another live process already
+  // holds this FIFO path. Acquired before touching the FIFO itself, and
+  // before the (much more expensive) browser launch below, so a doomed
+  // run fails fast.
+  const fifoLock: FifoLock | undefined = args.fifo ? acquireFifoLock(args.fifo) : undefined;
+  const releaseFifoLock = () => fifoLock?.release();
+  process.once("exit", releaseFifoLock);
+
   const browser = await launchChromium();
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   const page = await context.newPage();
@@ -104,6 +114,22 @@ async function main(): Promise<void> {
     rl.close();
     await context.close();
     await browser.close();
+  }
+
+  // A background FIFO-driven run (README's "adaptive driving" section) is
+  // normally stopped by SIGINT/SIGTERM rather than a `quit` command reaching
+  // it through the FIFO — without an explicit handler here Node's default
+  // disposition for those still ends the process, but skips the `await`s
+  // above, which can leave the browser process (and, more importantly, the
+  // FIFO lock file) behind. `process.exit()` after `shutdown()` finishes
+  // still fires the `"exit"` listener above, so the lock gets released
+  // either way.
+  for (const signal of ["SIGINT", "SIGTERM"] as const) {
+    process.once(signal, () => {
+      shutdown()
+        .catch((error) => process.stderr.write(`[uat-driver] error during ${signal} shutdown: ${String(error)}\n`))
+        .finally(() => process.exit(0));
+    });
   }
 
   for await (const rawLine of rl) {

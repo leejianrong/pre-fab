@@ -131,6 +131,11 @@ async function locateAnywhere(
   return { locator: build(page.frameLocator("iframe").first()), frame: "iframe" };
 }
 
+/** True for a target `fill` treats as an explicit selector (passed straight to `.locator()`) rather than a label to resolve via `getByLabel`. */
+function isExplicitSelector(trimmed: string): boolean {
+  return KNOWN_ENGINE_PREFIX.test(trimmed) || UNAMBIGUOUS_CSS_START.test(trimmed);
+}
+
 /**
  * `fill` always targets a form control, so its default resolution for a
  * plain-prose argument is deliberately not the same as `click`/`wait-for`'s
@@ -146,13 +151,52 @@ async function locateAnywhere(
  * plain label string here goes through that instead. An explicit
  * `css=`/other engine prefix, or a leading `.`/`#`/`[`, still means what it
  * always means.
+ *
+ * KAN-1270: deliberately no `.first()` on the label-match branch anymore —
+ * see `resolveFormControlLocator`, which needs every match, not just
+ * whichever comes first in DOM order.
  */
 function buildFillLocator(root: LocatorRoot, target: string): Locator {
   const trimmed = target.trim();
-  if (KNOWN_ENGINE_PREFIX.test(trimmed) || UNAMBIGUOUS_CSS_START.test(trimmed)) {
-    return root.locator(trimmed).first();
+  if (isExplicitSelector(trimmed)) return root.locator(trimmed).first();
+  return root.getByLabel(trimmed, { exact: false });
+}
+
+const FORM_CONTROL_TAGS = new Set(["INPUT", "TEXTAREA", "SELECT"]);
+
+/**
+ * KAN-1270: `getByLabel(..., { exact: false })` matches on substring, so a
+ * target string that's a substring of some *container's* own `aria-label`
+ * (e.g. `fill Domain ...` matching a `SideSheet`'s
+ * `aria-label="Custom domains"` before it matches the real `<input>`
+ * nested inside that sheet) can resolve to a non-form-control element.
+ * Filling that silently does nothing useful — Playwright's actionability
+ * checks accept a plain `<div>` for `.click()`, so the command reported
+ * `ok:true` with nothing actually typed, no error surfaced.
+ *
+ * Walks every match in DOM order and returns the first one that's an
+ * actual `input`/`textarea`/`select`. Fails loudly — never falls back to
+ * the wrong element — when there's at least one label match but none of
+ * them is a form control, since silently guessing is exactly the bug this
+ * exists to fix. Zero matches is left alone (returns `.first()` on the
+ * empty locator) so the caller's own `.click()`/timeout still reports the
+ * normal "not found" error instead of a confusing double message.
+ */
+async function resolveFormControlLocator(candidates: Locator, target: string): Promise<Locator> {
+  const count = await candidates.count();
+  if (count === 0) return candidates.first();
+
+  for (let i = 0; i < count; i++) {
+    const nth = candidates.nth(i);
+    const tagName = await nth.evaluate((el) => el.tagName).catch(() => null);
+    if (tagName && FORM_CONTROL_TAGS.has(tagName)) return nth;
   }
-  return root.getByLabel(trimmed, { exact: false }).first();
+
+  throw new Error(
+    `"${target}" matched ${count} element(s) by label, but none of them is an input/textarea/select — ` +
+      "refusing to fill a non-form-control element (e.g. a dialog's own aria-label matching before the " +
+      "real field nested inside it). Use an explicit selector (css=..., #id, [name=...], etc.) to target it directly.",
+  );
 }
 
 export async function executeCommand(state: DriverState, verb: string, rest: string): Promise<CommandOutcome> {
@@ -206,7 +250,12 @@ export async function executeCommand(state: DriverState, verb: string, rest: str
       if (!first || !remainder) {
         return { ok: false, command: verb, error: "usage: fill <selector-or-label> <text> (quote the target if it has spaces)" };
       }
-      const { locator, frame } = await locateAnywhere(state.page, (root) => buildFillLocator(root, first));
+      const { locator: candidateLocator, frame } = await locateAnywhere(state.page, (root) => buildFillLocator(root, first));
+      // KAN-1270: an explicit selector was already narrowed to `.first()`
+      // inside buildFillLocator and is trusted as-is; a label match still
+      // needs filtering down to an actual form control (see
+      // resolveFormControlLocator's own comment).
+      const locator = isExplicitSelector(first) ? candidateLocator : await resolveFormControlLocator(candidateLocator, first);
       // Real input pipeline — click to focus, select the existing value,
       // then type the replacement one keystroke at a time via
       // `pressSequentially` (Playwright's real-keyboard-event API, the

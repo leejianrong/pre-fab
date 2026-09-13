@@ -17,12 +17,27 @@ interface RawPostRow {
   status: PostStatus;
 }
 
-// node-postgres parses a `date`-typed column into a JS Date (midnight UTC)
-// rather than handing back the "YYYY-MM-DD" string Postgres itself stores
-// — reformat it here so PostDocument.date always matches the string
-// PostDocumentSchema validates (and what a hand-edited file round-trips).
+// node-postgres (via pg-types' `postgres-date`) parses a `date`-typed
+// column into a JS Date constructed as *local* midnight — `new Date(year,
+// month, day)`, deliberately, per that package's own comment — not UTC
+// midnight, rather than handing back the "YYYY-MM-DD" string Postgres
+// itself stores. Reformat it here so PostDocument.date always matches the
+// string PostDocumentSchema validates (and what a hand-edited file
+// round-trips).
+//
+// KAN-1252: this used to read `value.toISOString().slice(0, 10)`, which
+// reinterprets those local-midnight components as UTC — under any
+// positive UTC offset (TZ=Asia/Singapore, UTC+8) that shifts local
+// midnight back to the *previous* UTC day, silently returning the wrong
+// date. Reading the Date back out via its local getters (the same
+// locality `postgres-date` constructed it with) round-trips exactly,
+// independent of the process's TZ.
 function formatDate(value: string | Date): string {
-  return value instanceof Date ? value.toISOString().slice(0, 10) : value;
+  if (!(value instanceof Date)) return value;
+  const year = String(value.getFullYear()).padStart(4, "0");
+  const month = String(value.getMonth() + 1).padStart(2, "0");
+  const day = String(value.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function rowToPost(row: RawPostRow): PostDocument {

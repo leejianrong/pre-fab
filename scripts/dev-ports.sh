@@ -82,6 +82,20 @@ set_env_var PREFAB_EDITOR_HOST_PORT "$new_editor_port"
 set_env_var PREFAB_API_HOST_PORT "$new_api_port"
 set_env_var PREFAB_POSTGRES_PORT "$new_pg_port"
 
+# KAN-1273: docker-compose.yml's own `api` service already recomputes
+# EDITOR_ORIGIN from PREFAB_EDITOR_HOST_PORT at `docker compose up` time
+# (its `environment:` block interpolates `${PREFAB_EDITOR_HOST_PORT}`), so
+# this is redundant for that path — but apps/api/src/server.ts also loads
+# .env directly via `dotenv/config` for native (non-Docker) `pnpm run dev`,
+# which has no such recomputation and would otherwise keep CORS scoped to
+# whatever stale port EDITOR_ORIGIN last held, silently breaking every
+# editor-to-API call. Written unconditionally (not just when the port
+# changed) so a worktree's .env is correct even the first time this script
+# runs. Same "harmless but moot" reasoning as PREFAB_EDITOR_HOST_PORT
+# itself applies when docker-compose.override.yml's Traefik setup is in
+# play — see this file's own header comment.
+set_env_var EDITOR_ORIGIN "http://localhost:${new_editor_port}"
+
 # Host-facing URLs that reference the API's *host* port directly (never the
 # in-container one) — kept in sync so the browser, a natively-run CLI/MCP,
 # and the published-site runtime all still point at wherever the API

@@ -30,6 +30,33 @@ async function allProducts(ctx: Parameters<Command<ExportBundleArgs, ExportBundl
   return all;
 }
 
+/**
+ * KAN-1269: an ENOENT here almost always means `bundleStoreDir` (the
+ * CLI's `BUNDLE_STORE_DIR`) doesn't point at a directory this process can
+ * actually read/write — most commonly because it's still the CLI's
+ * default of `.data/bundles`, resolved (as of KAN-1269) against wherever
+ * the CLI was invoked from, rather than the directory `docker-compose.yml`
+ * bind-mounts for the API container in the local Docker dev stack (see
+ * `.env`'s own `BUNDLE_STORE_DIR`, and `apps/self-host/README.md`). The
+ * raw Node error just names a path with no context for why it's wrong, so
+ * repoint the message at the actual fix rather than leaving the caller to
+ * guess from a bare ENOENT. Any other error is rethrown unchanged.
+ */
+function rethrowWithBundleStoreDirHint(bundleStoreDir: string, error: unknown): never {
+  const isEnoent = typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT";
+  if (!isEnoent) throw error;
+  throw new Error(
+    `export-bundle failed reading/writing bundle content at BUNDLE_STORE_DIR="${bundleStoreDir}" (ENOENT). ` +
+      "If you're running this against the local Docker dev stack (`make dev`/`make up`), BUNDLE_STORE_DIR must " +
+      "point at the same directory docker-compose.yml bind-mounts for the API container — by default that's " +
+      "this repo's .data/bundles (see .env's BUNDLE_STORE_DIR), not a path relative to wherever this command " +
+      "happens to run from. Set BUNDLE_STORE_DIR explicitly, e.g. " +
+      "BUNDLE_STORE_DIR=\"$(git rev-parse --show-toplevel)/.data/bundles\" prefab export-bundle ... " +
+      "See apps/self-host/README.md.",
+    { cause: error },
+  );
+}
+
 export interface ExportBundleArgs {
   siteId: string;
   /** Where the self-contained static output (plus manifest.json) lands. */
@@ -88,21 +115,30 @@ async function runExportBundle(
     pages: pageRefs.map((p) => ({ id: p.id, slug: p.slug })),
   };
 
-  const built = await buildSiteBundle({
-    site: siteManifest,
-    theme,
-    pages,
-    posts,
-    products,
-    baseUrl: args.baseUrl,
-    runtimeApiUrl: args.runtimeApiUrl ?? "http://localhost:8080",
-    turnstileSiteKey: args.turnstileSiteKey,
-    availabilityRule: availabilityRule ? { ...availabilityRule, siteId: site.id } : null,
-    bundleStoreDir: args.bundleStoreDir,
-  });
+  let built: Awaited<ReturnType<typeof buildSiteBundle>>;
+  try {
+    built = await buildSiteBundle({
+      site: siteManifest,
+      theme,
+      pages,
+      posts,
+      products,
+      baseUrl: args.baseUrl,
+      runtimeApiUrl: args.runtimeApiUrl ?? "http://localhost:8080",
+      turnstileSiteKey: args.turnstileSiteKey,
+      availabilityRule: availabilityRule ? { ...availabilityRule, siteId: site.id } : null,
+      bundleStoreDir: args.bundleStoreDir,
+    });
+  } catch (error) {
+    rethrowWithBundleStoreDirHint(args.bundleStoreDir, error);
+  }
 
   await mkdir(args.outDir, { recursive: true });
-  await cp(built.bundlePath, args.outDir, { recursive: true });
+  try {
+    await cp(built.bundlePath, args.outDir, { recursive: true });
+  } catch (error) {
+    rethrowWithBundleStoreDirHint(args.bundleStoreDir, error);
+  }
 
   const exportManifest = buildExportManifest({ schemaVersion: site.schemaVersion });
   await writeFile(path.join(args.outDir, "manifest.json"), `${JSON.stringify(exportManifest, null, 2)}\n`, "utf8");

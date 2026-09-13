@@ -1,5 +1,6 @@
 #!/usr/bin/env -S node --import tsx
 import { readFile } from "node:fs/promises";
+import path from "node:path";
 import { Command as Program } from "commander";
 import {
   accountSignup,
@@ -99,8 +100,19 @@ async function resolveContext(): Promise<CommandContext> {
   return createContext({ apiUrl, cookie: config.cookie });
 }
 
+// KAN-1269: resolved to an absolute path up front, the same way
+// apps/api/src/server.ts resolves its own identically-named env var — not
+// just cosmetic. `export-bundle`/`build`/`preview` run the actual Astro
+// build in a subprocess (build-worker.ts) that `process.chdir()`s into a
+// scratch workspace mid-build before writing into this directory; a
+// *relative* bundleStoreDir would silently resolve against that scratch
+// cwd instead of wherever this CLI was invoked from, and by the time
+// control returns here that scratch dir is already deleted — surfacing as
+// an ENOENT against a path that looks nonsensical rather than as "you're
+// pointed at the wrong directory." Resolving here, once, keeps one
+// absolute path meaning the same directory everywhere it's used.
 function bundleStoreDir(): string {
-  return process.env.BUNDLE_STORE_DIR ?? ".data/bundles";
+  return path.resolve(process.env.BUNDLE_STORE_DIR ?? ".data/bundles");
 }
 
 program
