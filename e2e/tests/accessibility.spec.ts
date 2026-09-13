@@ -80,4 +80,16 @@ test.describe("editor UI accessibility (R6, KAN-1219)", () => {
     await page.getByRole("dialog", { name: /theme editor/i }).waitFor({ timeout: 10_000 });
     await runAxeOn("theme editor side sheet", page);
   });
+
+  // KAN-1263: the page picker/navigator added to close out "no way to
+  // create or navigate between pages in the editor" — same SideSheet
+  // pattern as the theme editor above, checked the same way.
+  test("pages side sheet", async ({ page }) => {
+    const { site } = await authenticatedContext("axe-pages");
+    await loginInBrowser(page);
+    await openSiteByName(page, site.site.name);
+    await page.getByRole("button", { name: /^pages$/i }).click();
+    await page.getByRole("dialog", { name: /site pages/i }).waitFor({ timeout: 10_000 });
+    await runAxeOn("pages side sheet", page);
+  });
 });
