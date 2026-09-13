@@ -1,7 +1,14 @@
 import { useEffect, useState } from "react";
-import { ApiClientError, type PageDocument, type Submission } from "@prefab/api-client";
+import { ApiClientError, type PageDocument, type Submission, type WebhookDelivery } from "@prefab/api-client";
 import { api } from "./api.js";
-import { Card, FilledButton, OutlinedButton, SideSheet, TextButton, TextField } from "./ui/index.js";
+import { Card, FilledButton, OutlinedButton, SideSheet, StatusBadge, TextButton, TextField } from "./ui/index.js";
+
+/** Mirrors PaymentsPanel's PAYMENT_STATUS_TONE — same three-tone vocabulary (StatusBadge.tsx) applied to a delivery's own status. */
+const DELIVERY_STATUS_TONE: Record<WebhookDelivery["status"], "positive" | "neutral" | "negative"> = {
+  success: "positive",
+  pending: "neutral",
+  failed: "negative",
+};
 
 /**
  * SLICES.md Slice 6 demo: "the owner... sees the submission in their
@@ -45,17 +52,25 @@ export function SubmissionsPanel({ siteId, page, onClose }: { siteId: string; pa
 
 function FormSubmissions({ siteId, formId, onBack }: { siteId: string; formId: string; onBack?: () => void }) {
   const [submissions, setSubmissions] = useState<Submission[] | null>(null);
+  const [deliveries, setDeliveries] = useState<WebhookDelivery[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notifyEmail, setNotifyEmail] = useState("");
   const [webhookUrl, setWebhookUrl] = useState("");
+  const [webhookSecret, setWebhookSecret] = useState("");
   const [savingSettings, setSavingSettings] = useState(false);
   const [busySubmissionId, setBusySubmissionId] = useState<string | null>(null);
 
   async function refresh() {
-    const [fws, list] = await Promise.all([api.getForm(siteId, formId), api.listSubmissions(siteId, formId)]);
+    const [fws, list, deliveryList] = await Promise.all([
+      api.getForm(siteId, formId),
+      api.listSubmissions(siteId, formId),
+      api.listWebhookDeliveries(siteId, formId, { limit: 20 }),
+    ]);
     setSubmissions(list.submissions);
     setNotifyEmail(fws.settings?.notifyEmail ?? "");
     setWebhookUrl(fws.settings?.webhookUrl ?? "");
+    setWebhookSecret(fws.settings?.webhookSecret ?? "");
+    setDeliveries(deliveryList.deliveries);
   }
 
   useEffect(() => {
@@ -70,6 +85,7 @@ function FormSubmissions({ siteId, formId, onBack }: { siteId: string; formId: s
       await api.configureForm(siteId, formId, {
         notifyEmail: notifyEmail.trim() === "" ? null : notifyEmail.trim(),
         webhookUrl: webhookUrl.trim() === "" ? null : webhookUrl.trim(),
+        webhookSecret: webhookSecret.trim() === "" ? null : webhookSecret.trim(),
       });
     } catch (err) {
       setError(err instanceof ApiClientError ? err.message : err instanceof Error ? err.message : String(err));
@@ -121,6 +137,14 @@ function FormSubmissions({ siteId, formId, onBack }: { siteId: string; formId: s
           <h3 className="pf-subsection-title">Notifications</h3>
           <TextField label="Notify email" type="email" placeholder="you@example.com" value={notifyEmail} onChange={setNotifyEmail} />
           <TextField label="Webhook URL" type="url" placeholder="https://…" value={webhookUrl} onChange={setWebhookUrl} />
+          <TextField
+            label="Webhook secret"
+            type="password"
+            placeholder="Optional — sent as the x-prefab-webhook-secret header"
+            value={webhookSecret}
+            onChange={setWebhookSecret}
+            supportingText="Lets your receiving endpoint verify a delivery really came from pre-fab."
+          />
           <FilledButton type="submit" disabled={savingSettings}>
             {savingSettings ? "Saving…" : "Save"}
           </FilledButton>
@@ -133,6 +157,45 @@ function FormSubmissions({ siteId, formId, onBack }: { siteId: string; formId: s
       </div>
 
       {error ? <p className="pf-error-text">{error}</p> : null}
+
+      {webhookUrl.trim() !== "" || (deliveries !== null && deliveries.length > 0) ? (
+        <div style={{ display: "grid", gap: "0.5rem" }}>
+          <h3 className="pf-subsection-title">Webhook deliveries</h3>
+          {deliveries === null ? (
+            <p className="pf-supporting-text">Loading…</p>
+          ) : deliveries.length === 0 ? (
+            <p className="pf-supporting-text">No delivery attempts yet — one appears here the next time this form is submitted.</p>
+          ) : (
+            <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "grid", gap: "0.4rem" }}>
+              {deliveries.map((delivery) => (
+                <li key={delivery.id}>
+                  <Card style={{ padding: "0.6rem", display: "grid", gap: "0.3rem" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                      <StatusBadge tone={DELIVERY_STATUS_TONE[delivery.status]}>{delivery.status}</StatusBadge>
+                      <span className="pf-supporting-text" style={{ flex: 1 }}>
+                        {delivery.attempt} attempt{delivery.attempt === 1 ? "" : "s"}
+                      </span>
+                      <span className="pf-supporting-text" style={{ margin: 0 }}>
+                        {new Date(delivery.deliveredAt ?? delivery.createdAt).toLocaleString()}
+                      </span>
+                    </div>
+                    {delivery.status === "pending" ? (
+                      <span className="pf-supporting-text" style={{ margin: 0 }}>
+                        Next retry {new Date(delivery.nextAttemptAt).toLocaleString()}
+                      </span>
+                    ) : null}
+                    {delivery.lastError ? (
+                      <span className="pf-error-text" style={{ margin: 0, wordBreak: "break-word" }}>
+                        {delivery.lastError}
+                      </span>
+                    ) : null}
+                  </Card>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      ) : null}
 
       {submissions === null ? (
         <p className="pf-supporting-text">Loading…</p>
