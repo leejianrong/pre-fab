@@ -203,6 +203,13 @@ BUNDLE_DIR=../../site DATA_DIR=./data npm run start
 See `apps/self-host/README.md` for configuration, Docker, backups and
 upgrades.
 
+`prefab export-bundle`/`prefab eject` read `BUNDLE_STORE_DIR` (default
+`.data/bundles`, resolved against wherever you run the CLI from). Against
+the local Docker dev stack, that must be the same directory
+`docker-compose.yml` bind-mounts for the `api` container — this repo's
+`.data/bundles` — or the build fails with an ENOENT; run these commands
+from the repo root, or set `BUNDLE_STORE_DIR` explicitly.
+
 ## Tests
 
 ```bash

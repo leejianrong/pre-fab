@@ -125,7 +125,11 @@ services:
     depends_on:
       api:
         condition: service_healthy
-    command: sh -c "pnpm install --filter '!@prefab/self-host' --frozen-lockfile --config.confirmModulesPurge=false --store-dir=/pnpm-store && pnpm --filter @prefab/editor run dev"
+    # scripts/check-editor-vite.sh (KAN-1266): fails loudly if a stale
+    # node_modules_editor/node_modules_root/pnpm-store volume left
+    # node_modules/vite a dangling symlink, rather than letting Vite start
+    # anyway and silently serve a blank page to real browsers.
+    command: sh -c "pnpm install --filter '!@prefab/self-host' --frozen-lockfile --config.confirmModulesPurge=false --store-dir=/pnpm-store && ./scripts/check-editor-vite.sh && pnpm --filter @prefab/editor run dev"
 
 volumes:
   pgdata:

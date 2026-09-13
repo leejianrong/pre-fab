@@ -110,6 +110,16 @@ accessible-name-based and finds the actual input — the same way this
 codebase's own `e2e/tests/helpers.ts`'s `loginInBrowser` already fills it
 (`page.getByLabel(/seeded account email/i)`).
 
+`getByLabel(..., { exact: false })` matches on substring, which can also
+match a *container's* own `aria-label` — e.g. `fill Domain ...` matching a
+`SideSheet`'s `aria-label="Custom domains"` before it matches the real
+`<input>` nested inside that sheet (found live, KAN-1250). `fill` filters
+every label match down to the first actual `input`/`textarea`/`select`
+(`commands.ts`'s `resolveFormControlLocator`) rather than trusting
+whichever comes first in DOM order, and fails loudly — instead of the
+previous silent `ok:true` with nothing typed — if there's a label match
+but none of them is a form control.
+
 Only `.`/`#`/`[` count as "unambiguous CSS" on purpose — not "contains any
 CSS-looking punctuation". Ordinary prose is full of periods and colons
 ("someone@example.com", "Total: $19.99", "Welcome."); an earlier version
@@ -241,6 +251,47 @@ separate tool call either, every result is also mirrored to
 `sessions/<id>/results.jsonl` — `tail`/`Read` that file to see what
 happened after each command, instead of trying to capture the background
 process's stdout directly.
+
+**One driver per FIFO path, enforced.** Two driver processes pointed at
+the same `--fifo` path (a relaunch after an agent thought a start had
+failed, or two scenario runs reusing a stale path) would otherwise both
+hold their own write end open on it and race every external write —
+whichever process's `readline` happens to read a given line wins,
+nondeterministically, even if the "winner" is a process that already
+crashed. `--fifo` acquires a PID-file lock at `<fifo-path>.lock` on
+startup (`src/fifo-lock.ts`) and refuses to start with a clear error if
+another live process already holds it, instead of starting anyway and
+silently corrupting the session. A lock left behind by a process that's no
+longer running is detected (`process.kill(pid, 0)`) and reclaimed
+automatically. Use a distinct `--fifo` path per concurrent session — the
+lock doesn't (and can't) make one FIFO safe for two simultaneous sessions,
+it just stops that from failing silently.
+
+## Known gaps under concurrent scenario runs
+
+Two more KAN-1250-found gaps that are real but out of scope to fix here —
+work around them rather than assume they're handled:
+
+- **Screenshots can come back blank under Chromium resource contention.**
+  When several scenario subagents run concurrently, a `screenshot` can
+  capture a blank/unrendered frame even though the preceding `wait-for`
+  already reported the target visible — a rendering-thread timing issue
+  under CPU/GPU contention between multiple Chromium instances, not a bug
+  in `wait-for` itself. If a screenshot looks suspiciously blank, retake it
+  (a second `screenshot` a moment later) before concluding the page itself
+  is broken.
+- **`~/.prefab/config.json` is shared machine-wide.** The CLI's own auth
+  config (`apps/cli/src/config.ts`) has no concept of concurrent sessions —
+  two scenario agents both running `prefab login`/`prefab signup` (or a
+  scenario's own setup shelling out to the CLI) clobber each other's
+  session cookie in the same file. This driver's own browser-based `fill
+  ...`/`click ...` login flow isn't affected (it drives the editor's own
+  cookie-setting login screen, not the CLI), but any scenario that also
+  shells out to the `prefab` CLI alongside driving the browser should
+  capture the token/cookie explicitly (`prefab token create`, or read the
+  session cookie the login screen set) and pass it via `--token`/an
+  explicit cookie header rather than relying on `~/.prefab/config.json`,
+  if another concurrent agent might also be authenticating.
 
 ## Writing a scenario for KAN-1250
 
