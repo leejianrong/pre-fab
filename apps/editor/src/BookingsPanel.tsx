@@ -224,8 +224,22 @@ function AvailabilitySection({ siteId }: { siteId: string }) {
               <legend className="pf-supporting-text" style={{ margin: 0, gridColumn: "1 / 2", gridRow: "1 / 2", padding: 0 }}>
                 {label}
               </legend>
-              <TimeField id={`availability-start-${i}`} label="Start" value={days[i]!.start} onChange={(v) => setDay(i, { start: v })} />
-              <TimeField id={`availability-end-${i}`} label="End" value={days[i]!.end} onChange={(v) => setDay(i, { end: v })} />
+              {/* Chromium (confirmed live, KAN-1257 follow-up / audit H5) doesn't
+                  treat a grid <fieldset>'s <legend> as an ordinary grid item
+                  for auto-placement purposes: the legend claims row 1 by
+                  itself, and the next two auto-placed children — these two
+                  TimeFields — start a fresh row 2 at columns 1 and 2, not row
+                  1's columns 2 and 3. That squeezed Start into the 6rem
+                  day-label column (too narrow for a native time input, ~140px
+                  min-content), which overflowed into End's box and read as a
+                  rendering glitch. Explicit placement sidesteps the
+                  legend/auto-placement interaction entirely. */}
+              <div style={{ gridColumn: "2 / 3", gridRow: "1 / 2" }}>
+                <TimeField id={`availability-start-${i}`} label="Start" value={days[i]!.start} onChange={(v) => setDay(i, { start: v })} />
+              </div>
+              <div style={{ gridColumn: "3 / 4", gridRow: "1 / 2" }}>
+                <TimeField id={`availability-end-${i}`} label="End" value={days[i]!.end} onChange={(v) => setDay(i, { end: v })} />
+              </div>
             </fieldset>
           ))}
         </div>

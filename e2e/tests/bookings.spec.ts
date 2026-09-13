@@ -268,6 +268,19 @@ test.describe("editor UI: Bookings panel (KAN-1257)", () => {
     await panel.getByLabel(/^timezone$/i).fill("UTC");
     await panel.locator("#availability-start-1").fill("09:00");
     await panel.locator("#availability-end-1").fill("17:00");
+
+    // Audit H5: the day-grouping <fieldset>/<legend> used to make Chromium
+    // auto-place both TimeFields into the legend's own narrow day-label
+    // column instead of the two wider columns meant for them — Start's box
+    // (96px) was too narrow for a native time input's own min-content width,
+    // so it visibly overflowed into End's box. Explicit grid placement
+    // (BookingsPanel.tsx) fixed it; pin Start ending strictly before End
+    // begins so a regression shows up as a failing assertion, not just a
+    // screenshot someone has to notice.
+    const startBox = await panel.locator("#availability-start-1").boundingBox();
+    const endBox = await panel.locator("#availability-end-1").boundingBox();
+    expect(startBox && endBox && startBox.x + startBox.width).toBeLessThan(endBox!.x);
+
     await panel.getByRole("button", { name: /^save availability$/i }).click();
     await expect(panel.getByText(/^saved$/i)).toBeVisible({ timeout: 10_000 });
 
