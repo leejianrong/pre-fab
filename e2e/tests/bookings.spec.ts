@@ -213,7 +213,15 @@ test("a booking spanning a DST transition shows the correct local time to both p
 
   const emails = (await (await fetch(`${API_URL}/v1/dev/emails?to=${encodeURIComponent("dst@example.com")}`)).json()) as Array<{ text: string }>;
   const confirmation = emails.find((e) => e.text.includes("You're booked"));
-  expect(confirmation?.text).toContain("2026-11-01T14:00:00.000Z");
+  // KAN-1259: the email shows a human-readable local time (via
+  // formatZonedDateTime, packages/runtime/src/timezone.ts), not the raw UTC
+  // instant asserted above via the JSON response's own `startsAt`. Same
+  // 14:00Z instant, converted to America/New_York's *post*-fall-back
+  // offset (EST, UTC-5) since 14:00Z on 2026-11-01 is already past the
+  // 06:00Z transition — 9:00 AM, not 10:00 AM (which the pre-transition EDT
+  // offset would have produced).
+  expect(confirmation?.text).toContain("Nov 1, 2026, 9:00 AM (America/New_York)");
+  expect(confirmation?.text).not.toContain("2026-11-01T14:00:00.000Z");
 });
 
 async function waitForHealth(url: string, timeoutMs: number): Promise<void> {
