@@ -27,6 +27,7 @@ import { SubmissionsPanel } from "./SubmissionsPanel.js";
 import { PaymentsPanel } from "./PaymentsPanel.js";
 import { BillingPanel } from "./BillingPanel.js";
 import { BookingsPanel } from "./BookingsPanel.js";
+import { AccountMenu } from "./AccountMenu.js";
 import { api } from "./api.js";
 import {
   Card,
@@ -118,10 +119,12 @@ export function SiteEditor({
   siteId,
   firstRun,
   onBack,
+  onLoggedOut,
 }: {
   siteId: string;
   firstRun?: boolean;
   onBack: () => void;
+  onLoggedOut: () => void;
 }) {
   const [site, setSite] = useState<SiteSummary | null>(null);
   const [theme, setTheme] = useState<ThemeDocument | null>(null);
@@ -434,7 +437,12 @@ export function SiteEditor({
         <TopAppBar
           leading={<TextButton onClick={onBack}>← Sites</TextButton>}
           title={<strong>{site.name}</strong>}
-          actions={<OutlinedButton onClick={() => setPagesPanelOpen(true)}>Pages</OutlinedButton>}
+          actions={
+            <>
+              <OutlinedButton onClick={() => setPagesPanelOpen(true)}>Pages</OutlinedButton>
+              <AccountMenu onLoggedOut={onLoggedOut} />
+            </>
+          }
         />
         <div style={{ flex: 1, display: "grid", placeItems: "center", padding: "2rem" }}>
           {pages.length === 0 ? (
@@ -512,6 +520,7 @@ export function SiteEditor({
             </FilledButton>
             {status === "saved" ? <StatusBadge tone="positive">Saved</StatusBadge> : null}
             {status === "published" ? <StatusBadge tone="positive">Live</StatusBadge> : null}
+            <AccountMenu onLoggedOut={onLoggedOut} />
           </>
         }
       />

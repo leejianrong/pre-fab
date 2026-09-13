@@ -13,6 +13,7 @@ import {
   setVerificationCode,
   markEmailVerified,
   createSession,
+  deleteSessionByTokenHash,
   createApiToken,
   createSite,
   getSite,
@@ -742,6 +743,36 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     );
     reply.setCookie(SESSION_COOKIE, raw, { path: "/", httpOnly: true, expires: session.expiresAt });
     return { accountId: verified.id };
+  });
+
+  // ---- account.me (audit H6) — lets the editor show who's signed in, for
+  // a header account menu; nothing here needs write access, so this is a
+  // query, not a mutation (not in API_MUTATIONS/mutations.ts). ----
+  app.get("/v1/account/me", async (request) => {
+    const principal = await requirePrincipal(request);
+    if (principal.kind !== "session") throw forbidden("only a signed-in session has an account to describe");
+    const account = await withTenantContext(pool, {}, (client) => getAccount(client, principal.accountId));
+    if (!account) throw notFound("account not found");
+    return { id: account.id, email: account.email };
+  });
+
+  // ---- account.logout (audit H6) ----
+  // Not a control-plane mutation the CLI/MCP need parity for (ADR-0003 /
+  // Invariant 1) — the same reasoning `/v1/dev/login` is already exempt
+  // from API_MUTATIONS: this is about a *browser cookie session*, and the
+  // CLI/MCP never have one (Bearer tokens only, no login/logout concept
+  // to begin with). Revokes the session server-side, not just the
+  // browser's cookie, so a copied/stolen cookie stops working immediately
+  // rather than lingering until its natural 30-day expiry. Safe to call
+  // with no session at all — signing out an already-signed-out browser is
+  // a no-op, not an error.
+  app.post("/v1/logout", async (request, reply) => {
+    const cookieToken = (request as FastifyRequest & { cookies: Record<string, string | undefined> }).cookies[SESSION_COOKIE];
+    if (cookieToken) {
+      await withTenantContext(pool, {}, (client) => deleteSessionByTokenHash(client, hashToken(cookieToken)));
+    }
+    reply.clearCookie(SESSION_COOKIE, { path: "/" });
+    return { ok: true };
   });
 
   // ---- site.create ----

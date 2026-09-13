@@ -37,13 +37,19 @@ export function App() {
     return <SignupScreen onSignedUp={() => setScreen({ kind: "picker" })} onBackToLogin={() => setScreen({ kind: "login" })} />;
   }
   if (screen.kind === "picker") {
-    return <SitePicker onSiteSelected={(siteId, opts) => setScreen({ kind: "editor", siteId, firstRun: opts?.firstRun })} />;
+    return (
+      <SitePicker
+        onSiteSelected={(siteId, opts) => setScreen({ kind: "editor", siteId, firstRun: opts?.firstRun })}
+        onLoggedOut={() => setScreen({ kind: "login" })}
+      />
+    );
   }
   return (
     <SiteEditor
       siteId={screen.siteId}
       firstRun={screen.firstRun}
       onBack={() => setScreen({ kind: "picker" })}
+      onLoggedOut={() => setScreen({ kind: "login" })}
     />
   );
 }
