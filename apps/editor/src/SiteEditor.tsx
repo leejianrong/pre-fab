@@ -14,10 +14,11 @@ import {
   PuckIdBridge,
   PUCK_KNOWN_TYPES,
 } from "@prefab/puck-adapter";
-import { ApiClientError, type PageDocument, type SiteSummary, type ThemeDocument, type ThemeTokens } from "@prefab/api-client";
+import { ApiClientError, type PageDocument, type PageSummary, type SiteSummary, type ThemeDocument, type ThemeTokens } from "@prefab/api-client";
 import type { BlockNode, FreeRect, LayoutMode } from "@prefab/schema";
 import { UnknownBlockList } from "./UnknownBlockList.js";
 import { ThemeEditor } from "./ThemeEditor.js";
+import { PagesPanel } from "./PagesPanel.js";
 import { DomainsPanel } from "./DomainsPanel.js";
 import { BlogPanel } from "./BlogPanel.js";
 import { ProductsPanel } from "./ProductsPanel.js";
@@ -25,6 +26,7 @@ import { OrdersPanel } from "./OrdersPanel.js";
 import { SubmissionsPanel } from "./SubmissionsPanel.js";
 import { api } from "./api.js";
 import {
+  Card,
   Dialog,
   FilledButton,
   IconButton,
@@ -120,6 +122,14 @@ export function SiteEditor({
 }) {
   const [site, setSite] = useState<SiteSummary | null>(null);
   const [theme, setTheme] = useState<ThemeDocument | null>(null);
+  // KAN-1263: the site's full page list, kept alongside the single `page`
+  // currently open in the canvas — PagesPanel reads this to render the
+  // switcher/list, and `pages.length === 0` (only reachable today via a
+  // hand-crafted site with no `page.create` call yet — there's no
+  // `page.delete` mutation) is what used to make SiteEditor throw instead
+  // of letting the owner create a first page from this same screen. `null`
+  // means "still loading," distinct from the real empty-array case.
+  const [pages, setPages] = useState<PageSummary[] | null>(null);
   const [page, setPage] = useState<PageDocument | null>(null);
   const [status, setStatus] = useState<Status>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -141,7 +151,15 @@ export function SiteEditor({
   // value" component, not a fully controlled one) — these track what the
   // canvas holds and what the server last accepted, independently of
   // React re-renders, so a save never resets what the user is mid-editing.
-  const idBridge = useRef(new PuckIdBridge()).current;
+  // KAN-1263: keyed on page?.id (a fresh bridge per page), not a
+  // component-lifetime singleton — Puck fully remounts on every page switch
+  // (`key={page.id}` below), and its raw, non-ULID ids for a
+  // freshly-dropped block are minted from Puck's own internal counters,
+  // which can plausibly repeat across two separate mounts. A bridge that
+  // outlived a page switch could resolve a brand-new block on page B to the
+  // same ULID already minted for an unrelated block on page A the first
+  // time this component ever exercised switching between two real pages.
+  const idBridge = useMemo(() => new PuckIdBridge(), [page?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const latestPuckData = useRef<Data | null>(null);
   const unknownBlocksRef = useRef<BlockNode[]>([]);
   const expectedVersionRef = useRef(0);
@@ -162,6 +180,7 @@ export function SiteEditor({
   const [layoutMode, setLayoutMode] = useState<LayoutMode>("flow");
   const [positions, setPositions] = useState<Map<string, FreeRect>>(new Map());
   const [themeEditorOpen, setThemeEditorOpen] = useState(false);
+  const [pagesPanelOpen, setPagesPanelOpen] = useState(false);
   const [domainsPanelOpen, setDomainsPanelOpen] = useState(false);
   const [blogPanelOpen, setBlogPanelOpen] = useState(false);
   const [productsPanelOpen, setProductsPanelOpen] = useState(false);
@@ -171,21 +190,25 @@ export function SiteEditor({
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const [s, t, pages, publishes] = await Promise.all([
+      const [s, t, pageList, publishes] = await Promise.all([
         api.getSite(siteId),
         api.getTheme(siteId),
         api.listPages(siteId),
         api.listPublishes(siteId),
       ]);
-      const firstPage = pages[0];
-      if (!firstPage) throw new Error("this site has no pages yet");
-      const p = await api.getPage(siteId, firstPage.id);
+      // KAN-1263: a site with no pages yet no longer throws here — it opens
+      // straight into the empty-state screen below (`pages.length === 0`),
+      // which offers the same PagesPanel used to switch pages as the way to
+      // create the first one. `page` simply stays null until then.
+      const firstPage = pageList[0];
+      const p = firstPage ? await api.getPage(siteId, firstPage.id) : null;
       if (cancelled) return;
       hadPublishBefore.current = publishes.length > 0;
       setSite(s);
       setTheme(t);
+      setPages(pageList);
       setPage(p);
-      expectedVersionRef.current = p.version;
+      expectedVersionRef.current = p?.version ?? 0;
     })().catch((err) => setError(err instanceof Error ? err.message : String(err)));
     return () => {
       cancelled = true;
@@ -227,6 +250,19 @@ export function SiteEditor({
     setLayoutMode(page.layoutMode);
     setPositions(initialPositionsFromBlocks(page.blocks));
   }, [page?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // KAN-1263: `latestPuckData` is a ref, not state — nothing else re-seeds
+  // it when the editor switches to a different page (unlike the state
+  // above, which each have their own page?.id-keyed effect). Left stale,
+  // it would carry page A's last-known Puck data across a switch to page B;
+  // if the user then hit Save on page B without Puck ever firing `onChange`
+  // there first, handleSave's `latestPuckData.current ?? initialPuckData`
+  // fallback would silently write page A's content onto page B. Only
+  // matters once there's more than one page to switch between, which is
+  // exactly what this ticket makes possible for the first time.
+  useEffect(() => {
+    latestPuckData.current = null;
+  }, [page?.id]);
 
   // KAN-1219: Puck's own built-in ViewportControls (the zoom-level <select>
   // it renders next to the canvas, independent of the `header: () => <></>`
@@ -322,6 +358,29 @@ export function SiteEditor({
     setTheme(saved);
   }
 
+  // KAN-1263: swaps the canvas to an already-existing page. Deliberately
+  // lets a failure propagate to PagesPanel's own try/catch rather than
+  // setting this component's `error` state — a page fetch failing while
+  // switching shouldn't blow away the page the owner is still looking at
+  // (unlike the initial site load above, where there's no page on screen
+  // yet to lose).
+  async function handleSelectPage(pageId: string) {
+    if (page?.id === pageId) return;
+    const p = await api.getPage(siteId, pageId);
+    setPage(p);
+    expectedVersionRef.current = p.version;
+    setStatus("idle");
+  }
+
+  // KAN-1263: `page.create` already returns the full new PageDocument, so
+  // this switches straight to it without a second getPage round trip.
+  function handlePageCreated(created: PageDocument) {
+    setPages((prev) => [...(prev ?? []), { id: created.id, slug: created.slug, title: created.title }]);
+    setPage(created);
+    expectedVersionRef.current = created.version;
+    setStatus("idle");
+  }
+
   async function handlePublish() {
     setStatus("publishing");
     setError(null);
@@ -347,8 +406,49 @@ export function SiteEditor({
     );
   }
 
-  if (!site || !theme || !page || !config || !initialPuckData) {
+  if (!site || !theme || pages === null) {
     return <LoadingIndicator label="Loading…" />;
+  }
+
+  // KAN-1263: a site with zero pages (or, transiently, one still resolving
+  // its selected page's document) gets the same TopAppBar chrome but no
+  // canvas — the Pages panel is the only way in, and it's reachable from
+  // right here instead of a dead end.
+  if (pages.length === 0 || !page || !config || !initialPuckData) {
+    return (
+      <div style={{ height: "100vh", display: "flex", flexDirection: "column" }}>
+        <TopAppBar
+          leading={<TextButton onClick={onBack}>← Sites</TextButton>}
+          title={<strong>{site.name}</strong>}
+          actions={<OutlinedButton onClick={() => setPagesPanelOpen(true)}>Pages</OutlinedButton>}
+        />
+        <div style={{ flex: 1, display: "grid", placeItems: "center", padding: "2rem" }}>
+          {pages.length === 0 ? (
+            <Card style={{ maxWidth: 420, textAlign: "center", display: "grid", gap: "0.75rem" }}>
+              <h2 className="pf-dialog-headline" style={{ margin: 0 }}>
+                Add your first page
+              </h2>
+              <p className="pf-supporting-text" style={{ margin: 0 }}>
+                This site doesn't have any pages yet — add one to start editing.
+              </p>
+              <FilledButton onClick={() => setPagesPanelOpen(true)}>+ Add a page</FilledButton>
+            </Card>
+          ) : (
+            <LoadingIndicator label="Loading…" />
+          )}
+        </div>
+        {pagesPanelOpen ? (
+          <PagesPanel
+            siteId={siteId}
+            pages={pages}
+            currentPageId={page?.id ?? null}
+            onSelect={handleSelectPage}
+            onCreated={handlePageCreated}
+            onClose={() => setPagesPanelOpen(false)}
+          />
+        ) : null}
+      </div>
+    );
   }
 
   return (
@@ -357,9 +457,17 @@ export function SiteEditor({
         leading={
           <TextButton onClick={onBack}>← Sites</TextButton>
         }
-        title={<strong>{site.name}</strong>}
+        title={
+          <span style={{ display: "flex", alignItems: "baseline", gap: "0.4rem" }}>
+            <strong>{site.name}</strong>
+            <span className="pf-supporting-text" style={{ margin: 0 }}>
+              — {page.title}
+            </span>
+          </span>
+        }
         actions={
           <>
+            <OutlinedButton onClick={() => setPagesPanelOpen(true)}>Pages</OutlinedButton>
             <OutlinedButton onClick={() => setThemeEditorOpen(true)}>Theme</OutlinedButton>
             <OutlinedButton onClick={() => setDomainsPanelOpen(true)}>Domains</OutlinedButton>
             <OutlinedButton onClick={() => setBlogPanelOpen(true)}>Blog</OutlinedButton>
@@ -455,6 +563,16 @@ export function SiteEditor({
       </div>
       {themeEditorOpen ? (
         <ThemeEditor tokens={theme.tokens} onSave={handleSaveTheme} onClose={() => setThemeEditorOpen(false)} />
+      ) : null}
+      {pagesPanelOpen ? (
+        <PagesPanel
+          siteId={siteId}
+          pages={pages}
+          currentPageId={page.id}
+          onSelect={handleSelectPage}
+          onCreated={handlePageCreated}
+          onClose={() => setPagesPanelOpen(false)}
+        />
       ) : null}
       {domainsPanelOpen ? (
         <DomainsPanel siteId={siteId} publicUrl={site.publicUrl} onClose={() => setDomainsPanelOpen(false)} />
