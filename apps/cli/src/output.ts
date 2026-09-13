@@ -47,6 +47,18 @@ function toCommandError(error: unknown): CommandError {
 function printHuman(result: unknown): void {
   if (result === undefined) return;
   if (typeof result === "object" && result !== null) {
+    // A command opting into a narrated success line sets a top-level
+    // string `message` on its result (e.g. plan.cancel — see
+    // packages/commands/src/commands/plan.ts). It's additive: --json
+    // mode keeps returning the full object (message included) untouched,
+    // this only changes what human mode prints. Not a general templating
+    // system — just the one field commands can use when raw JSON isn't
+    // the clearest way to report success to a person.
+    const message = (result as Record<string, unknown>).message;
+    if (typeof message === "string") {
+      process.stdout.write(`${message}\n`);
+      return;
+    }
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
     return;
   }

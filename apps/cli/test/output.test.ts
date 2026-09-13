@@ -92,3 +92,47 @@ describe("runCommand — R13's exit-code contract", () => {
     }
   });
 });
+
+describe("runCommand — human-mode `message` narration (KAN-1268)", () => {
+  it("prints a result's top-level `message` field alone, instead of dumping raw JSON", async () => {
+    const capture = captureStd();
+    try {
+      await runCommand({ json: false }, async () => ({
+        message: "Subscription canceled. Your data and export access are guaranteed until October 13, 2026 — run `prefab export` anytime before then.",
+        retentionEndsAt: "2026-10-13T00:00:00.000Z",
+        status: "canceled",
+      }));
+      expect(process.exitCode).toBe(0);
+      expect(capture.out.join("")).toBe(
+        "Subscription canceled. Your data and export access are guaranteed until October 13, 2026 — run `prefab export` anytime before then.\n",
+      );
+    } finally {
+      capture.restore();
+      process.exitCode = undefined;
+    }
+  });
+
+  it("still dumps raw JSON in human mode when a result has no `message` field", async () => {
+    const capture = captureStd();
+    try {
+      await runCommand({ json: false }, async () => ({ ok: true }));
+      expect(process.exitCode).toBe(0);
+      expect(capture.out.join("")).toContain('"ok": true');
+    } finally {
+      capture.restore();
+      process.exitCode = undefined;
+    }
+  });
+
+  it("--json mode is untouched by `message` — the full object prints as-is, message included", async () => {
+    const capture = captureStd();
+    try {
+      await runCommand({ json: true }, async () => ({ message: "hi", retentionEndsAt: "2026-10-13T00:00:00.000Z" }));
+      expect(process.exitCode).toBe(0);
+      expect(JSON.parse(capture.out.join(""))).toEqual({ message: "hi", retentionEndsAt: "2026-10-13T00:00:00.000Z" });
+    } finally {
+      capture.restore();
+      process.exitCode = undefined;
+    }
+  });
+});
