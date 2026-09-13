@@ -842,7 +842,10 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     const { siteId } = await authorizeSite(pool, principal, request.params.siteId);
     const site = await withTenantContext(pool, { siteId }, (client) => getSite(client, siteId));
     if (!site) throw notFound("site not found");
-    return site;
+    // KAN-1253: every site already has a free, unauthenticated public
+    // address at <slug>.<platformHost> (R1) — surfaced here so editor UI
+    // (DomainsPanel) can show it without hardcoding platformHost itself.
+    return { ...site, publicUrl: publicSiteUrl(site.slug) };
   });
 
   // ---- theme.get / theme.update ----
@@ -2536,7 +2539,16 @@ export function buildApp(deps: AppDeps): FastifyInstance {
       return { ...record, isLive: true };
     });
 
-    return { publish, liveUrl: `/v1/sites/${siteId}/live/` };
+    // `liveUrl` is an authenticated preview route (relative to the API's own
+    // base URL) — see packages/commands/test/commands.integration.test.ts,
+    // which exercises exactly that. It is NOT shareable: an owner handing
+    // this link to anyone else hands out a 401 (KAN-1253). `publicUrl` is
+    // the real, unauthenticated public address — the same host-based
+    // routing already served by setNotFoundHandler below ("Host-based
+    // public routing") and already used as this bundle's own baseUrl just
+    // above. Surface `publicUrl` to visitors; keep `liveUrl` only for the
+    // owner-as-authenticated-user preview use case it was built for.
+    return { publish, liveUrl: `/v1/sites/${siteId}/live/`, publicUrl: publicSiteUrl(manifest.slug) };
   });
 
   // ---- publish.rollback ----

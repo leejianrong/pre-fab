@@ -173,7 +173,21 @@ describe("apps/api — the one write path", () => {
 
     const firstPublish = await app.inject({ method: "POST", url: `/v1/sites/${site.id}/publish`, headers: { cookie } });
     expect(firstPublish.statusCode).toBe(200);
-    const firstPublishId = (firstPublish.json() as { publish: { id: string } }).publish.id;
+    const firstPublishBody = firstPublish.json() as { publish: { id: string }; liveUrl: string; publicUrl: string };
+    const firstPublishId = firstPublishBody.publish.id;
+
+    // KAN-1253: `liveUrl` stays the authenticated preview route (relative,
+    // requires the owner's own session — packages/commands's integration
+    // test exercises this exact shape). `publicUrl` is the new field: the
+    // real, unauthenticated public address a stranger can actually load.
+    expect(firstPublishBody.liveUrl).toBe(`/v1/sites/${site.id}/live/`);
+    expect(firstPublishBody.publicUrl).toBe(`https://${site.slug}.${TEST_PLATFORM_HOST}`);
+
+    // And it's genuinely unauthenticated — no cookie sent — via the same
+    // host-based routing fallback exercised below.
+    const publicResponse = await app.inject({ method: "GET", url: "/", headers: { host: `${site.slug}.${TEST_PLATFORM_HOST}` } });
+    expect(publicResponse.statusCode).toBe(200);
+    expect(publicResponse.body).toContain(heroHeading(page));
 
     const live1 = await app.inject({ method: "GET", url: `/v1/sites/${site.id}/live/`, headers: { cookie } });
     expect(live1.statusCode).toBe(302);
@@ -212,6 +226,22 @@ describe("apps/api — the one write path", () => {
     expect(bundle3.body).toContain(heroHeading(page));
     expect(bundle3.body).not.toContain("Changed after first publish");
   }, 60_000);
+
+  it("site.get includes the site's free public address (KAN-1253)", async () => {
+    const { cookie } = await seedAccountAndLogin(`site-get-${newUlid()}@example.com`);
+    const created = await app.inject({
+      method: "POST",
+      url: "/v1/sites",
+      headers: { cookie },
+      payload: { slug: `site-get-${newUlid()}`, name: "Site Get" },
+    });
+    const { site } = created.json() as CreatedSite;
+
+    const fetched = await app.inject({ method: "GET", url: `/v1/sites/${site.id}`, headers: { cookie } });
+    expect(fetched.statusCode).toBe(200);
+    const body = fetched.json() as { slug: string; publicUrl: string };
+    expect(body.publicUrl).toBe(`https://${body.slug}.${TEST_PLATFORM_HOST}`);
+  });
 
   it("a site outline returns every page and block with ids, types and a one-line summary (R14)", async () => {
     const { cookie } = await seedAccountAndLogin(`outline-${newUlid()}@example.com`);

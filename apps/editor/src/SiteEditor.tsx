@@ -130,7 +130,12 @@ export function SiteEditor({
   // republish (SLICES.md: "a guided first edit and a publish celebration
   // moment").
   const hadPublishBefore = useRef(false);
-  const [celebration, setCelebration] = useState<{ liveUrl: string } | null>(null);
+  // KAN-1253: `publicUrl` is the real, unauthenticated public address —
+  // this is the link an owner can actually hand to someone else.
+  // `previewUrl` is the authenticated "preview as me" route (resolved from
+  // the relative `liveUrl` the publish API returns) — shown only as a
+  // secondary link, since it 401s for anyone but the owner's own session.
+  const [celebration, setCelebration] = useState<{ publicUrl: string; previewUrl: string } | null>(null);
 
   // Puck owns live editing state internally once mounted (an "initial
   // value" component, not a fully controlled one) — these track what the
@@ -325,7 +330,7 @@ export function SiteEditor({
       setStatus("published");
       if (!hadPublishBefore.current) {
         hadPublishBefore.current = true;
-        setCelebration({ liveUrl: api.resolveUrl(result.liveUrl) });
+        setCelebration({ publicUrl: result.publicUrl, previewUrl: api.resolveUrl(result.liveUrl) });
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -451,7 +456,9 @@ export function SiteEditor({
       {themeEditorOpen ? (
         <ThemeEditor tokens={theme.tokens} onSave={handleSaveTheme} onClose={() => setThemeEditorOpen(false)} />
       ) : null}
-      {domainsPanelOpen ? <DomainsPanel siteId={siteId} onClose={() => setDomainsPanelOpen(false)} /> : null}
+      {domainsPanelOpen ? (
+        <DomainsPanel siteId={siteId} publicUrl={site.publicUrl} onClose={() => setDomainsPanelOpen(false)} />
+      ) : null}
       {blogPanelOpen ? <BlogPanel siteId={siteId} onClose={() => setBlogPanelOpen(false)} /> : null}
       {productsPanelOpen ? <ProductsPanel siteId={siteId} onClose={() => setProductsPanelOpen(false)} /> : null}
       {ordersPanelOpen ? <OrdersPanel siteId={siteId} onClose={() => setOrdersPanelOpen(false)} /> : null}
@@ -459,10 +466,26 @@ export function SiteEditor({
       <Dialog open={celebration !== null} onClose={() => setCelebration(null)} ariaLabel="Site published">
         <h2 className="pf-dialog-headline">🎉 Your site is live!</h2>
         <p className="pf-supporting-text">
+          {/* KAN-1253: this is the link to share — it works for anyone, no
+              login required. (Locally, <slug>.prefab.local won't resolve
+              without a hosts entry or a spoofed Host header — see
+              gotoLiveSite in e2e/tests/helpers.ts — that's a known dev-only
+              DNS gap, not a bug in the link itself.) */}
           {celebration ? (
-            <a href={celebration.liveUrl} target="_blank" rel="noreferrer">
-              {celebration.liveUrl}
+            <a href={celebration.publicUrl} target="_blank" rel="noreferrer">
+              {celebration.publicUrl}
             </a>
+          ) : null}
+        </p>
+        <p className="pf-supporting-text">
+          {celebration ? (
+            <>
+              Previewing as you?{" "}
+              <a href={celebration.previewUrl} target="_blank" rel="noreferrer">
+                Open the owner preview
+              </a>{" "}
+              (requires your login — don't share this one).
+            </>
           ) : null}
         </p>
         <div className="pf-dialog-actions">

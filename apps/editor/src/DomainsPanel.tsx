@@ -23,7 +23,23 @@ const STATUS_TONE: Record<CustomDomainStatus, "positive" | "neutral" | "negative
  * owner watching the screen sees it flip to Active without a manual
  * refresh, without this repo needing a background job queue.
  */
-export function DomainsPanel({ siteId, onClose }: { siteId: string; onClose: () => void }) {
+export function DomainsPanel({
+  siteId,
+  publicUrl,
+  onClose,
+}: {
+  siteId: string;
+  /**
+   * KAN-1253: the site's free default address (`https://<slug>.<platformHost>`),
+   * already unauthenticated and live the moment the site is first
+   * published — passed down from SiteEditor's `site.publicUrl` (GET
+   * /v1/sites/:siteId) rather than refetched here. Undefined only while
+   * the parent's site fetch hasn't resolved yet, which in practice never
+   * happens: SiteEditor doesn't render this panel until `site` is loaded.
+   */
+  publicUrl?: string;
+  onClose: () => void;
+}) {
   const [domains, setDomains] = useState<DomainWithInstruction[] | null>(null);
   const [hostname, setHostname] = useState("");
   const [adding, setAdding] = useState(false);
@@ -91,6 +107,28 @@ export function DomainsPanel({ siteId, onClose }: { siteId: string; onClose: () 
 
   return (
     <SideSheet title="Domains" ariaLabel="Custom domains" closeLabel="Close domains panel" onClose={onClose} width={440}>
+      {/* KAN-1253: the free <slug>.<platformHost> address every site already
+          gets at first publish — unauthenticated, host-header-routed (see
+          apps/api/src/app.ts's "Host-based public routing"). In a bare
+          `make dev` stack this host won't resolve for a real browser (no
+          wildcard DNS/hosts entry, see README's Local setup) — a local
+          visitor needs to spoof the Host header the way e2e/tests/helpers.ts's
+          gotoLiveSite does, or add a hosts entry by hand. That's a dev-only
+          gap in this link's *resolvability*, not in its correctness. */}
+      {publicUrl ? (
+        <Card variant="filled" style={{ display: "grid", gap: "0.35rem" }}>
+          <strong>Your site's free address</strong>
+          <p className="pf-supporting-text" style={{ margin: 0, wordBreak: "break-all" }}>
+            <a href={publicUrl} target="_blank" rel="noreferrer">
+              {publicUrl}
+            </a>
+          </p>
+          <p className="pf-supporting-text" style={{ margin: 0 }}>
+            This works for anyone, no login required — share it, or add a custom domain below.
+          </p>
+        </Card>
+      ) : null}
+
       {domains === null ? (
         <p className="pf-supporting-text">Loading…</p>
       ) : (
