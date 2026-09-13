@@ -113,11 +113,13 @@ test.describe("page navigation (KAN-1263)", () => {
 
   test("a site with no pages yet offers to create the first one instead of crashing", async ({ page, request }) => {
     // There's no page.delete mutation (by design — see PLAN.md), so a real
-    // zero-page site can't be produced through the API. This proves the
-    // client-side path SiteEditor.tsx used to hard-throw on
-    // ("this site has no pages yet") now renders an empty-state screen
-    // instead, by making listPages report zero pages every time the editor
-    // asks, the same way a legitimately page-less site would.
+    // zero-page site can't be produced through the API — authenticatedContext's
+    // createSite always creates a real slug:"home"/title:"Home" page server
+    // side. This proves the client-side path SiteEditor.tsx used to
+    // hard-throw on ("this site has no pages yet") now renders an
+    // empty-state screen instead, by making listPages *report* zero pages
+    // every time the editor asks, the same way a legitimately page-less
+    // site would look to the browser.
     //
     // Every GET is faked, not just the first: apps/editor/src/main.tsx
     // mounts under React's <StrictMode>, which double-invokes an effect in
@@ -145,7 +147,13 @@ test.describe("page navigation (KAN-1263)", () => {
 
     const pagesDialog = page.getByRole("dialog", { name: /site pages/i });
     await expect(pagesDialog).toBeVisible();
-    await pagesDialog.getByLabel(/page title/i).fill("Home");
+    // Deliberately not "Home": the site already has a *real* slug:"home"
+    // page server side (see the comment above) — the faked-empty listing
+    // only fools the client's own dedupe, not the backend, so titling this
+    // "Home" would 409/500 on a genuine slug collision instead of creating
+    // a page, exactly like the KAN-1272 test below (caught by CI, KAN-1263
+    // PR #77's second round).
+    await pagesDialog.getByLabel(/page title/i).fill("Welcome");
     await pagesDialog.getByRole("button", { name: /\+ add page/i }).click();
 
     await expect(pagesDialog).toBeHidden({ timeout: 10_000 });
