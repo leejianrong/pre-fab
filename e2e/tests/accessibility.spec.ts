@@ -106,4 +106,19 @@ test.describe("editor UI accessibility (R6, KAN-1219)", () => {
     await page.getByRole("dialog", { name: /^payments$/i }).waitFor({ timeout: 10_000 });
     await runAxeOn("payments side sheet", page);
   });
+
+  // KAN-1267: the new Billing panel (getSubscription/upgradePlan/cancelPlan,
+  // ADR-0012) — same SideSheet pattern as the other panels above, checked
+  // the same way. The seed account this suite's `authenticatedContext`
+  // logs in as is already upgraded to pro (billing.spec.ts's own comment),
+  // so the state exercised here is the "Pro plan" / "Cancel plan" one, not
+  // the free-plan upgrade form.
+  test("billing side sheet", async ({ page }) => {
+    const { site } = await authenticatedContext("axe-billing");
+    await loginInBrowser(page);
+    await openSiteByName(page, site.site.name);
+    await page.getByRole("button", { name: /^billing$/i }).click();
+    await page.getByRole("dialog", { name: /^billing$/i }).waitFor({ timeout: 10_000 });
+    await runAxeOn("billing side sheet", page);
+  });
 });
