@@ -96,3 +96,53 @@ export async function listWebhookDeliveriesForSubmission(client: PoolClient, sit
   );
   return result.rows.map(rowToWebhookDelivery);
 }
+
+export interface ListWebhookDeliveriesOptions {
+  /** Clamped to [1, 200]. Default 50. */
+  limit?: number;
+  /** Clamped to >= 0. Default 0. */
+  offset?: number;
+}
+
+export interface ListWebhookDeliveriesResult {
+  deliveries: WebhookDelivery[];
+  total: number;
+}
+
+const DEFAULT_LIMIT = 50;
+const MAX_LIMIT = 200;
+
+/**
+ * KAN-1264: the owner-facing dashboard read — mirrors listPaymentRecordsForSite
+ * exactly, regardless of status (unlike listDueWebhookDeliveries above, which
+ * is scoped to 'pending' rows due for retry — this is a read path, that one
+ * drives the retry loop). webhook_deliveries has no form_id column of its
+ * own (it hangs off submission_id — see 0006_slice6.sql), so this joins
+ * through submissions the same way any form-scoped query over a
+ * submission-keyed table would.
+ */
+export async function listWebhookDeliveries(
+  client: PoolClient,
+  siteId: string,
+  formId: string,
+  options: ListWebhookDeliveriesOptions = {},
+): Promise<ListWebhookDeliveriesResult> {
+  const limit = Math.min(MAX_LIMIT, Math.max(1, Math.trunc(options.limit ?? DEFAULT_LIMIT)));
+  const offset = Math.max(0, Math.trunc(options.offset ?? 0));
+
+  const countResult = await client.query<{ count: string }>(
+    `SELECT COUNT(*) AS count FROM webhook_deliveries wd
+     JOIN submissions s ON s.id = wd.submission_id
+     WHERE wd.site_id = $1 AND s.form_id = $2`,
+    [siteId, formId],
+  );
+  const rowsResult = await client.query<RawWebhookDeliveryRow>(
+    `SELECT wd.* FROM webhook_deliveries wd
+     JOIN submissions s ON s.id = wd.submission_id
+     WHERE wd.site_id = $1 AND s.form_id = $2
+     ORDER BY wd.created_at DESC, wd.id DESC LIMIT $3 OFFSET $4`,
+    [siteId, formId, limit, offset],
+  );
+
+  return { deliveries: rowsResult.rows.map(rowToWebhookDelivery), total: Number(countResult.rows[0]!.count) };
+}
