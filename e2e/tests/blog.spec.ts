@@ -34,7 +34,7 @@ test("creating, publishing and reading a post through the editor, then editing t
   await openSiteByName(page, site.site.name);
 
   await page.getByRole("button", { name: /^blog$/i }).click();
-  const blogDialog = page.getByRole("dialog", { name: /blog posts/i });
+  const blogDialog = page.getByRole("complementary", { name: /blog posts/i });
   await expect(blogDialog).toBeVisible();
 
   await blogDialog.getByLabel(/^title$/i).fill("Hello from the editor");
@@ -91,5 +91,5 @@ test("creating, publishing and reading a post through the editor, then editing t
   // there is exactly one write path (ADR-0003), so the canvas/panel and a
   // hand-edited file can never drift.
   await page.getByRole("button", { name: /^blog$/i }).click();
-  await expect(page.getByRole("dialog", { name: /blog posts/i }).getByText("Hello from the editor")).toBeVisible();
+  await expect(page.getByRole("complementary", { name: /blog posts/i }).getByText("Hello from the editor")).toBeVisible();
 });

@@ -260,7 +260,7 @@ test.describe("editor UI: Bookings panel (KAN-1257)", () => {
 
     const header = page.locator("header").first();
     await header.getByRole("button", { name: /^bookings$/i }).click();
-    const panel = page.getByRole("dialog", { name: /^bookings$/i });
+    const panel = page.getByRole("complementary", { name: /^bookings$/i });
     await expect(panel).toBeVisible();
 
     // No availability configured yet — set a Monday 9-5 UTC window from the
@@ -300,7 +300,7 @@ test.describe("editor UI: Bookings panel (KAN-1257)", () => {
     // This panel doesn't poll — reopening is what re-fetches.
     await page.getByRole("button", { name: /close bookings panel/i }).click();
     await header.getByRole("button", { name: /^bookings$/i }).click();
-    const reopened = page.getByRole("dialog", { name: /^bookings$/i });
+    const reopened = page.getByRole("complementary", { name: /^bookings$/i });
     await expect(reopened.getByText("Panel Visitor")).toBeVisible({ timeout: 10_000 });
     await expect(reopened.getByText("panel@example.com")).toBeVisible();
     // Exact, case-sensitive text — the status filter's own <option> reads

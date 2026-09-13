@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
 import { Puck, type Data } from "@puckeditor/core";
 import {
   applyFreePositions,
@@ -35,12 +35,25 @@ import {
   FilledButton,
   IconButton,
   LoadingIndicator,
+  NavButton,
   OutlinedButton,
   SelectField,
   StatusBadge,
   TextButton,
   TopAppBar,
 } from "./ui/index.js";
+import {
+  BillingIcon,
+  BlogIcon,
+  BookingsIcon,
+  DomainsIcon,
+  OrdersIcon,
+  PagesIcon,
+  PaymentsIcon,
+  ProductsIcon,
+  SubmissionsIcon,
+  ThemeIcon,
+} from "./ui/nav-icons.js";
 
 type Status = "idle" | "saving" | "saved" | "publishing" | "published";
 
@@ -196,12 +209,39 @@ export function SiteEditor({
   const [billingPanelOpen, setBillingPanelOpen] = useState(false);
   const [bookingsPanelOpen, setBookingsPanelOpen] = useState(false);
 
+  // Audit H4: the SideSheets now dock beside the canvas (see
+  // ui/SideSheet.tsx) instead of floating over it, which means two open
+  // at once would sit side by side squeezing the canvas rather than
+  // simply stacking visually the way two overlays used to — so exactly
+  // one of these ten booleans is allowed to be true at a time.
+  // `openPanel` enforces that by construction: it flips every other
+  // panel-open setter false before flipping the requested one true,
+  // rather than each of the 10 buttons below only ever setting its own
+  // flag. Comparing sette function identity (`s === setter`) is safe here
+  // — React guarantees a given `useState` setter keeps the same identity
+  // for the lifetime of this component instance.
+  const panelSetters = [
+    setThemeEditorOpen,
+    setPagesPanelOpen,
+    setDomainsPanelOpen,
+    setBlogPanelOpen,
+    setProductsPanelOpen,
+    setOrdersPanelOpen,
+    setSubmissionsPanelOpen,
+    setPaymentsPanelOpen,
+    setBillingPanelOpen,
+    setBookingsPanelOpen,
+  ];
+
+  function openPanel(setter: Dispatch<SetStateAction<boolean>>) {
+    for (const s of panelSetters) s(s === setter);
+  }
+
   // KAN-1267: DomainsPanel's own plan_required gate error opens this panel
-  // via this instead of embedding BillingPanel inline — closes Domains
-  // first so the two SideSheets are never both open at once.
+  // via this instead of embedding BillingPanel inline — `openPanel` above
+  // already closes Domains (and everything else) before opening Billing.
   function openBillingFromDomains() {
-    setDomainsPanelOpen(false);
-    setBillingPanelOpen(true);
+    openPanel(setBillingPanelOpen);
   }
 
   useEffect(() => {
@@ -439,7 +479,9 @@ export function SiteEditor({
           title={<strong>{site.name}</strong>}
           actions={
             <>
-              <OutlinedButton onClick={() => setPagesPanelOpen(true)}>Pages</OutlinedButton>
+              <NavButton icon={<PagesIcon />} active={pagesPanelOpen} onClick={() => openPanel(setPagesPanelOpen)}>
+                Pages
+              </NavButton>
               <AccountMenu onLoggedOut={onLoggedOut} />
             </>
           }
@@ -453,7 +495,7 @@ export function SiteEditor({
               <p className="pf-supporting-text" style={{ margin: 0 }}>
                 This site doesn't have any pages yet — add one to start editing.
               </p>
-              <FilledButton onClick={() => setPagesPanelOpen(true)}>+ Add a page</FilledButton>
+              <FilledButton onClick={() => openPanel(setPagesPanelOpen)}>+ Add a page</FilledButton>
             </Card>
           ) : (
             <LoadingIndicator label="Loading…" />
@@ -473,6 +515,38 @@ export function SiteEditor({
     );
   }
 
+  // Audit H4: exactly one of these is ever true at once (openPanel above
+  // enforces it), so this resolves to at most one docked panel — laid out
+  // as a flex sibling of `.pf-puck-canvas` below, not stacked overlays.
+  const dockedPanel = themeEditorOpen ? (
+    <ThemeEditor tokens={theme.tokens} onSave={handleSaveTheme} onClose={() => setThemeEditorOpen(false)} />
+  ) : pagesPanelOpen ? (
+    <PagesPanel
+      siteId={siteId}
+      pages={pages}
+      currentPageId={page.id}
+      onSelect={handleSelectPage}
+      onCreated={handlePageCreated}
+      onClose={() => setPagesPanelOpen(false)}
+    />
+  ) : domainsPanelOpen ? (
+    <DomainsPanel siteId={siteId} publicUrl={site.publicUrl} onClose={() => setDomainsPanelOpen(false)} onOpenBilling={openBillingFromDomains} />
+  ) : blogPanelOpen ? (
+    <BlogPanel siteId={siteId} onClose={() => setBlogPanelOpen(false)} />
+  ) : productsPanelOpen ? (
+    <ProductsPanel siteId={siteId} onClose={() => setProductsPanelOpen(false)} />
+  ) : ordersPanelOpen ? (
+    <OrdersPanel siteId={siteId} onClose={() => setOrdersPanelOpen(false)} />
+  ) : submissionsPanelOpen ? (
+    <SubmissionsPanel siteId={siteId} page={page} onClose={() => setSubmissionsPanelOpen(false)} />
+  ) : bookingsPanelOpen ? (
+    <BookingsPanel siteId={siteId} pages={pages} onClose={() => setBookingsPanelOpen(false)} />
+  ) : paymentsPanelOpen ? (
+    <PaymentsPanel siteId={siteId} pages={pages} onClose={() => setPaymentsPanelOpen(false)} />
+  ) : billingPanelOpen ? (
+    <BillingPanel onClose={() => setBillingPanelOpen(false)} />
+  ) : null;
+
   return (
     <div style={{ height: "100vh", display: "flex", flexDirection: "column" }}>
       <TopAppBar
@@ -489,38 +563,80 @@ export function SiteEditor({
         }
         actions={
           <>
-            <OutlinedButton onClick={() => setPagesPanelOpen(true)}>Pages</OutlinedButton>
-            <OutlinedButton onClick={() => setThemeEditorOpen(true)}>Theme</OutlinedButton>
-            <OutlinedButton onClick={() => setDomainsPanelOpen(true)}>Domains</OutlinedButton>
-            <OutlinedButton onClick={() => setBlogPanelOpen(true)}>Blog</OutlinedButton>
-            <OutlinedButton onClick={() => setProductsPanelOpen(true)}>Products</OutlinedButton>
-            <OutlinedButton onClick={() => setOrdersPanelOpen(true)}>Orders</OutlinedButton>
-            <OutlinedButton onClick={() => setSubmissionsPanelOpen(true)}>Submissions</OutlinedButton>
-            <OutlinedButton onClick={() => setBookingsPanelOpen(true)}>Bookings</OutlinedButton>
-            <OutlinedButton onClick={() => setPaymentsPanelOpen(true)}>Payments</OutlinedButton>
-            <OutlinedButton onClick={() => setBillingPanelOpen(true)}>Billing</OutlinedButton>
-            {/* ADR-0014 / KAN-1129: local UI state only until Save — switching
-                to "free" (or back to "flow") never touches the document until
-                handleSave runs applyFreePositions over whatever this is set
-                to at that moment. */}
-            <SelectField
-              label="Layout"
-              id="layout-mode"
-              value={layoutMode}
-              onChange={(value) => setLayoutMode(value as LayoutMode)}
-            >
-              <option value="flow">Flow</option>
-              <option value="free">Free (canvas)</option>
-            </SelectField>
-            <OutlinedButton onClick={handleSave} disabled={status === "saving"}>
-              {status === "saving" ? "Saving…" : "Save"}
-            </OutlinedButton>
-            <FilledButton onClick={handlePublish} disabled={status === "publishing"}>
-              {status === "publishing" ? "Publishing…" : "Publish"}
-            </FilledButton>
-            {status === "saved" ? <StatusBadge tone="positive">Saved</StatusBadge> : null}
-            {status === "published" ? <StatusBadge tone="positive">Live</StatusBadge> : null}
-            <AccountMenu onLoggedOut={onLoggedOut} />
+            {/* Audit H1: the 10 nav pills used to be one flat, equally-weighted
+                row with no icons and no grouping — the grouping below (a
+                border between clusters, ui/tokens.css's `.pf-nav-group`) is
+                purely visual; `role="group"` + `aria-label` gives the same
+                clusters a real accessible structure, not just a look. */}
+            <div className="pf-nav-group" role="group" aria-label="Content tools">
+              <span className="pf-nav-group-label" aria-hidden="true">
+                Content
+              </span>
+              <NavButton icon={<PagesIcon />} active={pagesPanelOpen} onClick={() => openPanel(setPagesPanelOpen)}>
+                Pages
+              </NavButton>
+              <NavButton icon={<ThemeIcon />} active={themeEditorOpen} onClick={() => openPanel(setThemeEditorOpen)}>
+                Theme
+              </NavButton>
+              <NavButton icon={<BlogIcon />} active={blogPanelOpen} onClick={() => openPanel(setBlogPanelOpen)}>
+                Blog
+              </NavButton>
+            </div>
+            <div className="pf-nav-group" role="group" aria-label="Commerce tools">
+              <span className="pf-nav-group-label" aria-hidden="true">
+                Commerce
+              </span>
+              <NavButton icon={<ProductsIcon />} active={productsPanelOpen} onClick={() => openPanel(setProductsPanelOpen)}>
+                Products
+              </NavButton>
+              <NavButton icon={<OrdersIcon />} active={ordersPanelOpen} onClick={() => openPanel(setOrdersPanelOpen)}>
+                Orders
+              </NavButton>
+              <NavButton icon={<PaymentsIcon />} active={paymentsPanelOpen} onClick={() => openPanel(setPaymentsPanelOpen)}>
+                Payments
+              </NavButton>
+              <NavButton icon={<BillingIcon />} active={billingPanelOpen} onClick={() => openPanel(setBillingPanelOpen)}>
+                Billing
+              </NavButton>
+            </div>
+            <div className="pf-nav-group" role="group" aria-label="Engagement tools">
+              <span className="pf-nav-group-label" aria-hidden="true">
+                Engagement
+              </span>
+              <NavButton icon={<SubmissionsIcon />} active={submissionsPanelOpen} onClick={() => openPanel(setSubmissionsPanelOpen)}>
+                Submissions
+              </NavButton>
+              <NavButton icon={<BookingsIcon />} active={bookingsPanelOpen} onClick={() => openPanel(setBookingsPanelOpen)}>
+                Bookings
+              </NavButton>
+              <NavButton icon={<DomainsIcon />} active={domainsPanelOpen} onClick={() => openPanel(setDomainsPanelOpen)}>
+                Domains
+              </NavButton>
+            </div>
+            <div className="pf-nav-group">
+              {/* ADR-0014 / KAN-1129: local UI state only until Save — switching
+                  to "free" (or back to "flow") never touches the document until
+                  handleSave runs applyFreePositions over whatever this is set
+                  to at that moment. */}
+              <SelectField
+                label="Layout"
+                id="layout-mode"
+                value={layoutMode}
+                onChange={(value) => setLayoutMode(value as LayoutMode)}
+              >
+                <option value="flow">Flow</option>
+                <option value="free">Free (canvas)</option>
+              </SelectField>
+              <OutlinedButton onClick={handleSave} disabled={status === "saving"}>
+                {status === "saving" ? "Saving…" : "Save"}
+              </OutlinedButton>
+              <FilledButton onClick={handlePublish} disabled={status === "publishing"}>
+                {status === "publishing" ? "Publishing…" : "Publish"}
+              </FilledButton>
+              {status === "saved" ? <StatusBadge tone="positive">Saved</StatusBadge> : null}
+              {status === "published" ? <StatusBadge tone="positive">Live</StatusBadge> : null}
+              <AccountMenu onLoggedOut={onLoggedOut} />
+            </div>
           </>
         }
       />
@@ -547,74 +663,57 @@ export function SiteEditor({
         </div>
       ) : null}
       <UnknownBlockList blocks={unknownBlocks} />
-      <div ref={puckCanvasRef} className="pf-puck-canvas" style={{ flex: 1, minHeight: 0 }}>
-        <FreeCanvasContext.Provider value={{ layoutMode, positions, onRectChange: handleRectChange, idBridge }}>
-          <Puck
-            key={page.id}
-            config={config}
-            data={initialPuckData}
-            overrides={{
-              preview: FreeCanvasPreview,
-              // KAN-1205: Puck ships its own header chrome — dark-leaning,
-              // styled from its own CSS namespace, unrelated to this app's
-              // --md-sys-color-* tokens (ui/tokens.css) — plus a built-in
-              // "Publish" button that isn't wired to handlePublish above.
-              // Suppressing it entirely leaves pre-fab's own TopAppBar (and
-              // its working FilledButton onClick={handlePublish}) as the
-              // only chrome above the canvas.
-              header: () => <></>,
-              // KAN-1207 / docs/adr/0017: the only per-row extension point
-              // Puck's ComponentConfig/Overrides expose — it wraps Puck's
-              // own default inner content (name label + drag-grip icon,
-              // `children` here), it doesn't replace the outer row element
-              // (padding/hover background/shape — that's handled by the
-              // `--puck-drawer-item-*` custom-property overrides + the
-              // `.pf-puck-canvas` rules in ui/tokens.css instead). Adds a
-              // per-block-type glyph and a hover-revealed live preview of
-              // the actual block component at its default props —
-              // `DrawerItemContent` (module scope, above) owns the "is this
-              // row hovered" state itself, so the preview only ever mounts
-              // for the row actually under the pointer, not all 44 at once.
-              drawerItem: ({ children, name }) => (
-                <DrawerItemContent name={name} previewStyle={previewStyle}>
-                  {children}
-                </DrawerItemContent>
-              ),
-            }}
-            onChange={(data) => {
-              latestPuckData.current = data;
-            }}
-          />
-        </FreeCanvasContext.Provider>
+      {/* Audit H4: `dockedPanel` (computed above) sits beside the canvas as
+          a plain flex sibling now, not a `position: fixed` overlay on top
+          of it — `minWidth: 0` on the canvas child is the same fix C3
+          already applied to the TopAppBar's own actions row (ui/tokens.css)
+          for the same reason: without it, a flex item's default min-width
+          is its own content's min-content width, which can force this row
+          wider than the viewport instead of letting the canvas shrink to
+          make room for the docked panel. */}
+      <div style={{ flex: 1, minHeight: 0, display: "flex" }}>
+        <div ref={puckCanvasRef} className="pf-puck-canvas" style={{ flex: 1, minHeight: 0, minWidth: 0 }}>
+          <FreeCanvasContext.Provider value={{ layoutMode, positions, onRectChange: handleRectChange, idBridge }}>
+            <Puck
+              key={page.id}
+              config={config}
+              data={initialPuckData}
+              overrides={{
+                preview: FreeCanvasPreview,
+                // KAN-1205: Puck ships its own header chrome — dark-leaning,
+                // styled from its own CSS namespace, unrelated to this app's
+                // --md-sys-color-* tokens (ui/tokens.css) — plus a built-in
+                // "Publish" button that isn't wired to handlePublish above.
+                // Suppressing it entirely leaves pre-fab's own TopAppBar (and
+                // its working FilledButton onClick={handlePublish}) as the
+                // only chrome above the canvas.
+                header: () => <></>,
+                // KAN-1207 / docs/adr/0017: the only per-row extension point
+                // Puck's ComponentConfig/Overrides expose — it wraps Puck's
+                // own default inner content (name label + drag-grip icon,
+                // `children` here), it doesn't replace the outer row element
+                // (padding/hover background/shape — that's handled by the
+                // `--puck-drawer-item-*` custom-property overrides + the
+                // `.pf-puck-canvas` rules in ui/tokens.css instead). Adds a
+                // per-block-type glyph and a hover-revealed live preview of
+                // the actual block component at its default props —
+                // `DrawerItemContent` (module scope, above) owns the "is this
+                // row hovered" state itself, so the preview only ever mounts
+                // for the row actually under the pointer, not all 44 at once.
+                drawerItem: ({ children, name }) => (
+                  <DrawerItemContent name={name} previewStyle={previewStyle}>
+                    {children}
+                  </DrawerItemContent>
+                ),
+              }}
+              onChange={(data) => {
+                latestPuckData.current = data;
+              }}
+            />
+          </FreeCanvasContext.Provider>
+        </div>
+        {dockedPanel}
       </div>
-      {themeEditorOpen ? (
-        <ThemeEditor tokens={theme.tokens} onSave={handleSaveTheme} onClose={() => setThemeEditorOpen(false)} />
-      ) : null}
-      {pagesPanelOpen ? (
-        <PagesPanel
-          siteId={siteId}
-          pages={pages}
-          currentPageId={page.id}
-          onSelect={handleSelectPage}
-          onCreated={handlePageCreated}
-          onClose={() => setPagesPanelOpen(false)}
-        />
-      ) : null}
-      {domainsPanelOpen ? (
-        <DomainsPanel
-          siteId={siteId}
-          publicUrl={site.publicUrl}
-          onClose={() => setDomainsPanelOpen(false)}
-          onOpenBilling={openBillingFromDomains}
-        />
-      ) : null}
-      {blogPanelOpen ? <BlogPanel siteId={siteId} onClose={() => setBlogPanelOpen(false)} /> : null}
-      {productsPanelOpen ? <ProductsPanel siteId={siteId} onClose={() => setProductsPanelOpen(false)} /> : null}
-      {ordersPanelOpen ? <OrdersPanel siteId={siteId} onClose={() => setOrdersPanelOpen(false)} /> : null}
-      {submissionsPanelOpen ? <SubmissionsPanel siteId={siteId} page={page} onClose={() => setSubmissionsPanelOpen(false)} /> : null}
-      {bookingsPanelOpen ? <BookingsPanel siteId={siteId} pages={pages} onClose={() => setBookingsPanelOpen(false)} /> : null}
-      {paymentsPanelOpen ? <PaymentsPanel siteId={siteId} pages={pages} onClose={() => setPaymentsPanelOpen(false)} /> : null}
-      {billingPanelOpen ? <BillingPanel onClose={() => setBillingPanelOpen(false)} /> : null}
       <Dialog open={celebration !== null} onClose={() => setCelebration(null)} ariaLabel="Site published">
         <h2 className="pf-dialog-headline">🎉 Your site is live!</h2>
         <p className="pf-supporting-text">

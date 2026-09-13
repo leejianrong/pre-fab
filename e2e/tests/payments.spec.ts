@@ -129,7 +129,7 @@ test.describe("editor UI: Payments panel (KAN-1265)", () => {
 
     const header = page.locator("header").first();
     await header.getByRole("button", { name: /^payments$/i }).click();
-    const panel = page.getByRole("dialog", { name: /^payments$/i });
+    const panel = page.getByRole("complementary", { name: /^payments$/i });
     await expect(panel).toBeVisible();
 
     // Not connected yet — the connect form is shown, no "Disconnect" option.
@@ -179,7 +179,7 @@ test.describe("editor UI: Payments panel (KAN-1265)", () => {
 
     const header = page.locator("header").first();
     await header.getByRole("button", { name: /^payments$/i }).click();
-    const panel = page.getByRole("dialog", { name: /^payments$/i });
+    const panel = page.getByRole("complementary", { name: /^payments$/i });
     await expect(panel.getByText(/^connected$/i)).toBeVisible({ timeout: 10_000 });
 
     await panel.getByRole("button", { name: /disconnect stripe/i }).click();

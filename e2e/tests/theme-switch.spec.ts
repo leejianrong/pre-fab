@@ -35,7 +35,7 @@ test("switching theme restyles the canvas with no page document mutation", async
   const accentInput = page.locator('[data-pf-token-input="color.accent"] input');
   await accentInput.fill(newAccent);
   await page.getByRole("button", { name: /save theme/i }).click();
-  await expect(page.getByRole("dialog", { name: /theme editor/i })).toHaveCount(0, { timeout: 10_000 });
+  await expect(page.getByRole("complementary", { name: /theme editor/i })).toHaveCount(0, { timeout: 10_000 });
 
   await expect(async () => {
     const accentAfter = await themeRoot.evaluate((el) => getComputedStyle(el).getPropertyValue("--pf-color-accent").trim());

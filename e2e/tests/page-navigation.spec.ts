@@ -50,7 +50,7 @@ test.describe("page navigation (KAN-1263)", () => {
 
     const header = page.locator("header").first();
     await header.getByRole("button", { name: /^pages$/i }).click();
-    const pagesDialog = page.getByRole("dialog", { name: /site pages/i });
+    const pagesDialog = page.getByRole("complementary", { name: /site pages/i });
     await expect(pagesDialog).toBeVisible();
     await expect(pagesDialog.getByText("Home", { exact: true })).toBeVisible();
     await expect(pagesDialog.getByText("Services", { exact: true })).toBeVisible();
@@ -98,7 +98,7 @@ test.describe("page navigation (KAN-1263)", () => {
 
     const header = page.locator("header").first();
     await header.getByRole("button", { name: /^pages$/i }).click();
-    const pagesDialog = page.getByRole("dialog", { name: /site pages/i });
+    const pagesDialog = page.getByRole("complementary", { name: /site pages/i });
     await pagesDialog.getByLabel(/page title/i).fill("About us");
     await pagesDialog.getByRole("button", { name: /\+ add page/i }).click();
 
@@ -145,7 +145,7 @@ test.describe("page navigation (KAN-1263)", () => {
     await expect(page.getByRole("heading", { name: /add your first page/i })).toBeVisible({ timeout: 15_000 });
     await page.getByRole("button", { name: /\+ add a page/i }).click();
 
-    const pagesDialog = page.getByRole("dialog", { name: /site pages/i });
+    const pagesDialog = page.getByRole("complementary", { name: /site pages/i });
     await expect(pagesDialog).toBeVisible();
     // Deliberately not "Home": the site already has a *real* slug:"home"
     // page server side (see the comment above) — the faked-empty listing
@@ -185,7 +185,7 @@ test.describe("page navigation (KAN-1263)", () => {
 
     const header = page.locator("header").first();
     await header.getByRole("button", { name: /^pages$/i }).click();
-    const pagesDialog = page.getByRole("dialog", { name: /site pages/i });
+    const pagesDialog = page.getByRole("complementary", { name: /site pages/i });
     await pagesDialog.getByLabel(/page title/i).fill("Home");
     await pagesDialog.getByRole("button", { name: /\+ add page/i }).click();
 

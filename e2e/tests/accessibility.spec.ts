@@ -97,7 +97,7 @@ test.describe("editor UI accessibility (R6, KAN-1219)", () => {
     await loginInBrowser(page);
     await openSiteByName(page, site.site.name);
     await page.getByRole("button", { name: /^theme$/i }).click();
-    await page.getByRole("dialog", { name: /theme editor/i }).waitFor({ timeout: 10_000 });
+    await page.getByRole("complementary", { name: /theme editor/i }).waitFor({ timeout: 10_000 });
     await runAxeOn("theme editor side sheet", page);
   });
 
@@ -109,7 +109,7 @@ test.describe("editor UI accessibility (R6, KAN-1219)", () => {
     await loginInBrowser(page);
     await openSiteByName(page, site.site.name);
     await page.getByRole("button", { name: /^pages$/i }).click();
-    await page.getByRole("dialog", { name: /site pages/i }).waitFor({ timeout: 10_000 });
+    await page.getByRole("complementary", { name: /site pages/i }).waitFor({ timeout: 10_000 });
     await runAxeOn("pages side sheet", page);
   });
 
@@ -124,7 +124,7 @@ test.describe("editor UI accessibility (R6, KAN-1219)", () => {
     await loginInBrowser(page);
     await openSiteByName(page, site.site.name);
     await page.getByRole("button", { name: /^submissions$/i }).click();
-    await page.getByRole("dialog", { name: /form submissions/i }).waitFor({ timeout: 10_000 });
+    await page.getByRole("complementary", { name: /form submissions/i }).waitFor({ timeout: 10_000 });
     await runAxeOn("forms/submissions side sheet", page);
   });
 
@@ -138,7 +138,7 @@ test.describe("editor UI accessibility (R6, KAN-1219)", () => {
     await loginInBrowser(page);
     await openSiteByName(page, site.site.name);
     await page.getByRole("button", { name: /^payments$/i }).click();
-    await page.getByRole("dialog", { name: /^payments$/i }).waitFor({ timeout: 10_000 });
+    await page.getByRole("complementary", { name: /^payments$/i }).waitFor({ timeout: 10_000 });
     await runAxeOn("payments side sheet", page);
   });
 
@@ -154,7 +154,7 @@ test.describe("editor UI accessibility (R6, KAN-1219)", () => {
     await loginInBrowser(page);
     await openSiteByName(page, site.site.name);
     await page.getByRole("button", { name: /^bookings$/i }).click();
-    await page.getByRole("dialog", { name: /^bookings$/i }).waitFor({ timeout: 10_000 });
+    await page.getByRole("complementary", { name: /^bookings$/i }).waitFor({ timeout: 10_000 });
     await runAxeOn("bookings side sheet", page);
   });
 
@@ -169,7 +169,7 @@ test.describe("editor UI accessibility (R6, KAN-1219)", () => {
     await loginInBrowser(page);
     await openSiteByName(page, site.site.name);
     await page.getByRole("button", { name: /^billing$/i }).click();
-    await page.getByRole("dialog", { name: /^billing$/i }).waitFor({ timeout: 10_000 });
+    await page.getByRole("complementary", { name: /^billing$/i }).waitFor({ timeout: 10_000 });
     await runAxeOn("billing side sheet", page);
   });
 });
