@@ -116,14 +116,21 @@ test.describe("page navigation (KAN-1263)", () => {
     // zero-page site can't be produced through the API. This proves the
     // client-side path SiteEditor.tsx used to hard-throw on
     // ("this site has no pages yet") now renders an empty-state screen
-    // instead, by making listPages report zero pages the one time the
-    // editor asks, the same way a legitimately page-less site would.
+    // instead, by making listPages report zero pages every time the editor
+    // asks, the same way a legitimately page-less site would.
+    //
+    // Every GET is faked, not just the first: apps/editor/src/main.tsx
+    // mounts under React's <StrictMode>, which double-invokes an effect in
+    // dev (mount, cleanup, mount again) — SiteEditor's own `cancelled` flag
+    // discards the first run's *result*, but the GET it fired is still a
+    // real request that reaches this route. Faking only the first one let
+    // the second, un-faked request return the site's real one-page list
+    // and load the normal canvas before the assertion below ever ran —
+    // caught by CI (KAN-1263 PR #77), not by this comment on the first try.
     const { site } = await authenticatedContext("page-empty");
 
-    let listedOnce = false;
     await page.route(`**/v1/sites/${site.site.id}/pages`, async (route) => {
-      if (route.request().method() === "GET" && !listedOnce) {
-        listedOnce = true;
+      if (route.request().method() === "GET") {
         await route.fulfill({ status: 200, contentType: "application/json", body: "[]" });
         return;
       }
