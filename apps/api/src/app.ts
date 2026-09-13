@@ -555,7 +555,11 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   // above that so a legitimately-sized upload never hits Fastify's own
   // body-size rejection before reaching UploadAssetBodySchema's own,
   // precise byte-size validation.
-  const app = Fastify({ logger: false, bodyLimit: 12 * 1024 * 1024 });
+  // `logger: false` used to mean `app.log.error(error)` in the catch-all
+  // error handler below was a silent no-op — every unhandled 500 vanished
+  // with zero trace anywhere (not stdout, not a log shipper). `true` gives
+  // Fastify its default pino instance piped to stdout.
+  const app = Fastify({ logger: true, bodyLimit: 12 * 1024 * 1024 });
   const { sender: email, outbox: emailOutbox } = createOutboxEmailSender();
   const formEmailSender = deps.formEmailSender ?? createEmailSender(email);
   const formNotifier = new EmailFormNotifier(formEmailSender);
@@ -830,7 +834,20 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     const siteId = newUlid();
 
     return withTenantContext(pool, { accountId: principal.accountId, siteId }, async (client) => {
-      const site = await createSite(client, { id: siteId, slug: body.slug, name: body.name, ownerId: principal.accountId });
+      // `sites.slug` is UNIQUE and global across every account (KAN-1279):
+      // unlike a page slug, which is scoped to one site, two accounts (or
+      // one account forking the same template twice) can easily collide on
+      // the template's own id as a starting slug. Translate it the same way
+      // KAN-1272 already does for page.create, rather than let it fall
+      // through to the generic 500 handler.
+      const site = await createSite(client, { id: siteId, slug: body.slug, name: body.name, ownerId: principal.accountId }).catch(
+        (error) => {
+          if (isUniqueViolation(error)) {
+            throw conflict(`the site slug "${body.slug}" is already taken`, { slug: body.slug });
+          }
+          throw error;
+        },
+      );
       await addSiteMember(client, { siteId: site.id, accountId: principal.accountId, role: "owner" });
       await createTheme(client, { id: newUlid(), siteId: site.id, tokens: checkout.theme });
 
