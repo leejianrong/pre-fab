@@ -92,3 +92,24 @@ export function addDaysToDateString(dateIso: string, days: number): string {
   const next = new Date(Date.UTC(year, month - 1, day) + days * 24 * 60 * 60 * 1000);
   return `${next.getUTCFullYear()}-${String(next.getUTCMonth() + 1).padStart(2, "0")}-${String(next.getUTCDate()).padStart(2, "0")}`;
 }
+
+const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/**
+ * A human-readable "Sep 7, 2026, 4:30 PM" rendering of `utcMs` in `timeZone`
+ * — built on `utcMsToZonedWallTime` (KAN-1259) rather than re-deriving the
+ * offset, so every caller (booking confirmation/reschedule/cancel emails,
+ * the manage page) shows the same DST-correct local time instead of a raw
+ * UTC instant. Deliberately does not append the zone name itself — callers
+ * that also show `timeZone` in prose (e.g. "(Asia/Singapore)") append it
+ * themselves, so it's said exactly once.
+ */
+export function formatZonedDateTime(utcMs: number, timeZone: string): string {
+  const { date, minuteOfDay } = utcMsToZonedWallTime(utcMs, timeZone);
+  const [year, month, day] = date.split("-").map(Number) as [number, number, number];
+  const hour24 = Math.floor(minuteOfDay / 60);
+  const minute = minuteOfDay % 60;
+  const period = hour24 >= 12 ? "PM" : "AM";
+  const hour12 = hour24 % 12 === 0 ? 12 : hour24 % 12;
+  return `${MONTH_NAMES[month - 1]} ${day}, ${year}, ${hour12}:${String(minute).padStart(2, "0")} ${period}`;
+}

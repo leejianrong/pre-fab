@@ -244,12 +244,22 @@ describe("the runtime API — booking (Slice 9, ADR-0009)", () => {
       payload: { startsAt: firstSlotStartIso(), visitorName: "Visitor", visitorEmail: "visitor@example.com", visitorTimezone: "UTC" },
     });
     const { id: bookingId } = create.json() as { id: string };
-    const manageEmailText = sentEmails.find((e) => e.to === "visitor@example.com")!.text;
-    const manageUrlMatch = manageEmailText.match(/https?:\/\/\S+\/manage\?token=\S+/);
+    const confirmationEmail = sentEmails.find((e) => e.to === "visitor@example.com")!;
+    const manageUrlMatch = confirmationEmail.text.match(/https?:\/\/\S+\/manage\?token=\S+/);
     expect(manageUrlMatch).toBeTruthy();
     const token = new URL(manageUrlMatch![0]).searchParams.get("token")!;
+    // KAN-1259: the confirmation email reads a human local time, not the raw UTC instant.
+    expect(confirmationEmail.text).not.toContain(firstSlotStartIso());
+    expect(confirmationEmail.text).toContain("(UTC)");
+
+    // The manage page's own JSON read (booking-manage-page.ts's `load()`)
+    // reports the booking as live, with the status the manage page's
+    // client-side JS uses to decide whether to show Cancel/Reschedule (KAN-1260).
+    const readBeforeReschedule = await app.inject({ method: "GET", url: `/v1/runtime/bookings/${siteId}/${bookingId}?token=${encodeURIComponent(token)}` });
+    expect((readBeforeReschedule.json() as { status: string }).status).toBe("confirmed");
 
     // Reschedule to the next slot (9:30) via the token, no cookie/principal at all.
+    sentEmails.length = 0;
     const newStart = `${A_MONDAY}T09:30:00.000Z`;
     const reschedule = await app.inject({
       method: "POST",
@@ -259,12 +269,31 @@ describe("the runtime API — booking (Slice 9, ADR-0009)", () => {
     expect(reschedule.statusCode).toBe(200);
     expect((reschedule.json() as { startsAt: string }).startsAt).toBe(newStart);
 
+    // KAN-1256: the reschedule-confirmation email's own manage link carries
+    // the same working token, not an empty "...manage?token=".
+    const rescheduleEmail = sentEmails.find((e) => e.to === "visitor@example.com" && e.subject.includes("rescheduled"))!;
+    expect(rescheduleEmail).toBeTruthy();
+    const rescheduleManageUrlMatch = rescheduleEmail.text.match(/https?:\/\/\S+\/manage\?token=(\S*)/);
+    expect(rescheduleManageUrlMatch).toBeTruthy();
+    const rescheduleToken = decodeURIComponent(rescheduleManageUrlMatch![1]!);
+    expect(rescheduleToken).toBe(token);
+    expect(rescheduleToken).not.toBe("");
+    // KAN-1259 again, on the reschedule email specifically.
+    expect(rescheduleEmail.text).not.toContain(newStart);
+    expect(rescheduleEmail.text).toContain("(UTC)");
+
     // Wrong token is rejected.
     const badCancel = await app.inject({ method: "POST", url: `/v1/runtime/bookings/${siteId}/${bookingId}/cancel`, payload: { token: "wrong" } });
     expect(badCancel.statusCode).toBe(404);
 
     const cancel = await app.inject({ method: "POST", url: `/v1/runtime/bookings/${siteId}/${bookingId}/cancel`, payload: { token } });
     expect(cancel.statusCode).toBe(200);
+
+    // KAN-1260: after cancellation, the same manage-token read now reports
+    // "canceled" — what the manage page's client JS uses to hide the live
+    // Cancel/Reschedule controls instead of leaving them clickable.
+    const readAfterCancel = await app.inject({ method: "GET", url: `/v1/runtime/bookings/${siteId}/${bookingId}?token=${encodeURIComponent(token)}` });
+    expect((readAfterCancel.json() as { status: string }).status).toBe("canceled");
   });
 
   it("degrades gracefully when the calendar provider is unavailable: booking still succeeds, calendarSyncOk is false, and the connection status surfaces the failure", async () => {

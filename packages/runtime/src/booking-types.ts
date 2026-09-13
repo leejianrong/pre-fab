@@ -75,6 +75,8 @@ export interface BookingRecord {
   notes: string | null;
   manageToken: string;
   externalEventId: string | null;
+  /** Lets a manage-page/UI caller tell a live booking from an already-canceled one without a second round trip (KAN-1260) — `getByManageToken` still resolves a canceled booking (so "this booking was already canceled" can render), it just now says so. */
+  status: "confirmed" | "canceled";
 }
 
 export type CreateBookingStoreResult = { status: "created"; booking: BookingRecord } | { status: "slot_taken" };
@@ -100,7 +102,14 @@ export interface BookingStore {
   /** Resolves a booking for the visitor's own cancel/reschedule link — `manageToken` is the raw secret; the store hashes it the same way it was hashed at creation before comparing. */
   getByManageToken(siteId: string, bookingId: string, manageToken: string): Promise<BookingRecord | null>;
   cancel(siteId: string, bookingId: string): Promise<BookingRecord | null>;
-  reschedule(siteId: string, bookingId: string, startsAtMs: number, endsAtMs: number): Promise<RescheduleBookingStoreResult>;
+  /**
+   * `manageToken` here is the raw secret the caller already verified via
+   * `getByManageToken` (KAN-1256) — echoed straight back onto the returned
+   * `BookingRecord` so `notifyRescheduled` can build a working manage link,
+   * the same way `create`'s own `manageToken` input is echoed back. The
+   * store itself never persists it (only its hash, set at creation).
+   */
+  reschedule(siteId: string, bookingId: string, startsAtMs: number, endsAtMs: number, manageToken: string): Promise<RescheduleBookingStoreResult>;
   setExternalEventId(siteId: string, bookingId: string, externalEventId: string | null): Promise<void>;
   /** Every confirmed booking overlapping [rangeStartMs, rangeEndMs) — what slot computation subtracts. */
   listConfirmedInRange(siteId: string, rangeStartMs: number, rangeEndMs: number): Promise<BusyInterval[]>;

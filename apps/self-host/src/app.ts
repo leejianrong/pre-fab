@@ -418,7 +418,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
         reply.status(404);
         return { error: { code: "not_found", message: "booking not found" } };
       }
-      return { id: booking.id, startsAt: booking.startsAt, endsAt: booking.endsAt, visitorName: booking.visitorName, visitorTimezone: booking.visitorTimezone };
+      return { id: booking.id, startsAt: booking.startsAt, endsAt: booking.endsAt, visitorName: booking.visitorName, visitorTimezone: booking.visitorTimezone, status: booking.status };
     },
   );
 

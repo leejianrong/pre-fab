@@ -141,11 +141,22 @@ describe("apps/self-host — bookings work with no pre-fab infrastructure reacha
     const manageText = sentEmails.find((e) => e.to === "grace@example.com")!.text;
     const token = new URL(manageText.match(/https?:\/\/\S+\/manage\?token=\S+/)![0]).searchParams.get("token")!;
 
+    // KAN-1260: before cancellation the manage-token read reports the
+    // booking as still live — the field the manage page's client JS uses to
+    // decide whether to show Cancel/Reschedule.
+    const readBefore = await app.inject({ method: "GET", url: `/v1/runtime/bookings/${SITE_ID}/${bookingId}?token=${encodeURIComponent(token)}` });
+    expect((readBefore.json() as { status: string }).status).toBe("confirmed");
+
     const cancel = await app.inject({ method: "POST", url: `/v1/runtime/bookings/${SITE_ID}/${bookingId}/cancel`, payload: { token } });
     expect(cancel.statusCode).toBe(200);
 
     const row = db.prepare("SELECT status FROM bookings WHERE id = ?").get(bookingId) as { status: string };
     expect(row.status).toBe("canceled");
+
+    // Same read, after cancellation, now reports "canceled" — what the
+    // manage page hides the live controls on (KAN-1260).
+    const readAfter = await app.inject({ method: "GET", url: `/v1/runtime/bookings/${SITE_ID}/${bookingId}?token=${encodeURIComponent(token)}` });
+    expect((readAfter.json() as { status: string }).status).toBe("canceled");
 
     const rebook = await app.inject({
       method: "POST",
@@ -153,5 +164,43 @@ describe("apps/self-host — bookings work with no pre-fab infrastructure reacha
       payload: { startsAt: `${A_MONDAY}T11:00:00.000Z`, visitorName: "Alan Turing", visitorEmail: "alan@example.com", visitorTimezone: "UTC" },
     });
     expect(rebook.statusCode).toBe(201);
+  });
+
+  it("reschedules a booking via its manage token, with a working (non-empty) manage link in the confirmation email (KAN-1256), and human-readable local times (KAN-1259)", async () => {
+    const create = await app.inject({
+      method: "POST",
+      url: `/v1/runtime/booking-widgets/${WIDGET_ID}/bookings`,
+      payload: { startsAt: `${A_MONDAY}T13:00:00.000Z`, visitorName: "Katherine Johnson", visitorEmail: "katherine@example.com", visitorTimezone: "UTC" },
+    });
+    expect(create.statusCode).toBe(201);
+    const { id: bookingId } = JSON.parse(create.body) as { id: string };
+
+    const confirmationEmail = sentEmails.find((e) => e.to === "katherine@example.com")!;
+    const token = new URL(confirmationEmail.text.match(/https?:\/\/\S+\/manage\?token=\S+/)![0]).searchParams.get("token")!;
+    expect(confirmationEmail.text).not.toContain(`${A_MONDAY}T13:00:00.000Z`);
+    expect(confirmationEmail.text).toContain("(UTC)");
+
+    sentEmails.length = 0;
+    const newStart = `${A_MONDAY}T13:30:00.000Z`;
+    const reschedule = await app.inject({
+      method: "POST",
+      url: `/v1/runtime/bookings/${SITE_ID}/${bookingId}/reschedule`,
+      payload: { token, startsAt: newStart },
+    });
+    expect(reschedule.statusCode).toBe(200);
+    expect((JSON.parse(reschedule.body) as { startsAt: string }).startsAt).toBe(newStart);
+
+    const rescheduleEmail = sentEmails.find((e) => e.to === "katherine@example.com" && e.subject.includes("rescheduled"))!;
+    expect(rescheduleEmail).toBeTruthy();
+    const rescheduleTokenMatch = rescheduleEmail.text.match(/https?:\/\/\S+\/manage\?token=(\S*)/);
+    expect(rescheduleTokenMatch).toBeTruthy();
+    const rescheduleToken = decodeURIComponent(rescheduleTokenMatch![1]!);
+    // The whole bug (KAN-1256): apps/self-host's reschedule() hardcoded
+    // manageToken to "" too, producing "...manage?token=" with nothing
+    // after the equals sign in this exact email.
+    expect(rescheduleToken).toBe(token);
+    expect(rescheduleToken).not.toBe("");
+    expect(rescheduleEmail.text).not.toContain(newStart);
+    expect(rescheduleEmail.text).toContain("(UTC)");
   });
 });

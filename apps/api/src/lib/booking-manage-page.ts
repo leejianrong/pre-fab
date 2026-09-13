@@ -38,15 +38,42 @@ export function renderManageBookingPage(input: { runtimeApiUrl: string; siteId: 
     var siteId = ${JSON.stringify(siteId)};
     var bookingId = ${JSON.stringify(bookingId)};
     var token = ${JSON.stringify(token)};
+    // Set once the booking loads — the reschedule response itself carries no
+    // visitorTimezone, so the display timezone is remembered from load().
+    var visitorTimezone = null;
 
     function setStatus(text) { document.getElementById("status").textContent = text; }
+
+    // Same instant, shown in the visitor's own timezone rather than the raw
+    // UTC ISO string (KAN-1259) — browser Intl already handles the
+    // instant-in-a-zone conversion correctly, the same primitive
+    // packages/runtime/src/timezone.ts's formatZonedDateTime uses server-side
+    // for the confirmation/reschedule/cancel emails.
+    function formatLocal(iso, timeZone) {
+      try {
+        return new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short", timeZone: timeZone });
+      } catch (e) {
+        return iso;
+      }
+    }
+
+    // Once canceled, the booking is no longer live — hide the Cancel/
+    // Reschedule controls rather than leaving them clickable against a
+    // booking the backend will reject a second cancel/reschedule for
+    // (KAN-1260).
+    function applyStatus(status) {
+      var isLive = status !== "canceled";
+      document.getElementById("actions").hidden = !isLive;
+      if (!isLive) setStatus("This booking has been canceled.");
+    }
 
     function load() {
       fetch(API + "/v1/runtime/bookings/" + siteId + "/" + bookingId + "?token=" + encodeURIComponent(token))
         .then(function (r) { if (!r.ok) throw new Error("not found"); return r.json(); })
         .then(function (booking) {
-          document.getElementById("details").textContent = "Booked for " + booking.startsAt + " (" + booking.visitorTimezone + ").";
-          document.getElementById("actions").hidden = false;
+          visitorTimezone = booking.visitorTimezone;
+          document.getElementById("details").textContent = "Booked for " + formatLocal(booking.startsAt, visitorTimezone) + " (" + visitorTimezone + ").";
+          applyStatus(booking.status);
         })
         .catch(function () { document.getElementById("details").textContent = "This booking could not be found — it may already be canceled."; });
     }
@@ -58,7 +85,7 @@ export function renderManageBookingPage(input: { runtimeApiUrl: string; siteId: 
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ token: token }),
       })
-        .then(function (r) { if (!r.ok) throw new Error("failed"); setStatus("Your booking has been canceled."); })
+        .then(function (r) { if (!r.ok) throw new Error("failed"); setStatus("Your booking has been canceled."); document.getElementById("actions").hidden = true; })
         .catch(function () { setStatus("Could not cancel — please try again."); });
     });
 
@@ -72,7 +99,7 @@ export function renderManageBookingPage(input: { runtimeApiUrl: string; siteId: 
         body: JSON.stringify({ token: token, startsAt: new Date(value).toISOString() }),
       })
         .then(function (r) { if (!r.ok) throw new Error("failed"); return r.json(); })
-        .then(function (booking) { setStatus("Rescheduled to " + booking.startsAt + "."); })
+        .then(function (booking) { setStatus("Rescheduled to " + formatLocal(booking.startsAt, visitorTimezone) + " (" + visitorTimezone + ")."); })
         .catch(function () { setStatus("That time is no longer available — please try another."); });
     });
 
