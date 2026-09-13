@@ -5,6 +5,8 @@ import type {
   FormWithSettings,
   ListSubmissionsQuery,
   ListSubmissionsResult,
+  ListWebhookDeliveriesQuery,
+  ListWebhookDeliveriesResult,
 } from "@prefab/api-client";
 
 export const formConfigure: Command<{ siteId: string; formId: string } & ConfigureFormInput, FormSettings> = {
@@ -46,4 +48,19 @@ export const submissionDelete: Command<{ siteId: string; formId: string; submiss
   mutation: "submission.delete",
   description: "Delete a single submission — PDPA/GDPR per-record deletion (Slice 6)",
   run: (ctx, args) => ctx.api.deleteSubmission(args.siteId, args.formId, args.submissionId),
+};
+
+/**
+ * KAN-1264: a read, not a mutation (no `mutation:` entry — see this card's
+ * new API route for why ADR-0003 parity does not apply here). Added anyway
+ * for consistency with formGet/submissionList, which are also reads
+ * exposed via the CLI even though not required.
+ */
+export const webhookDeliveryList: Command<{ siteId: string; formId: string } & ListWebhookDeliveriesQuery, ListWebhookDeliveriesResult> = {
+  name: "webhookDelivery.list",
+  description: "List a form's webhook delivery attempts (any status), paginated",
+  run: (ctx, args) => {
+    const { siteId, formId, ...query } = args;
+    return ctx.api.listWebhookDeliveries(siteId, formId, query);
+  },
 };

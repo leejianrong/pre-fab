@@ -9,7 +9,7 @@ import { pageCreate, pageGet, pageList, pageWrite } from "./page.js";
 import { postCreate, postGet, postList, postWrite } from "./post.js";
 import { productCreate, productGet, productList, productWrite } from "./product.js";
 import { orderList, orderGet, orderExport, orderMarkShipped } from "./order.js";
-import { formConfigure, formGet, submissionList, submissionExport, submissionDelete } from "./form.js";
+import { formConfigure, formGet, submissionList, submissionExport, submissionDelete, webhookDeliveryList } from "./form.js";
 import { eventSignupWidgetGet, eventSignupList, eventSignupExport, eventSignupDelete } from "./event-signup.js";
 import { assetUpload, assetList } from "./asset.js";
 import { tokenCreate } from "./token.js";
@@ -70,6 +70,7 @@ export const commandRegistry = defineRegistry([
   submissionList,
   submissionExport,
   submissionDelete,
+  webhookDeliveryList,
   eventSignupWidgetGet,
   eventSignupList,
   eventSignupExport,
@@ -145,6 +146,7 @@ export {
   submissionList,
   submissionExport,
   submissionDelete,
+  webhookDeliveryList,
   eventSignupWidgetGet,
   eventSignupList,
   eventSignupExport,
