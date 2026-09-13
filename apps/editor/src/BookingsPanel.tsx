@@ -185,8 +185,8 @@ function AvailabilitySection({ siteId }: { siteId: string }) {
     <Card variant="filled" style={{ display: "grid", gap: "0.75rem" }}>
       <strong>Availability</strong>
       <p className="pf-supporting-text" style={{ margin: 0 }}>
-        Weekly hours visitors can book a Booking widget on this site (Slice 9, ADR-0009). One window per day — for a lunch-break
-        split or one-off closed days, use the CLI's <code>availability set</code>.
+        The weekly hours visitors can book on this site. One window per day — for a lunch-break split or a one-off closed
+        day, contact support.
       </p>
       <form onSubmit={submit} style={{ display: "grid", gap: "0.75rem" }}>
         <TextField
