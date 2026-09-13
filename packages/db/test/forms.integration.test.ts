@@ -5,7 +5,7 @@ import { createPool, runMigrations, withTenantContext } from "../src/index.js";
 import { createAccount, createSite } from "../src/repositories/index.js";
 import { getForm, getFormPublic, getFormSettings, upsertFormSettings, upsertPublishedForm } from "../src/repositories/forms.js";
 import { createSubmission, deleteSubmission, getSubmission, listSubmissions } from "../src/repositories/submissions.js";
-import { createWebhookDelivery, listDueWebhookDeliveries, recordWebhookAttempt } from "../src/repositories/webhook-deliveries.js";
+import { createWebhookDelivery, listDueWebhookDeliveries, listWebhookDeliveries, recordWebhookAttempt } from "../src/repositories/webhook-deliveries.js";
 
 const migrateUrl = process.env.MIGRATE_DATABASE_URL_TEST;
 const appUrl = process.env.DATABASE_URL_TEST;
@@ -212,5 +212,58 @@ describe("webhook deliveries under RLS (Slice 6)", () => {
 
     const stillDue = await withTenantContext(appPool, { siteId: site.id }, (client) => listDueWebhookDeliveries(client, site.id));
     expect(stillDue).toHaveLength(0); // next_attempt_at is in the future
+  });
+
+  it("listWebhookDeliveries (KAN-1264) returns every delivery regardless of status, scoped to one form, newest first, paginated", async () => {
+    const { site } = await makeSite("webhooks-list");
+    const formIdA = newUlid();
+    const formIdB = newUlid();
+    await withTenantContext(appPool, { siteId: site.id }, (client) =>
+      upsertPublishedForm(client, { id: formIdA, siteId: site.id, heading: "", fields: [], submitLabel: "Submit", turnstileEnabled: false }),
+    );
+    await withTenantContext(appPool, { siteId: site.id }, (client) =>
+      upsertPublishedForm(client, { id: formIdB, siteId: site.id, heading: "", fields: [], submitLabel: "Submit", turnstileEnabled: false }),
+    );
+
+    const submissionA1 = await withTenantContext(appPool, { siteId: site.id }, (client) =>
+      createSubmission(client, { id: newUlid(), siteId: site.id, formId: formIdA, values: {}, ip: null }),
+    );
+    const submissionA2 = await withTenantContext(appPool, { siteId: site.id }, (client) =>
+      createSubmission(client, { id: newUlid(), siteId: site.id, formId: formIdA, values: {}, ip: null }),
+    );
+    const submissionB = await withTenantContext(appPool, { siteId: site.id }, (client) =>
+      createSubmission(client, { id: newUlid(), siteId: site.id, formId: formIdB, values: {}, ip: null }),
+    );
+
+    // Form A gets a pending delivery, then a successful one (recorded second, so it sorts first).
+    const deliveryA1 = await withTenantContext(appPool, { siteId: site.id }, (client) =>
+      createWebhookDelivery(client, { id: newUlid(), siteId: site.id, submissionId: submissionA1.id, url: "https://example.com/hook", secret: null, payload: {} }),
+    );
+    await withTenantContext(appPool, { siteId: site.id }, (client) =>
+      recordWebhookAttempt(client, deliveryA1.id, { status: "pending", attempt: 1, lastError: "connect ECONNREFUSED", nextAttemptAt: new Date(Date.now() + 60_000), deliveredAt: null }),
+    );
+    const deliveryA2 = await withTenantContext(appPool, { siteId: site.id }, (client) =>
+      createWebhookDelivery(client, { id: newUlid(), siteId: site.id, submissionId: submissionA2.id, url: "https://example.com/hook", secret: null, payload: {} }),
+    );
+    await withTenantContext(appPool, { siteId: site.id }, (client) =>
+      recordWebhookAttempt(client, deliveryA2.id, { status: "success", attempt: 1, lastError: null, nextAttemptAt: new Date(), deliveredAt: new Date() }),
+    );
+
+    // Form B's own delivery must never show up when listing form A's.
+    await withTenantContext(appPool, { siteId: site.id }, (client) =>
+      createWebhookDelivery(client, { id: newUlid(), siteId: site.id, submissionId: submissionB.id, url: "https://example.com/other-hook", secret: null, payload: {} }),
+    );
+
+    const forA = await withTenantContext(appPool, { siteId: site.id }, (client) => listWebhookDeliveries(client, site.id, formIdA));
+    expect(forA.total).toBe(2);
+    expect(forA.deliveries.map((d) => d.id)).toEqual([deliveryA2.id, deliveryA1.id]); // newest first
+    expect(forA.deliveries.map((d) => d.status)).toEqual(["success", "pending"]);
+
+    const forB = await withTenantContext(appPool, { siteId: site.id }, (client) => listWebhookDeliveries(client, site.id, formIdB));
+    expect(forB.total).toBe(1);
+
+    const paged = await withTenantContext(appPool, { siteId: site.id }, (client) => listWebhookDeliveries(client, site.id, formIdA, { limit: 1, offset: 1 }));
+    expect(paged.total).toBe(2);
+    expect(paged.deliveries.map((d) => d.id)).toEqual([deliveryA1.id]);
   });
 });

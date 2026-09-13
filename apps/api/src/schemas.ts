@@ -167,6 +167,12 @@ export const ListSubmissionsQuerySchema = z.object({
   offset: z.coerce.number().int().optional(),
 });
 
+/** KAN-1264: webhook delivery status list, paginated the same way ListSubmissionsQuerySchema is. */
+export const ListWebhookDeliveriesQuerySchema = z.object({
+  limit: z.coerce.number().int().optional(),
+  offset: z.coerce.number().int().optional(),
+});
+
 export const ExportSubmissionsQuerySchema = z.object({
   format: z.enum(["csv", "json"]).default("csv"),
 });

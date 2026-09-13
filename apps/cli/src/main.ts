@@ -76,6 +76,7 @@ import {
   themeGet,
   themeSet,
   tokenCreate,
+  webhookDeliveryList,
   type CommandContext,
 } from "@prefab/commands";
 import { runCommand, type GlobalOptions } from "./output.js";
@@ -474,6 +475,21 @@ form
   .command("get <siteId> <formId>")
   .description("Show a form's published field manifest and current settings")
   .action((siteId, formId) => runCommand(globalOptions(), async () => formGet.run(await resolveContext(), { siteId, formId })));
+form
+  .command("webhook-deliveries <siteId> <formId>")
+  .description("List a form's webhook delivery attempts (pending/success/failed), paginated")
+  .option("--limit <limit>", "page size")
+  .option("--offset <offset>")
+  .action((siteId, formId, options: { limit?: string; offset?: string }) =>
+    runCommand(globalOptions(), async () =>
+      webhookDeliveryList.run(await resolveContext(), {
+        siteId,
+        formId,
+        limit: options.limit ? Number(options.limit) : undefined,
+        offset: options.offset ? Number(options.offset) : undefined,
+      }),
+    ),
+  );
 
 const submission = program.command("submission").description("Manage a form's submissions (Slice 6)");
 submission

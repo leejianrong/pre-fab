@@ -141,6 +141,7 @@ export const schemas = {
   "submission.list": { siteId: z.string(), formId: z.string(), limit: z.number().int().optional(), offset: z.number().int().optional() },
   "submission.export": { siteId: z.string(), formId: z.string(), format: z.enum(["csv", "json"]).optional() },
   "submission.delete": { siteId: z.string(), formId: z.string(), submissionId: z.string() },
+  "webhookDelivery.list": { siteId: z.string(), formId: z.string(), limit: z.number().int().optional(), offset: z.number().int().optional() },
 
   "eventSignupWidget.get": { siteId: z.string(), widgetId: z.string() },
   "eventSignup.list": { siteId: z.string(), widgetId: z.string(), limit: z.number().int().optional(), offset: z.number().int().optional() },

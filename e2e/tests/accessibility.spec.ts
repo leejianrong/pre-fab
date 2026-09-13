@@ -93,6 +93,21 @@ test.describe("editor UI accessibility (R6, KAN-1219)", () => {
     await runAxeOn("pages side sheet", page);
   });
 
+  // KAN-1264: the Submissions panel's new webhook secret field + delivery
+  // status list — same SideSheet pattern as the pages side sheet above,
+  // checked the same way. The seed site here has no Form block, so this
+  // exercises the "no Form block yet" empty state (the panel's title stays
+  // "Forms" until a form is picked, same as the pages side sheet checking
+  // its own default state).
+  test("forms/submissions side sheet", async ({ page }) => {
+    const { site } = await authenticatedContext("axe-forms");
+    await loginInBrowser(page);
+    await openSiteByName(page, site.site.name);
+    await page.getByRole("button", { name: /^submissions$/i }).click();
+    await page.getByRole("dialog", { name: /form submissions/i }).waitFor({ timeout: 10_000 });
+    await runAxeOn("forms/submissions side sheet", page);
+  });
+
   // KAN-1265: the new BYO-Stripe connect/disconnect + payment/subscription
   // records panel — same SideSheet pattern as the pages side sheet above,
   // checked the same way. Not-connected state (the "Connect Stripe" form)

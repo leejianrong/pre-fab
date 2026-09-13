@@ -311,3 +311,79 @@ describe("the runtime API — form submission (Slice 6, ADR-0007/ADR-0010)", () 
     expect(webhookCalls).toHaveLength(2); // the retried, successful attempt
   });
 });
+
+describe("webhook-deliveries.list (KAN-1264): owner-facing delivery status read", () => {
+  it("lists a delivery's status/attempt count regardless of outcome, newest first", async () => {
+    const cookie = await seedAccountAndLogin(`forms-webhookdeliveries-${newUlid()}@example.com`);
+    const { siteId, formId } = await createPublishedFormSite(cookie);
+    await app.inject({
+      method: "PUT",
+      url: `/v1/sites/${siteId}/forms/${formId}`,
+      headers: { cookie },
+      payload: { webhookUrl: "https://hooks.example.test/inbound", webhookSecret: "shh" },
+    });
+
+    // First submission's webhook delivery fails immediately.
+    webhookShouldFail = true;
+    const first = await app.inject({
+      method: "POST",
+      url: `/v1/runtime/forms/${formId}/submissions`,
+      payload: { values: { name: "A", email: "a@example.com", message: "one" } },
+    });
+    expect(first.statusCode).toBe(201);
+
+    // Second submission's webhook delivery succeeds.
+    webhookShouldFail = false;
+    const second = await app.inject({
+      method: "POST",
+      url: `/v1/runtime/forms/${formId}/submissions`,
+      payload: { values: { name: "B", email: "b@example.com", message: "two" } },
+    });
+    expect(second.statusCode).toBe(201);
+
+    const list = await app.inject({ method: "GET", url: `/v1/sites/${siteId}/forms/${formId}/webhook-deliveries`, headers: { cookie } });
+    expect(list.statusCode).toBe(200);
+    const body = list.json() as { deliveries: Array<{ status: string; attempt: number; url: string; lastError: string | null }>; total: number };
+    expect(body.total).toBe(2);
+    // Newest first: the second (successful) delivery, then the first (failed, pending retry).
+    expect(body.deliveries[0]?.status).toBe("success");
+    expect(body.deliveries[0]?.attempt).toBe(1);
+    expect(body.deliveries[1]?.status).toBe("pending");
+    expect(body.deliveries[1]?.attempt).toBe(1);
+    expect(body.deliveries[1]?.lastError).toBeTruthy();
+    for (const delivery of body.deliveries) expect(delivery.url).toBe("https://hooks.example.test/inbound");
+  });
+
+  it("a webhook delivery for one form is invisible when listed under another form's id, and paginates", async () => {
+    const cookie = await seedAccountAndLogin(`forms-webhookdeliveries-scope-${newUlid()}@example.com`);
+    const { siteId, formId } = await createPublishedFormSite(cookie);
+    await app.inject({
+      method: "PUT",
+      url: `/v1/sites/${siteId}/forms/${formId}`,
+      headers: { cookie },
+      payload: { webhookUrl: "https://hooks.example.test/inbound" },
+    });
+    await app.inject({
+      method: "POST",
+      url: `/v1/runtime/forms/${formId}/submissions`,
+      payload: { values: { name: "A", email: "a@example.com", message: "hi" } },
+    });
+
+    const otherFormList = await app.inject({
+      method: "GET",
+      url: `/v1/sites/${siteId}/forms/${newUlid()}/webhook-deliveries`,
+      headers: { cookie },
+    });
+    expect(otherFormList.statusCode).toBe(200);
+    expect((otherFormList.json() as { total: number }).total).toBe(0);
+
+    const paged = await app.inject({
+      method: "GET",
+      url: `/v1/sites/${siteId}/forms/${formId}/webhook-deliveries?limit=1&offset=0`,
+      headers: { cookie },
+    });
+    const pagedBody = paged.json() as { deliveries: unknown[]; total: number };
+    expect(pagedBody.total).toBe(1);
+    expect(pagedBody.deliveries).toHaveLength(1);
+  });
+});

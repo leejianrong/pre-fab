@@ -4,7 +4,7 @@ import path from "node:path";
 import { test, expect } from "@playwright/test";
 import { newUlid } from "@prefab/schema";
 import { exportSite } from "@prefab/commands";
-import { API_URL, authenticatedContext, gotoLiveSite, newCheckoutDir } from "./helpers.js";
+import { API_URL, authenticatedContext, gotoLiveSite, loginInBrowser, newCheckoutDir, openSiteByName } from "./helpers.js";
 
 function formBlock(id: string) {
   return {
@@ -194,4 +194,91 @@ test("the site source tree contains no submission data after export", async ({ p
   // The form's *field definitions* are portable and expected in the tree —
   // only the visitor's submitted values are the thing R20 forbids.
   expect(allFileContents).toContain("Contact us");
+});
+
+/**
+ * KAN-1264: the editor had a Webhook URL field wired to form.configure
+ * already, but no field for the secret (the CLI's own --webhook-secret /
+ * x-prefab-webhook-secret header already supported it), and no visibility
+ * into delivery status at all — only email notification status
+ * (`notifyStatus`) was ever surfaced. This exercises the new "Webhook
+ * secret" field and "Webhook deliveries" list in
+ * apps/editor/src/SubmissionsPanel.tsx end to end through the browser:
+ * configuring both from the panel's own form, a visitor submitting the
+ * published page (firing the real webhook receiver, same
+ * startWebhookReceiver helper the API-level test above uses), and the
+ * delivery's "success" status showing up once the panel is reopened (it
+ * doesn't poll, same "a fresh selection is what re-fetches" pattern
+ * PaymentsPanel's own e2e test already establishes).
+ */
+test.describe("editor UI: Submissions panel webhook config + delivery status (KAN-1264)", () => {
+  test("configure a webhook URL + secret from the panel, then see a successful delivery once the form is submitted", async ({ page }) => {
+    const { ctx, site } = await authenticatedContext("forms-webhook-ui");
+    const formId = newUlid();
+
+    await ctx.api.writePage(site.site.id, site.page.id, {
+      title: site.page.title,
+      slug: site.page.slug,
+      blocks: [formBlock(formId)],
+      expectedVersion: site.page.version,
+    });
+
+    const webhook = await startWebhookReceiver();
+    try {
+      await loginInBrowser(page);
+      await openSiteByName(page, site.site.name);
+
+      const header = page.locator("header").first();
+      await header.getByRole("button", { name: /^submissions$/i }).click();
+      const panel = page.getByRole("dialog", { name: /form submissions/i });
+      await expect(panel).toBeVisible();
+
+      // Only one Form block on this page, so the panel auto-selects it —
+      // its own settings form is shown directly, no "All forms" list.
+      await panel.getByLabel(/webhook url/i).fill(webhook.url);
+      await panel.getByLabel(/webhook secret/i).fill("shh-its-a-secret");
+      await panel.getByRole("button", { name: /^save$/i }).click();
+      await expect(panel.getByRole("button", { name: /^save$/i })).toBeEnabled();
+
+      // The UI actually wrote through to form.configure, not just its own local state.
+      const settings = await ctx.api.getForm(site.site.id, formId);
+      expect(settings.settings?.webhookUrl).toBe(webhook.url);
+      expect(settings.settings?.webhookSecret).toBe("shh-its-a-secret");
+
+      // No delivery yet — the panel says so rather than showing an empty list silently.
+      await expect(panel.getByText(/no delivery attempts yet/i)).toBeVisible();
+
+      await ctx.api.publish(site.site.id);
+
+      // A separate page/tab for the live site, so the editor's own page
+      // (and the still-open panel's React state) is never navigated away
+      // from — this app has no router (see accessibility.spec.ts's own
+      // comment), so leaving its origin would lose all in-memory state.
+      const livePage = await page.context().newPage();
+      try {
+        await gotoLiveSite(livePage, `${site.site.slug}.prefab.local`);
+        await waitForFormHydration(livePage);
+        await livePage.locator('input[name="name"]').fill("Ada Lovelace");
+        await livePage.locator('input[name="email"]').fill("ada@example.com");
+        await livePage.locator('textarea[name="message"]').fill("Hello from the published page!");
+        await livePage.getByRole("button", { name: "Submit" }).click();
+        await expect(livePage.getByText("Thanks — we'll be in touch.")).toBeVisible();
+        await expect.poll(() => webhook.received().length, { timeout: 10_000 }).toBeGreaterThan(0);
+      } finally {
+        await livePage.close();
+      }
+
+      // Reopening the panel re-fetches, the same way PaymentsPanel's own
+      // e2e test re-selects a block to see fresh records — this panel
+      // doesn't poll.
+      await panel.getByRole("button", { name: /close submissions panel/i }).click();
+      await expect(panel).not.toBeVisible();
+      await header.getByRole("button", { name: /^submissions$/i }).click();
+      const reopened = page.getByRole("dialog", { name: /form submissions/i });
+      await expect(reopened.getByText(/^success$/i)).toBeVisible({ timeout: 10_000 });
+      await expect(reopened.getByText(/1 attempt/i)).toBeVisible();
+    } finally {
+      await webhook.close();
+    }
+  });
 });
