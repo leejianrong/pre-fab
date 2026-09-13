@@ -61,6 +61,7 @@ import {
   listAllSubmissionsForExport,
   getSubmission,
   deleteSubmission,
+  listWebhookDeliveries,
   addSiteMember,
   getSiteMemberRole,
   listSiteMembers,
@@ -234,6 +235,7 @@ import {
   WriteProductBodySchema,
   ListProductsQuerySchema,
   ListSubmissionsQuerySchema,
+  ListWebhookDeliveriesQuerySchema,
   SignupBodySchema,
   SubmitFormBodySchema,
   UpdateThemeBodySchema,
@@ -1381,6 +1383,22 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     const { siteId } = await authorizeSite(pool, principal, request.params.siteId);
     const query = parseQuery(ListSubmissionsQuerySchema, request.query);
     return withTenantContext(pool, { siteId }, (client) => listSubmissions(client, siteId, request.params.formId, query));
+  });
+
+  // ---- KAN-1264: owner-facing read of a form's webhook delivery history,
+  // any status — mirrors payment.list exactly (a genuinely new mutation
+  // surface for reads, but ADR-0003's three-surface parity requirement
+  // applies to mutations, not reads: findUncoveredMutations only walks
+  // API_MUTATIONS, and this route has no `mutation:` entry there). Returns
+  // the delivery rows as-is (secret included) the same way form.get
+  // already returns a form's configured webhookSecret to its own owner —
+  // no separate projection needed, same reasoning ListPaymentsResult's own
+  // route comment gives for not adding one. ----
+  app.get<{ Params: { siteId: string; formId: string } }>("/v1/sites/:siteId/forms/:formId/webhook-deliveries", async (request) => {
+    const principal = await requirePrincipal(request);
+    const { siteId } = await authorizeSite(pool, principal, request.params.siteId);
+    const query = parseQuery(ListWebhookDeliveriesQuerySchema, request.query);
+    return withTenantContext(pool, { siteId }, (client) => listWebhookDeliveries(client, siteId, request.params.formId, query));
   });
 
   // ---- submission.export: CSV/JSON, one column per declared field plus
