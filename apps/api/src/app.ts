@@ -265,6 +265,30 @@ import {
   AdvanceFakeCartBodySchema,
 } from "./schemas.js";
 
+/** The one prefix under which routes are visitor-facing rather than owner-facing (ADR-0007/ADR-0010). */
+const RUNTIME_API_PREFIX = "/v1/runtime/";
+
+/**
+ * Does this request target the visitor-facing runtime API? Decides which of
+ * the server's two CORS policies applies (see the `cors` registration in
+ * `buildApp`, KAN-1255).
+ *
+ * Takes the raw request target rather than the matched route pattern on
+ * purpose: a preflight for a runtime route with no hand-written OPTIONS
+ * handler would match @fastify/cors's own `OPTIONS *` catch-all, and the
+ * pattern would then read `*`, quietly downgrading that route to the
+ * control-plane policy. Dot segments are rejected because they must never be
+ * able to make a control-plane route *look* like a runtime one — Fastify's
+ * router matches the target literally and never normalizes them away, so
+ * such a path 404s anyway, but the wildcard policy should not be reachable
+ * by anything but a genuine runtime path.
+ */
+export function isRuntimeApiPath(requestUrl: string): boolean {
+  const path = requestUrl.split(/[?#]/, 1)[0] ?? "";
+  if (!path.startsWith(RUNTIME_API_PREFIX)) return false;
+  return !path.split("/").some((segment) => segment === "." || segment === "..");
+}
+
 export interface AppDeps {
   pool: Pool;
   bundleStoreDir: string;
@@ -531,13 +555,45 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   });
 
   app.register(cookie);
-  // The editor SPA runs on its own Vite dev-server origin (ADR-0004 —
-  // Puck lives in a Vite React SPA, never inside Astro) and authenticates
-  // via cookie, so credentialed cross-origin requests must be explicitly
-  // allowed rather than left to the default same-origin browser behaviour.
+  // Two CORS policies live on this one server, and which one applies is a
+  // property of the *route*, not of the request's origin (KAN-1255):
+  //
+  //  - Control plane (everything else). The editor SPA runs on its own Vite
+  //    dev-server origin (ADR-0004 — Puck lives in a Vite React SPA, never
+  //    inside Astro) and authenticates via cookie, so credentialed
+  //    cross-origin requests must be explicitly allowed rather than left to
+  //    the default same-origin browser behaviour — and only from
+  //    EDITOR_ORIGIN, since `credentials: true` makes a permissive origin a
+  //    session-theft hole.
+  //  - `/v1/runtime/*` (ADR-0007/ADR-0010). The visitor-facing writes a
+  //    published site makes: form submissions, bookings, event sign-ups,
+  //    payment/subscription/cart checkout. These carry no cookie and no
+  //    principal (they are gated by per-site/per-IP rate limiting and
+  //    Turnstile instead), and the calling origin — <slug>.<platformHost>
+  //    or a customer's own custom domain — is never known in advance, so
+  //    the policy is wildcard-origin *without* credentials.
+  //
+  // @fastify/cors answers every preflight from a single global onRequest
+  // hook, deliberately: it must reply before any auth plugin, since the
+  // browser strips auth headers from a preflight. That hook is app-wide and
+  // cannot be excluded per-route without moving routes into a sibling
+  // encapsulation context, so the per-request `delegator` is how one hook
+  // serves both policies. Before KAN-1255 the single EDITOR_ORIGIN policy
+  // answered runtime preflights too, replying 204 with no
+  // access-control-allow-origin header — which a browser reads as a refusal,
+  // silently breaking every visitor-facing write from any real
+  // published-site domain. The hand-written OPTIONS routes the runtime
+  // section used to carry never ran: that hook always got there first. They
+  // are gone now, so there is one CORS mechanism here and not two.
+  const editorOrigins = (process.env.EDITOR_ORIGIN ?? "http://localhost:5173").split(",");
   app.register(cors, {
-    origin: (process.env.EDITOR_ORIGIN ?? "http://localhost:5173").split(","),
-    credentials: true,
+    delegator(request, done) {
+      if (isRuntimeApiPath(request.url)) {
+        done(null, { origin: "*", credentials: false });
+        return;
+      }
+      done(null, { origin: editorOrigins, credentials: true });
+    },
   });
 
   // Unauthenticated on purpose — a readiness probe (e2e's webServer check,
@@ -2557,19 +2613,17 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   // per-site/per-IP rate limiting and optional Turnstile instead. Every
   // storage decision lives in @prefab/runtime's submitForm; this route is
   // just the HTTP-and-CORS shell around it, which is exactly what Slice
-  // 7's self-host runtime reimplements in its own shell. Explicit CORS
-  // (not the cookie-credentialed EDITOR_ORIGIN policy above) because a
-  // published site's own origin — <slug>.<platformHost> or a customer's
-  // custom domain — is never known in advance. ----
-  app.options("/v1/runtime/forms/:formId/submissions", async (_request, reply) => {
-    reply
-      .header("access-control-allow-origin", "*")
-      .header("access-control-allow-methods", "POST, OPTIONS")
-      .header("access-control-allow-headers", "content-type")
-      .status(204)
-      .send();
-  });
-
+  // 7's self-host runtime reimplements in its own shell.
+  //
+  // CORS for every route under /v1/runtime/ — preflight included — comes
+  // from the wildcard-origin, no-credentials half of the `cors` delegator
+  // at the top of buildApp, because a published site's own origin
+  // (<slug>.<platformHost> or a customer's custom domain) is never known in
+  // advance. Each handler below still sets access-control-allow-origin
+  // itself so the shell reads the same as apps/self-host's, which has no
+  // such plugin. Do not add a hand-written OPTIONS route here: @fastify/cors
+  // answers preflights from a global onRequest hook that runs first, so one
+  // would be unreachable — that mismatch is exactly what KAN-1255 was. ----
   app.post<{ Params: { formId: string } }>("/v1/runtime/forms/:formId/submissions", async (request, reply) => {
     reply.header("access-control-allow-origin", "*");
     const body = parseBody(SubmitFormBodySchema, request.body);
@@ -2617,18 +2671,6 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   // around them, exactly what apps/self-host reimplements in its own shell
   // for R10 (local availability/bookings only — see self-host's own
   // runtime-adapters.ts for why calendar sync itself isn't offered there). ----
-  app.options("/v1/runtime/booking-widgets/:widgetId/slots", async (_request, reply) => {
-    reply.header("access-control-allow-origin", "*").header("access-control-allow-methods", "GET, OPTIONS").status(204).send();
-  });
-  app.options("/v1/runtime/booking-widgets/:widgetId/bookings", async (_request, reply) => {
-    reply
-      .header("access-control-allow-origin", "*")
-      .header("access-control-allow-methods", "POST, OPTIONS")
-      .header("access-control-allow-headers", "content-type")
-      .status(204)
-      .send();
-  });
-
   app.get<{ Params: { widgetId: string } }>("/v1/runtime/booking-widgets/:widgetId/slots", async (request, reply) => {
     reply.header("access-control-allow-origin", "*");
     const query = parseQuery(ListSlotsQuerySchema, request.query);
@@ -2691,23 +2733,6 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   // every lookup below resolves tenant context explicitly rather than
   // relying on any public read policy on `bookings` (0008_slice9.sql: R20,
   // bookings carry visitor PII and have none). ----
-  app.options("/v1/runtime/bookings/:siteId/:bookingId/cancel", async (_request, reply) => {
-    reply
-      .header("access-control-allow-origin", "*")
-      .header("access-control-allow-methods", "POST, OPTIONS")
-      .header("access-control-allow-headers", "content-type")
-      .status(204)
-      .send();
-  });
-  app.options("/v1/runtime/bookings/:siteId/:bookingId/reschedule", async (_request, reply) => {
-    reply
-      .header("access-control-allow-origin", "*")
-      .header("access-control-allow-methods", "POST, OPTIONS")
-      .header("access-control-allow-headers", "content-type")
-      .status(204)
-      .send();
-  });
-
   app.get<{ Params: { siteId: string; bookingId: string }; Querystring: { token?: string } }>(
     "/v1/runtime/bookings/:siteId/:bookingId",
     async (request, reply) => {
@@ -2790,15 +2815,6 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   // @prefab/runtime's signUpForEvent; this route is just the HTTP-and-CORS
   // shell around it, exactly what apps/self-host reimplements in its own
   // shell for R10. ----
-  app.options("/v1/runtime/event-signups/:widgetId/signups", async (_request, reply) => {
-    reply
-      .header("access-control-allow-origin", "*")
-      .header("access-control-allow-methods", "POST, OPTIONS")
-      .header("access-control-allow-headers", "content-type")
-      .status(204)
-      .send();
-  });
-
   app.post<{ Params: { widgetId: string } }>("/v1/runtime/event-signups/:widgetId/signups", async (request, reply) => {
     reply.header("access-control-allow-origin", "*");
     const body = parseBody(SignUpForEventBodySchema, request.body);
@@ -2845,10 +2861,6 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   // Referer header (the page the checkout button was clicked from) rather
   // than accepted as body input, for the same "never trust visitor input
   // for anything this route acts on" reasoning as the missing amount. ----
-  app.options("/v1/runtime/payment-blocks/:blockId/checkout", async (_request, reply) => {
-    reply.header("access-control-allow-origin", "*").header("access-control-allow-methods", "POST, OPTIONS").status(204).send();
-  });
-
   app.post<{ Params: { blockId: string } }>("/v1/runtime/payment-blocks/:blockId/checkout", async (request, reply) => {
     reply.header("access-control-allow-origin", "*");
     const { blockId } = request.params;
@@ -2893,10 +2905,6 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   // reflect what happens to the subscription after Stripe Checkout
   // completes — see ADR-0016 for what part 2's webhook consumer still
   // owes the record this creates. ----
-  app.options("/v1/runtime/subscription-blocks/:blockId/checkout", async (_request, reply) => {
-    reply.header("access-control-allow-origin", "*").header("access-control-allow-methods", "POST, OPTIONS").status(204).send();
-  });
-
   app.post<{ Params: { blockId: string } }>("/v1/runtime/subscription-blocks/:blockId/checkout", async (request, reply) => {
     reply.header("access-control-allow-origin", "*");
     const { blockId } = request.params;
@@ -2943,15 +2951,6 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   // Deliberately NOT registered in mutations.ts's API_MUTATIONS (see that
   // file's own comments on booking.create/payment-blocks checkout for why:
   // no signed-in principal — a visitor, not an owner). ----
-  app.options("/v1/runtime/sites/:siteId/cart-checkout", async (_request, reply) => {
-    reply
-      .header("access-control-allow-origin", "*")
-      .header("access-control-allow-methods", "POST, OPTIONS")
-      .header("access-control-allow-headers", "content-type")
-      .status(204)
-      .send();
-  });
-
   app.post<{ Params: { siteId: string } }>("/v1/runtime/sites/:siteId/cart-checkout", async (request, reply) => {
     reply.header("access-control-allow-origin", "*");
     const { siteId } = request.params;
@@ -3012,15 +3011,6 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   // this visitor-PII-bearing table forever. Returns only what a visitor
   // needs to see their own post-purchase message — never buyer_email,
   // amount, or anything else this row carries. ----
-  app.options("/v1/runtime/sites/:siteId/cart-checkout/:cartCheckoutRecordId/receipt", async (_request, reply) => {
-    reply
-      .header("access-control-allow-origin", "*")
-      .header("access-control-allow-methods", "GET, OPTIONS")
-      .header("access-control-allow-headers", "content-type")
-      .status(204)
-      .send();
-  });
-
   app.get<{ Params: { siteId: string; cartCheckoutRecordId: string } }>(
     "/v1/runtime/sites/:siteId/cart-checkout/:cartCheckoutRecordId/receipt",
     async (request, reply) => {
@@ -3055,15 +3045,6 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   // server-side stock revalidation; this endpoint only improves what the
   // visitor sees before they try to buy, so a published page can show
   // "sold out" without waiting for a republish. ----
-  app.options("/v1/runtime/sites/:siteId/products/:productId/stock", async (_request, reply) => {
-    reply
-      .header("access-control-allow-origin", "*")
-      .header("access-control-allow-methods", "GET, OPTIONS")
-      .header("access-control-allow-headers", "content-type")
-      .status(204)
-      .send();
-  });
-
   app.get<{ Params: { siteId: string; productId: string } }>("/v1/runtime/sites/:siteId/products/:productId/stock", async (request, reply) => {
     reply.header("access-control-allow-origin", "*");
     const { siteId, productId } = request.params;
