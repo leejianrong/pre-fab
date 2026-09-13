@@ -122,6 +122,22 @@ test.describe("editor UI accessibility (R6, KAN-1219)", () => {
     await runAxeOn("payments side sheet", page);
   });
 
+  // KAN-1257: the new Bookings panel (availability.set/get, booking.list/
+  // cancel — Slice 9, ADR-0009) — same SideSheet pattern as the pages side
+  // sheet above, checked the same way. The seed site here has no
+  // availability rule configured yet, so this exercises the "no
+  // availability set" default-form state (all weekly-window rows blank)
+  // alongside the (empty) bookings list, same as the pages side sheet
+  // checking its own default state.
+  test("bookings side sheet", async ({ page }) => {
+    const { site } = await authenticatedContext("axe-bookings");
+    await loginInBrowser(page);
+    await openSiteByName(page, site.site.name);
+    await page.getByRole("button", { name: /^bookings$/i }).click();
+    await page.getByRole("dialog", { name: /^bookings$/i }).waitFor({ timeout: 10_000 });
+    await runAxeOn("bookings side sheet", page);
+  });
+
   // KAN-1267: the new Billing panel (getSubscription/upgradePlan/cancelPlan,
   // ADR-0012) — same SideSheet pattern as the other panels above, checked
   // the same way. The seed account this suite's `authenticatedContext`

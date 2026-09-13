@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { test, expect } from "@playwright/test";
 import { newUlid } from "@prefab/schema";
 import { exportBundle } from "@prefab/commands";
-import { API_URL, authenticatedContext, gotoLiveSite, newCheckoutDir } from "./helpers.js";
+import { API_URL, authenticatedContext, gotoLiveSite, loginInBrowser, newCheckoutDir, openSiteByName } from "./helpers.js";
 
 const repoRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const SELF_HOST_DIR = path.join(repoRoot, "apps", "self-host");
@@ -222,6 +222,85 @@ test("a booking spanning a DST transition shows the correct local time to both p
   // offset would have produced).
   expect(confirmation?.text).toContain("Nov 1, 2026, 9:00 AM (America/New_York)");
   expect(confirmation?.text).not.toContain("2026-11-01T14:00:00.000Z");
+});
+
+/**
+ * KAN-1257: the editor had zero UI for any of the above — availability was
+ * only ever settable via the CLI's raw-JSON `availability set` (or the API/
+ * MCP surfaces directly), and bookings only ever visible via `booking list`.
+ * Exercises the new "Bookings" toolbar button + SideSheet
+ * (apps/editor/src/BookingsPanel.tsx) end to end through the browser: an
+ * owner setting a weekly window from the panel's own form (no JSON, no
+ * CLI), a booking made against that exact window showing up once the panel
+ * is reopened (same "no polling, a fresh open re-fetches" contract
+ * PaymentsPanel/SubmissionsPanel already establish), and canceling it from
+ * the panel via the existing `booking.cancel` mutation.
+ *
+ * The booking itself is created via the same unauthenticated runtime
+ * endpoint the published Booking widget's own slot picker calls (like the
+ * "double-booking"/"cancelling" tests above) rather than clicked through
+ * the widget's date-chip UI — that click-through path is already covered by
+ * this file's first test; this one's target is the editor panel, not the
+ * published widget.
+ */
+test.describe("editor UI: Bookings panel (KAN-1257)", () => {
+  test("set availability and view/cancel a booking from the panel", async ({ page }) => {
+    const { ctx, site } = await authenticatedContext("bookings-ui");
+    const widgetId = newUlid();
+
+    await ctx.api.writePage(site.site.id, site.page.id, {
+      title: site.page.title,
+      slug: site.page.slug,
+      blocks: [bookingBlock(widgetId)],
+      expectedVersion: site.page.version,
+    });
+
+    await loginInBrowser(page);
+    await openSiteByName(page, site.site.name);
+
+    const header = page.locator("header").first();
+    await header.getByRole("button", { name: /^bookings$/i }).click();
+    const panel = page.getByRole("dialog", { name: /^bookings$/i });
+    await expect(panel).toBeVisible();
+
+    // No availability configured yet — set a Monday 9-5 UTC window from the
+    // panel's own form.
+    await panel.getByLabel(/^timezone$/i).fill("UTC");
+    await panel.locator("#availability-start-1").fill("09:00");
+    await panel.locator("#availability-end-1").fill("17:00");
+    await panel.getByRole("button", { name: /^save availability$/i }).click();
+    await expect(panel.getByText(/^saved$/i)).toBeVisible({ timeout: 10_000 });
+
+    const rule = await ctx.api.getAvailability(site.site.id);
+    expect(rule?.timezone).toBe("UTC");
+    expect(rule?.weeklyWindows).toEqual([{ dayOfWeek: 1, startMinute: 9 * 60, endMinute: 17 * 60 }]);
+
+    await ctx.api.publish(site.site.id);
+    const monday = futureMonday(2);
+    const create = await fetch(`${API_URL}/v1/runtime/booking-widgets/${widgetId}/bookings`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ startsAt: `${monday}T09:00:00.000Z`, visitorName: "Panel Visitor", visitorEmail: "panel@example.com", visitorTimezone: "UTC" }),
+    });
+    expect(create.status).toBe(201);
+
+    // This panel doesn't poll — reopening is what re-fetches.
+    await page.getByRole("button", { name: /close bookings panel/i }).click();
+    await header.getByRole("button", { name: /^bookings$/i }).click();
+    const reopened = page.getByRole("dialog", { name: /^bookings$/i });
+    await expect(reopened.getByText("Panel Visitor")).toBeVisible({ timeout: 10_000 });
+    await expect(reopened.getByText("panel@example.com")).toBeVisible();
+    // Exact, case-sensitive text — the status filter's own <option> reads
+    // "Confirmed"/"Canceled" (StatusBadge renders lowercase), so a
+    // case-insensitive match is ambiguous between the two.
+    await expect(reopened.getByText("confirmed", { exact: true })).toBeVisible();
+
+    await reopened.getByRole("button", { name: /cancel booking/i }).click();
+    await expect(reopened.getByText("canceled", { exact: true })).toBeVisible({ timeout: 10_000 });
+
+    const bookings = await ctx.api.listBookings(site.site.id);
+    expect(bookings.bookings[0]?.status).toBe("canceled");
+  });
 });
 
 async function waitForHealth(url: string, timeoutMs: number): Promise<void> {

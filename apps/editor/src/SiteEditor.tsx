@@ -26,6 +26,7 @@ import { OrdersPanel } from "./OrdersPanel.js";
 import { SubmissionsPanel } from "./SubmissionsPanel.js";
 import { PaymentsPanel } from "./PaymentsPanel.js";
 import { BillingPanel } from "./BillingPanel.js";
+import { BookingsPanel } from "./BookingsPanel.js";
 import { api } from "./api.js";
 import {
   Card,
@@ -190,6 +191,7 @@ export function SiteEditor({
   const [submissionsPanelOpen, setSubmissionsPanelOpen] = useState(false);
   const [paymentsPanelOpen, setPaymentsPanelOpen] = useState(false);
   const [billingPanelOpen, setBillingPanelOpen] = useState(false);
+  const [bookingsPanelOpen, setBookingsPanelOpen] = useState(false);
 
   // KAN-1267: DomainsPanel's own plan_required gate error opens this panel
   // via this instead of embedding BillingPanel inline — closes Domains
@@ -486,6 +488,7 @@ export function SiteEditor({
             <OutlinedButton onClick={() => setProductsPanelOpen(true)}>Products</OutlinedButton>
             <OutlinedButton onClick={() => setOrdersPanelOpen(true)}>Orders</OutlinedButton>
             <OutlinedButton onClick={() => setSubmissionsPanelOpen(true)}>Submissions</OutlinedButton>
+            <OutlinedButton onClick={() => setBookingsPanelOpen(true)}>Bookings</OutlinedButton>
             <OutlinedButton onClick={() => setPaymentsPanelOpen(true)}>Payments</OutlinedButton>
             <OutlinedButton onClick={() => setBillingPanelOpen(true)}>Billing</OutlinedButton>
             {/* ADR-0014 / KAN-1129: local UI state only until Save — switching
@@ -600,6 +603,7 @@ export function SiteEditor({
       {productsPanelOpen ? <ProductsPanel siteId={siteId} onClose={() => setProductsPanelOpen(false)} /> : null}
       {ordersPanelOpen ? <OrdersPanel siteId={siteId} onClose={() => setOrdersPanelOpen(false)} /> : null}
       {submissionsPanelOpen ? <SubmissionsPanel siteId={siteId} page={page} onClose={() => setSubmissionsPanelOpen(false)} /> : null}
+      {bookingsPanelOpen ? <BookingsPanel siteId={siteId} pages={pages} onClose={() => setBookingsPanelOpen(false)} /> : null}
       {paymentsPanelOpen ? <PaymentsPanel siteId={siteId} pages={pages} onClose={() => setPaymentsPanelOpen(false)} /> : null}
       {billingPanelOpen ? <BillingPanel onClose={() => setBillingPanelOpen(false)} /> : null}
       <Dialog open={celebration !== null} onClose={() => setCelebration(null)} ariaLabel="Site published">

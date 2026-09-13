@@ -2,6 +2,7 @@ export { FilledButton, TonalButton, OutlinedButton, TextButton } from "./Button.
 export { IconButton } from "./IconButton.js";
 export { TextField } from "./TextField.js";
 export { DateField } from "./DateField.js";
+export { TimeField } from "./TimeField.js";
 export { SelectField } from "./SelectField.js";
 export { Card } from "./Card.js";
 export { StatusBadge } from "./StatusBadge.js";
