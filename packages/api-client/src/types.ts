@@ -427,6 +427,31 @@ export interface ListSubmissionsResult {
   total: number;
 }
 
+/** KAN-1264: one attempt (or attempt series) to deliver a submission to a form's configured webhook URL. */
+export interface WebhookDelivery {
+  id: string;
+  siteId: string;
+  submissionId: string;
+  url: string;
+  secret: string | null;
+  attempt: number;
+  status: "pending" | "success" | "failed";
+  lastError: string | null;
+  nextAttemptAt: string;
+  createdAt: string;
+  deliveredAt: string | null;
+}
+
+export interface ListWebhookDeliveriesQuery {
+  limit?: number;
+  offset?: number;
+}
+
+export interface ListWebhookDeliveriesResult {
+  deliveries: WebhookDelivery[];
+  total: number;
+}
+
 // ---- KAN-1138: event sign-ups ----
 
 export interface EventSignupWidget {

@@ -15,6 +15,8 @@ import type {
   ListProductsResult,
   ListSubmissionsQuery,
   ListSubmissionsResult,
+  ListWebhookDeliveriesQuery,
+  ListWebhookDeliveriesResult,
   PageDocument,
   PageSummary,
   PostDocument,
@@ -422,6 +424,15 @@ export class ApiClient {
 
   deleteSubmission(siteId: string, formId: string, submissionId: string): Promise<{ removed: true }> {
     return this.request("DELETE", `/v1/sites/${siteId}/forms/${formId}/submissions/${submissionId}`);
+  }
+
+  // ---- webhookDelivery.list (KAN-1264) ----
+  listWebhookDeliveries(siteId: string, formId: string, query: ListWebhookDeliveriesQuery = {}): Promise<ListWebhookDeliveriesResult> {
+    const params = new URLSearchParams();
+    if (query.limit !== undefined) params.set("limit", String(query.limit));
+    if (query.offset !== undefined) params.set("offset", String(query.offset));
+    const qs = params.toString();
+    return this.request("GET", `/v1/sites/${siteId}/forms/${formId}/webhook-deliveries${qs ? `?${qs}` : ""}`);
   }
 
   // ---- eventSignupWidget.get / eventSignup.list / eventSignup.export / eventSignup.delete (KAN-1138) ----
