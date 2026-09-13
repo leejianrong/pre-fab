@@ -25,6 +25,7 @@ import { ProductsPanel } from "./ProductsPanel.js";
 import { OrdersPanel } from "./OrdersPanel.js";
 import { SubmissionsPanel } from "./SubmissionsPanel.js";
 import { PaymentsPanel } from "./PaymentsPanel.js";
+import { BillingPanel } from "./BillingPanel.js";
 import { api } from "./api.js";
 import {
   Card,
@@ -188,6 +189,15 @@ export function SiteEditor({
   const [ordersPanelOpen, setOrdersPanelOpen] = useState(false);
   const [submissionsPanelOpen, setSubmissionsPanelOpen] = useState(false);
   const [paymentsPanelOpen, setPaymentsPanelOpen] = useState(false);
+  const [billingPanelOpen, setBillingPanelOpen] = useState(false);
+
+  // KAN-1267: DomainsPanel's own plan_required gate error opens this panel
+  // via this instead of embedding BillingPanel inline — closes Domains
+  // first so the two SideSheets are never both open at once.
+  function openBillingFromDomains() {
+    setDomainsPanelOpen(false);
+    setBillingPanelOpen(true);
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -477,6 +487,7 @@ export function SiteEditor({
             <OutlinedButton onClick={() => setOrdersPanelOpen(true)}>Orders</OutlinedButton>
             <OutlinedButton onClick={() => setSubmissionsPanelOpen(true)}>Submissions</OutlinedButton>
             <OutlinedButton onClick={() => setPaymentsPanelOpen(true)}>Payments</OutlinedButton>
+            <OutlinedButton onClick={() => setBillingPanelOpen(true)}>Billing</OutlinedButton>
             {/* ADR-0014 / KAN-1129: local UI state only until Save — switching
                 to "free" (or back to "flow") never touches the document until
                 handleSave runs applyFreePositions over whatever this is set
@@ -578,13 +589,19 @@ export function SiteEditor({
         />
       ) : null}
       {domainsPanelOpen ? (
-        <DomainsPanel siteId={siteId} publicUrl={site.publicUrl} onClose={() => setDomainsPanelOpen(false)} />
+        <DomainsPanel
+          siteId={siteId}
+          publicUrl={site.publicUrl}
+          onClose={() => setDomainsPanelOpen(false)}
+          onOpenBilling={openBillingFromDomains}
+        />
       ) : null}
       {blogPanelOpen ? <BlogPanel siteId={siteId} onClose={() => setBlogPanelOpen(false)} /> : null}
       {productsPanelOpen ? <ProductsPanel siteId={siteId} onClose={() => setProductsPanelOpen(false)} /> : null}
       {ordersPanelOpen ? <OrdersPanel siteId={siteId} onClose={() => setOrdersPanelOpen(false)} /> : null}
       {submissionsPanelOpen ? <SubmissionsPanel siteId={siteId} page={page} onClose={() => setSubmissionsPanelOpen(false)} /> : null}
       {paymentsPanelOpen ? <PaymentsPanel siteId={siteId} pages={pages} onClose={() => setPaymentsPanelOpen(false)} /> : null}
+      {billingPanelOpen ? <BillingPanel onClose={() => setBillingPanelOpen(false)} /> : null}
       <Dialog open={celebration !== null} onClose={() => setCelebration(null)} ariaLabel="Site published">
         <h2 className="pf-dialog-headline">🎉 Your site is live!</h2>
         <p className="pf-supporting-text">
