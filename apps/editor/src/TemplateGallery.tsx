@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { TemplateSummary } from "@prefab/api-client";
+import { ApiClientError, type TemplateSummary } from "@prefab/api-client";
 import { api } from "./api.js";
 import { Card, FilledButton, OutlinedButton, TextButton, TextField } from "./ui/index.js";
 
@@ -14,6 +14,7 @@ export function TemplateGallery({ onSiteCreated }: { onSiteCreated: (siteId: str
   const [error, setError] = useState<string | null>(null);
   const [forking, setForking] = useState<TemplateSummary | null>(null);
   const [slug, setSlug] = useState("");
+  const [slugError, setSlugError] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [pending, setPending] = useState(false);
 
@@ -24,8 +25,20 @@ export function TemplateGallery({ onSiteCreated }: { onSiteCreated: (siteId: str
   function startFork(template: TemplateSummary) {
     setForking(template);
     setName(template.name);
-    setSlug(template.id);
+    // `sites.slug` is unique across the whole platform, not per-account —
+    // defaulting to the bare template id meant the first account to fork
+    // "Yoga & Wellness Studio" permanently claimed `wellness-studio`, and
+    // every fork after that (including a second one from the same account)
+    // 500'd. Suffix it the same way OnboardingWizard's fork-on-use flow
+    // already does, so the pre-filled value is never a guaranteed collision.
+    setSlug(`${template.id}-${Date.now()}`);
     setError(null);
+    setSlugError(null);
+  }
+
+  function changeSlug(value: string) {
+    setSlug(value);
+    setSlugError(null);
   }
 
   async function submitFork(event: React.FormEvent) {
@@ -33,11 +46,16 @@ export function TemplateGallery({ onSiteCreated }: { onSiteCreated: (siteId: str
     if (!forking) return;
     setPending(true);
     setError(null);
+    setSlugError(null);
     try {
       const result = await api.createSiteFromTemplate(forking.id, { slug, name });
       onSiteCreated(result.site.id);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      if (err instanceof ApiClientError && err.code === "conflict") {
+        setSlugError("That site slug is already taken — try a different one.");
+      } else {
+        setError(err instanceof Error ? err.message : String(err));
+      }
     } finally {
       setPending(false);
     }
@@ -47,7 +65,13 @@ export function TemplateGallery({ onSiteCreated }: { onSiteCreated: (siteId: str
     return (
       <form onSubmit={submitFork} style={{ display: "grid", gap: "0.75rem" }}>
         <h2 className="pf-section-title">Use "{forking.name}"</h2>
-        <TextField label="Site slug" value={slug} onChange={setSlug} />
+        <TextField
+          label="Site slug"
+          value={slug}
+          onChange={changeSlug}
+          error={Boolean(slugError)}
+          errorText={slugError ?? undefined}
+        />
         <TextField label="Site name" value={name} onChange={setName} />
         <div style={{ display: "flex", gap: "0.5rem" }}>
           <FilledButton type="submit" disabled={pending}>

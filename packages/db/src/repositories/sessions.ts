@@ -45,3 +45,8 @@ export async function findActiveSessionByHash(client: PoolClient, tokenHash: str
   );
   return result.rows[0] ? rowToSession(result.rows[0]) : null;
 }
+
+/** Log out (audit H6): revokes the session server-side, not just the browser's cookie — a stolen/copied cookie stops working immediately rather than lingering until its natural expiry. A no-op (no error) if the hash doesn't match any row. */
+export async function deleteSessionByTokenHash(client: PoolClient, tokenHash: string): Promise<void> {
+  await client.query(`DELETE FROM sessions WHERE token_hash = $1`, [tokenHash]);
+}

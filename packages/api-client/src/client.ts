@@ -1,4 +1,5 @@
 import type {
+  AccountSummary,
   Asset,
   ConfigureFormInput,
   ConflictDetails,
@@ -249,6 +250,16 @@ export class ApiClient {
   /** Verifying mints a session exactly like `devLogin` — see `authRequest`. */
   verifyEmail(email: string, code: string): Promise<VerifyEmailResult> {
     return this.authRequest("/v1/signup/verify", { email, code });
+  }
+
+  // ---- account.me / account.logout (audit H6) — not product mutations
+  // the CLI/MCP need parity for; see the API route comments. ----
+  getAccountMe(): Promise<AccountSummary> {
+    return this.request("GET", "/v1/account/me");
+  }
+
+  logout(): Promise<{ ok: true }> {
+    return this.request("POST", "/v1/logout");
   }
 
   // ---- template.list / site.createFromTemplate (Slice 3, ADR-0011) ----

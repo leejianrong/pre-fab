@@ -72,6 +72,26 @@ test.describe("editor UI accessibility (R6, KAN-1219)", () => {
     await runAxeOn("site editor canvas", page);
   });
 
+  // Audit C3 (2026-09-14): the top app bar's 10+ ungrouped nav buttons plus
+  // the layout select, Save and Publish don't wrap or shrink, so their
+  // unwrapped min-content width forces the whole document wider than a
+  // standard 1440px laptop viewport — a horizontal scrollbar on the one
+  // screen the whole product revolves around. `.pf-top-app-bar-actions`
+  // now wraps (ui/tokens.css) instead of overflowing; this pins that down
+  // at the exact width the audit measured it on.
+  test("site editor canvas has no horizontal overflow at 1440px", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    const { site } = await authenticatedContext("overflow-canvas");
+    await loginInBrowser(page);
+    await openSiteByName(page, site.site.name);
+
+    const { scrollWidth, clientWidth } = await page.evaluate(() => ({
+      scrollWidth: document.documentElement.scrollWidth,
+      clientWidth: document.documentElement.clientWidth,
+    }));
+    expect(scrollWidth, `document.documentElement.scrollWidth (${scrollWidth}) exceeds clientWidth (${clientWidth})`).toBeLessThanOrEqual(clientWidth);
+  });
+
   test("theme editor side sheet", async ({ page }) => {
     const { site } = await authenticatedContext("axe-theme");
     await loginInBrowser(page);

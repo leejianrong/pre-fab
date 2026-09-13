@@ -94,6 +94,12 @@ export interface VerifyEmailResult {
   accountId: string;
 }
 
+/** GET /v1/account/me (audit H6) — enough for a header account menu to show who's signed in. */
+export interface AccountSummary {
+  id: string;
+  email: string;
+}
+
 export interface IssuedApiToken {
   id: string;
   name: string;

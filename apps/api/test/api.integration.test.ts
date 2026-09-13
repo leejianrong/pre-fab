@@ -482,6 +482,36 @@ describe("template fork-on-use (Slice 3, ADR-0011)", () => {
     });
     expect(edit.statusCode).toBe(404);
   });
+
+  it("rejects forking onto an already-taken site slug with a 409, not an opaque 500 (audit C1)", async () => {
+    const { cookie } = await seedAccountAndLogin(`fork-slug-${newUlid()}@example.com`);
+    const list = await app.inject({ method: "GET", url: "/v1/templates", headers: { cookie } });
+    const templateId = (list.json() as Array<{ id: string }>)[0]!.id;
+    const slug = `fork-slug-${newUlid()}`;
+
+    const first = await app.inject({
+      method: "POST",
+      url: `/v1/templates/${templateId}/use`,
+      headers: { cookie },
+      payload: { slug, name: "First fork" },
+    });
+    expect(first.statusCode).toBe(200);
+
+    // A second fork onto the same slug — e.g. a returning account, or two
+    // accounts both taking the client's unsuffixed default of the raw
+    // template id — must be a clean 409, never the internal-error catch-all.
+    const collision = await app.inject({
+      method: "POST",
+      url: `/v1/templates/${templateId}/use`,
+      headers: { cookie },
+      payload: { slug, name: "Second fork" },
+    });
+    expect(collision.statusCode).toBe(409);
+    const body = collision.json() as { error: { code: string; message: string; details?: { slug?: string } } };
+    expect(body.error.code).toBe("conflict");
+    expect(body.error.message).toContain(slug);
+    expect(body.error.details?.slug).toBe(slug);
+  });
 });
 
 describe("custom domains (Slice 4, ADR-0007) — against the fake provider", () => {

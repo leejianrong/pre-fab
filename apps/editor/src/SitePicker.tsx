@@ -2,13 +2,16 @@ import { useEffect, useState, type CSSProperties } from "react";
 import type { SiteSummary } from "@prefab/api-client";
 import { TemplateGallery } from "./TemplateGallery.js";
 import { OnboardingWizard } from "./OnboardingWizard.js";
+import { AccountMenu } from "./AccountMenu.js";
 import { api } from "./api.js";
 import { Card, FilledButton, TextField } from "./ui/index.js";
 
 export function SitePicker({
   onSiteSelected,
+  onLoggedOut,
 }: {
   onSiteSelected: (siteId: string, opts?: { firstRun?: boolean }) => void;
+  onLoggedOut: () => void;
 }) {
   const [sites, setSites] = useState<SiteSummary[] | null>(null);
   const [slug, setSlug] = useState("");
@@ -38,16 +41,27 @@ export function SitePicker({
     }
   }
 
+  const accountBar = (
+    <div style={{ display: "flex", justifyContent: "flex-end", padding: "0.75rem 1rem 0" }}>
+      <AccountMenu onLoggedOut={onLoggedOut} />
+    </div>
+  );
+
   if (wizardOpen) {
     return (
-      <div style={{ maxWidth: 480, margin: "4rem auto" }}>
-        <OnboardingWizard onSiteCreated={onSiteSelected} onCancel={() => setWizardOpen(false)} />
-      </div>
+      <>
+        {accountBar}
+        <div style={{ maxWidth: 480, margin: "4rem auto" }}>
+          <OnboardingWizard onSiteCreated={onSiteSelected} onCancel={() => setWizardOpen(false)} />
+        </div>
+      </>
     );
   }
 
   return (
-    <div style={{ maxWidth: 480, margin: "4rem auto", padding: "0 1rem", display: "grid", gap: "1.5rem" }}>
+    <>
+      {accountBar}
+      <div style={{ maxWidth: 480, margin: "4rem auto", padding: "0 1rem", display: "grid", gap: "1.5rem" }}>
       <div>
         <h2 className="pf-section-title">Your sites</h2>
         {sites === null ? (
@@ -93,6 +107,7 @@ export function SitePicker({
         </FilledButton>
         {error ? <p className="pf-error-text">{error}</p> : null}
       </form>
-    </div>
+      </div>
+    </>
   );
 }

@@ -63,3 +63,38 @@ test("a wrong verification code is rejected with a visible error, and the correc
   await page.getByRole("button", { name: /verify and continue/i }).click();
   await page.waitForSelector("text=Your sites", { timeout: 15_000 });
 });
+
+// Audit H6: there was no visible account menu, logout, or account-recovery
+// affordance anywhere in the app — a small but real confidence dent for a
+// product whose whole pitch is customer ownership. Covers the header
+// account menu (email + Log out) added on the site picker, and confirms
+// logging out actually revokes the session server-side rather than just
+// forgetting the cookie client-side (a reload after logout must not
+// silently resume the session).
+test("the account menu shows who's signed in and logging out actually revokes the session", async ({ page, request }) => {
+  const email = `e2e-logout-${Date.now()}@example.com`;
+
+  await page.goto(EDITOR_URL);
+  await page.getByRole("button", { name: /first time\? create an account/i }).click();
+  await page.getByLabel(/email address/i).fill(email);
+  await page.getByRole("button", { name: /send me a code/i }).click();
+  await expect(page.getByText(email)).toBeVisible({ timeout: 10_000 });
+
+  const emails = await request.get(`${API_URL}/v1/dev/emails?to=${encodeURIComponent(email)}`);
+  const code = /\b(\d{6})\b/.exec(((await emails.json()) as Array<{ text: string }>).at(-1)!.text)?.[1];
+  await page.getByLabel(/verification code/i).fill(code!);
+  await page.getByRole("button", { name: /verify and continue/i }).click();
+  await page.waitForSelector("text=Your sites", { timeout: 15_000 });
+
+  await expect(page.getByText(email)).toBeVisible({ timeout: 10_000 });
+  const cookie = (await page.context().cookies()).find((c) => c.name === "prefab_session");
+  expect(cookie).toBeDefined();
+
+  await page.getByRole("button", { name: /^log out$/i }).click();
+  await page.getByLabel(/seeded account email/i).waitFor({ timeout: 10_000 });
+
+  const sitesAfterLogout = await request.get(`${API_URL}/v1/sites`, {
+    headers: { cookie: `${cookie!.name}=${cookie!.value}` },
+  });
+  expect(sitesAfterLogout.status()).toBe(401);
+});

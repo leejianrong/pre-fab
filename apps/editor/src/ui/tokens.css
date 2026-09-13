@@ -289,12 +289,26 @@ a {
   font-size: var(--md-sys-typescale-title-medium-size);
   font-weight: var(--md-sys-typescale-title-medium-weight);
   flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
+/* KAN-1280 / audit C3: with 10+ nav buttons plus the layout select, Save
+   and Publish, this row's natural (unwrapped) width is wider than a
+   1440px viewport — `flex-wrap: wrap` lets it fall to a second line
+   instead of forcing the whole editor into horizontal scroll. `min-width:
+   0` overrides a flex item's default `auto` (= its own min-content width,
+   the sum of every unwrapped button), which is what let this box refuse
+   to shrink below its full-row size in the first place. */
 .pf-top-app-bar-actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
+  justify-content: flex-end;
   gap: 0.5rem;
+  min-width: 0;
 }
 
 /* Shared page/form layout (login, signup) */
