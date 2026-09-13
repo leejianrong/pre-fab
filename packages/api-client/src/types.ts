@@ -607,6 +607,51 @@ export interface ListPaymentsResult {
   total: number;
 }
 
+// ---- KAN-1154 part 2: recurring subscription blocks (ADR-0016) ----
+
+/** Stripe's OWN Subscription.status vocabulary, stored verbatim (ADR-0016's question 2) — mirrors packages/db/src/repositories/subscription-records.ts's SubscriptionRecordStatus exactly. */
+export type SubscriptionRecordStatus =
+  | "incomplete"
+  | "incomplete_expired"
+  | "trialing"
+  | "active"
+  | "past_due"
+  | "canceled"
+  | "unpaid"
+  | "paused";
+
+/** A subscription block's own lifecycle record — mirrors PaymentRecord's shape (dates as ISO strings over HTTP, same as everywhere else in this client). */
+export interface SubscriptionRecord {
+  id: string;
+  siteId: string;
+  blockId: string;
+  stripeCheckoutSessionId: string;
+  stripeSubscriptionId: string | null;
+  stripeCustomerId: string | null;
+  /** Cents, per interval — see the subscription block's own `price` prop. */
+  price: number;
+  currency: string;
+  interval: "month" | "year";
+  trialPeriodDays: number;
+  status: SubscriptionRecordStatus;
+  currentPeriodEnd: string | null;
+  cancelAtPeriodEnd: boolean;
+  canceledAt: string | null;
+  buyerEmail: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ListSubscriptionsQuery {
+  limit?: number;
+  offset?: number;
+}
+
+export interface ListSubscriptionsResult {
+  records: SubscriptionRecord[];
+  total: number;
+}
+
 export type {
   PageDocument,
   PostDocument,
