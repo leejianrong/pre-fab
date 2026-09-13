@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
 import { Puck, type Data } from "@puckeditor/core";
 import {
   applyFreePositions,
@@ -35,12 +35,25 @@ import {
   FilledButton,
   IconButton,
   LoadingIndicator,
+  NavButton,
   OutlinedButton,
   SelectField,
   StatusBadge,
   TextButton,
   TopAppBar,
 } from "./ui/index.js";
+import {
+  BillingIcon,
+  BlogIcon,
+  BookingsIcon,
+  DomainsIcon,
+  OrdersIcon,
+  PagesIcon,
+  PaymentsIcon,
+  ProductsIcon,
+  SubmissionsIcon,
+  ThemeIcon,
+} from "./ui/nav-icons.js";
 
 type Status = "idle" | "saving" | "saved" | "publishing" | "published";
 
@@ -196,12 +209,39 @@ export function SiteEditor({
   const [billingPanelOpen, setBillingPanelOpen] = useState(false);
   const [bookingsPanelOpen, setBookingsPanelOpen] = useState(false);
 
+  // Audit H4: the SideSheets now dock beside the canvas (see
+  // ui/SideSheet.tsx) instead of floating over it, which means two open
+  // at once would sit side by side squeezing the canvas rather than
+  // simply stacking visually the way two overlays used to — so exactly
+  // one of these ten booleans is allowed to be true at a time.
+  // `openPanel` enforces that by construction: it flips every other
+  // panel-open setter false before flipping the requested one true,
+  // rather than each of the 10 buttons below only ever setting its own
+  // flag. Comparing sette function identity (`s === setter`) is safe here
+  // — React guarantees a given `useState` setter keeps the same identity
+  // for the lifetime of this component instance.
+  const panelSetters = [
+    setThemeEditorOpen,
+    setPagesPanelOpen,
+    setDomainsPanelOpen,
+    setBlogPanelOpen,
+    setProductsPanelOpen,
+    setOrdersPanelOpen,
+    setSubmissionsPanelOpen,
+    setPaymentsPanelOpen,
+    setBillingPanelOpen,
+    setBookingsPanelOpen,
+  ];
+
+  function openPanel(setter: Dispatch<SetStateAction<boolean>>) {
+    for (const s of panelSetters) s(s === setter);
+  }
+
   // KAN-1267: DomainsPanel's own plan_required gate error opens this panel
-  // via this instead of embedding BillingPanel inline — closes Domains
-  // first so the two SideSheets are never both open at once.
+  // via this instead of embedding BillingPanel inline — `openPanel` above
+  // already closes Domains (and everything else) before opening Billing.
   function openBillingFromDomains() {
-    setDomainsPanelOpen(false);
-    setBillingPanelOpen(true);
+    openPanel(setBillingPanelOpen);
   }
 
   useEffect(() => {
@@ -439,7 +479,9 @@ export function SiteEditor({
           title={<strong>{site.name}</strong>}
           actions={
             <>
-              <OutlinedButton onClick={() => setPagesPanelOpen(true)}>Pages</OutlinedButton>
+              <NavButton icon={<PagesIcon />} active={pagesPanelOpen} onClick={() => openPanel(setPagesPanelOpen)}>
+                Pages
+              </NavButton>
               <AccountMenu onLoggedOut={onLoggedOut} />
             </>
           }
@@ -453,7 +495,7 @@ export function SiteEditor({
               <p className="pf-supporting-text" style={{ margin: 0 }}>
                 This site doesn't have any pages yet — add one to start editing.
               </p>
-              <FilledButton onClick={() => setPagesPanelOpen(true)}>+ Add a page</FilledButton>
+              <FilledButton onClick={() => openPanel(setPagesPanelOpen)}>+ Add a page</FilledButton>
             </Card>
           ) : (
             <LoadingIndicator label="Loading…" />
@@ -489,38 +531,80 @@ export function SiteEditor({
         }
         actions={
           <>
-            <OutlinedButton onClick={() => setPagesPanelOpen(true)}>Pages</OutlinedButton>
-            <OutlinedButton onClick={() => setThemeEditorOpen(true)}>Theme</OutlinedButton>
-            <OutlinedButton onClick={() => setDomainsPanelOpen(true)}>Domains</OutlinedButton>
-            <OutlinedButton onClick={() => setBlogPanelOpen(true)}>Blog</OutlinedButton>
-            <OutlinedButton onClick={() => setProductsPanelOpen(true)}>Products</OutlinedButton>
-            <OutlinedButton onClick={() => setOrdersPanelOpen(true)}>Orders</OutlinedButton>
-            <OutlinedButton onClick={() => setSubmissionsPanelOpen(true)}>Submissions</OutlinedButton>
-            <OutlinedButton onClick={() => setBookingsPanelOpen(true)}>Bookings</OutlinedButton>
-            <OutlinedButton onClick={() => setPaymentsPanelOpen(true)}>Payments</OutlinedButton>
-            <OutlinedButton onClick={() => setBillingPanelOpen(true)}>Billing</OutlinedButton>
-            {/* ADR-0014 / KAN-1129: local UI state only until Save — switching
-                to "free" (or back to "flow") never touches the document until
-                handleSave runs applyFreePositions over whatever this is set
-                to at that moment. */}
-            <SelectField
-              label="Layout"
-              id="layout-mode"
-              value={layoutMode}
-              onChange={(value) => setLayoutMode(value as LayoutMode)}
-            >
-              <option value="flow">Flow</option>
-              <option value="free">Free (canvas)</option>
-            </SelectField>
-            <OutlinedButton onClick={handleSave} disabled={status === "saving"}>
-              {status === "saving" ? "Saving…" : "Save"}
-            </OutlinedButton>
-            <FilledButton onClick={handlePublish} disabled={status === "publishing"}>
-              {status === "publishing" ? "Publishing…" : "Publish"}
-            </FilledButton>
-            {status === "saved" ? <StatusBadge tone="positive">Saved</StatusBadge> : null}
-            {status === "published" ? <StatusBadge tone="positive">Live</StatusBadge> : null}
-            <AccountMenu onLoggedOut={onLoggedOut} />
+            {/* Audit H1: the 10 nav pills used to be one flat, equally-weighted
+                row with no icons and no grouping — the grouping below (a
+                border between clusters, ui/tokens.css's `.pf-nav-group`) is
+                purely visual; `role="group"` + `aria-label` gives the same
+                clusters a real accessible structure, not just a look. */}
+            <div className="pf-nav-group" role="group" aria-label="Content tools">
+              <span className="pf-nav-group-label" aria-hidden="true">
+                Content
+              </span>
+              <NavButton icon={<PagesIcon />} active={pagesPanelOpen} onClick={() => openPanel(setPagesPanelOpen)}>
+                Pages
+              </NavButton>
+              <NavButton icon={<ThemeIcon />} active={themeEditorOpen} onClick={() => openPanel(setThemeEditorOpen)}>
+                Theme
+              </NavButton>
+              <NavButton icon={<BlogIcon />} active={blogPanelOpen} onClick={() => openPanel(setBlogPanelOpen)}>
+                Blog
+              </NavButton>
+            </div>
+            <div className="pf-nav-group" role="group" aria-label="Commerce tools">
+              <span className="pf-nav-group-label" aria-hidden="true">
+                Commerce
+              </span>
+              <NavButton icon={<ProductsIcon />} active={productsPanelOpen} onClick={() => openPanel(setProductsPanelOpen)}>
+                Products
+              </NavButton>
+              <NavButton icon={<OrdersIcon />} active={ordersPanelOpen} onClick={() => openPanel(setOrdersPanelOpen)}>
+                Orders
+              </NavButton>
+              <NavButton icon={<PaymentsIcon />} active={paymentsPanelOpen} onClick={() => openPanel(setPaymentsPanelOpen)}>
+                Payments
+              </NavButton>
+              <NavButton icon={<BillingIcon />} active={billingPanelOpen} onClick={() => openPanel(setBillingPanelOpen)}>
+                Billing
+              </NavButton>
+            </div>
+            <div className="pf-nav-group" role="group" aria-label="Engagement tools">
+              <span className="pf-nav-group-label" aria-hidden="true">
+                Engagement
+              </span>
+              <NavButton icon={<SubmissionsIcon />} active={submissionsPanelOpen} onClick={() => openPanel(setSubmissionsPanelOpen)}>
+                Submissions
+              </NavButton>
+              <NavButton icon={<BookingsIcon />} active={bookingsPanelOpen} onClick={() => openPanel(setBookingsPanelOpen)}>
+                Bookings
+              </NavButton>
+              <NavButton icon={<DomainsIcon />} active={domainsPanelOpen} onClick={() => openPanel(setDomainsPanelOpen)}>
+                Domains
+              </NavButton>
+            </div>
+            <div className="pf-nav-group">
+              {/* ADR-0014 / KAN-1129: local UI state only until Save — switching
+                  to "free" (or back to "flow") never touches the document until
+                  handleSave runs applyFreePositions over whatever this is set
+                  to at that moment. */}
+              <SelectField
+                label="Layout"
+                id="layout-mode"
+                value={layoutMode}
+                onChange={(value) => setLayoutMode(value as LayoutMode)}
+              >
+                <option value="flow">Flow</option>
+                <option value="free">Free (canvas)</option>
+              </SelectField>
+              <OutlinedButton onClick={handleSave} disabled={status === "saving"}>
+                {status === "saving" ? "Saving…" : "Save"}
+              </OutlinedButton>
+              <FilledButton onClick={handlePublish} disabled={status === "publishing"}>
+                {status === "publishing" ? "Publishing…" : "Publish"}
+              </FilledButton>
+              {status === "saved" ? <StatusBadge tone="positive">Saved</StatusBadge> : null}
+              {status === "published" ? <StatusBadge tone="positive">Live</StatusBadge> : null}
+              <AccountMenu onLoggedOut={onLoggedOut} />
+            </div>
           </>
         }
       />

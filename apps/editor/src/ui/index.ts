@@ -1,4 +1,5 @@
 export { FilledButton, TonalButton, OutlinedButton, TextButton } from "./Button.js";
+export { NavButton } from "./NavButton.js";
 export { IconButton } from "./IconButton.js";
 export { TextField } from "./TextField.js";
 export { DateField } from "./DateField.js";
