@@ -66,6 +66,13 @@ const warningStyle: CSSProperties = {
   borderRadius: cssVar("radius", "control"),
   padding: cssVar("spacing", "xs"),
 };
+/** KAN-1258: the widget silently computes slots in the visitor's own resolved zone (Intl.DateTimeFormat().resolvedOptions().timeZone, below) — this makes that zone visible next to the picker instead of leaving the visitor to guess which clock the times are in. */
+const timezoneNoteStyle: CSSProperties = {
+  fontSize: cssVar("fontSize", "sm"),
+  color: cssVar("color", "foreground"),
+  opacity: 0.75,
+  margin: 0,
+};
 
 /** Groups slots by their calendar date in the visitor's own timezone — the same date a slot's start time appears to fall on in whatever local clock is rendering it. */
 function groupByLocalDate(slots: Slot[], timezone: string): Map<string, Slot[]> {
@@ -193,6 +200,7 @@ export function Booking(props: BookingProps & BookingExtraProps & BlockRenderPro
               Live calendar sync is temporarily unavailable — availability shown may not reflect every busy time.
             </p>
           ) : null}
+          {timezone ? <p style={timezoneNoteStyle}>Times shown in {timezone}</p> : null}
           <div style={rowStyle} role="tablist" aria-label="Choose a date">
             {dates.map((date) => (
               <button key={date} type="button" style={chipStyle(date === activeDate)} onClick={() => { setSelectedDate(date); setSelectedSlot(null); }}>

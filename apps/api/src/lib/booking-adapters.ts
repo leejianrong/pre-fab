@@ -74,6 +74,7 @@ function rowToRecord(booking: Booking, manageToken: string): BookingRecord {
     notes: booking.notes,
     manageToken,
     externalEventId: booking.externalEventId,
+    status: booking.status,
   };
 }
 
@@ -117,11 +118,16 @@ export function createPostgresBookingStore(pool: Pool): BookingStore {
       // raw token, if they need it) via getByManageToken beforehand.
       return booking ? rowToRecord(booking, "") : null;
     },
-    async reschedule(siteId, bookingId, startsAtMs, endsAtMs) {
+    async reschedule(siteId, bookingId, startsAtMs, endsAtMs, manageToken) {
       const result = await withTenantContext(pool, { siteId }, (client) =>
         dbRescheduleBooking(client, { siteId, bookingId, startsAt: new Date(startsAtMs), endsAt: new Date(endsAtMs) }),
       );
-      if (result.ok) return { status: "rescheduled", booking: rowToRecord(result.booking, "") };
+      // manageToken is the raw secret the caller already verified via
+      // getByManageToken before reaching reschedule (KAN-1256) — echoed back
+      // onto the record exactly like create() does, so notifyRescheduled can
+      // build a working manage link instead of the "" every prior reschedule
+      // silently produced.
+      if (result.ok) return { status: "rescheduled", booking: rowToRecord(result.booking, manageToken) };
       return result.reason === "slot_taken" ? { status: "slot_taken" } : { status: "not_found" };
     },
     async setExternalEventId(siteId, bookingId, externalEventId) {

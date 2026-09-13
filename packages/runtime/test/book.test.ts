@@ -54,6 +54,7 @@ function makeFakeDeps(overrides: Partial<BookingDeps> = {}): { deps: BookingDeps
           notes: input.notes,
           manageToken: input.manageToken,
           externalEventId: null,
+          status: "confirmed",
         };
         bookings.set(record.id, record);
         return { status: "created", booking: record };
@@ -68,15 +69,23 @@ function makeFakeDeps(overrides: Partial<BookingDeps> = {}): { deps: BookingDeps
         if (!record || record.siteId !== siteId || canceled.has(bookingId)) return null;
         takenStarts.delete(new Date(record.startsAt).getTime());
         canceled.add(bookingId);
-        return record;
+        const updated: BookingRecord = { ...record, status: "canceled" };
+        bookings.set(bookingId, updated);
+        return updated;
       },
-      async reschedule(siteId, bookingId, startsAtMs, endsAtMs) {
+      // `manageToken` mirrors the real Postgres/SQLite stores (KAN-1256):
+      // the fake never remembers the plaintext token either — the updated
+      // record's manageToken comes only from whatever book.ts passed in
+      // here, so a regression that stops threading the raw token through
+      // shows up as an empty/wrong token on the result, exactly like the
+      // real stores did before the fix.
+      async reschedule(siteId, bookingId, startsAtMs, endsAtMs, manageToken) {
         const record = bookings.get(bookingId);
         if (!record || record.siteId !== siteId) return { status: "not_found" };
         if (takenStarts.has(startsAtMs)) return { status: "slot_taken" };
         takenStarts.delete(new Date(record.startsAt).getTime());
         takenStarts.add(startsAtMs);
-        const updated = { ...record, startsAt: new Date(startsAtMs).toISOString(), endsAt: new Date(endsAtMs).toISOString() };
+        const updated: BookingRecord = { ...record, startsAt: new Date(startsAtMs).toISOString(), endsAt: new Date(endsAtMs).toISOString(), manageToken };
         bookings.set(bookingId, updated);
         return { status: "rescheduled", booking: updated };
       },
@@ -231,6 +240,33 @@ describe("rescheduleBookingByToken", () => {
     expect(result.status).toBe("rescheduled");
     if (result.status !== "rescheduled") throw new Error("unreachable");
     expect(result.booking.startsAt).toBe(new Date(newStart).toISOString());
+  });
+
+  it("threads the raw manage token through to the rescheduled record and the reschedule-confirmation notification (KAN-1256 regression)", async () => {
+    const { deps, notifyCalls } = makeFakeDeps({
+      notifier: {
+        async notifyConfirmed() {},
+        async notifyCanceled() {},
+        async notifyRescheduled({ booking }) {
+          notifyCalls.push(`rescheduled:${booking.manageToken}`);
+        },
+      },
+    });
+    await createBooking(VALID_INPUT, deps);
+    const newStart = MONDAY_SLOT_START_MS + 30 * 60_000;
+    const result = await rescheduleBookingByToken(
+      { siteId: "site1", bookingId: "booking1", manageToken: "raw-token-1", newStartsAtMs: newStart, ownerEmail: "owner@example.com", ownerTimezone: "UTC", manageBaseUrl: "https://example.com", now: Date.UTC(2026, 0, 1) },
+      deps,
+    );
+    expect(result.status).toBe("rescheduled");
+    if (result.status !== "rescheduled") throw new Error("unreachable");
+    // The whole bug: this used to be "" because reschedule()'s store
+    // implementations hardcoded an empty manageToken, producing a
+    // reschedule-confirmation email whose manage link read
+    // "...manage?token=" with nothing after the equals sign.
+    expect(result.booking.manageToken).toBe("raw-token-1");
+    expect(result.booking.manageToken).not.toBe("");
+    expect(notifyCalls).toEqual(["rescheduled:raw-token-1"]);
   });
 
   it("rejects a reschedule onto a slot already taken by a different booking", async () => {

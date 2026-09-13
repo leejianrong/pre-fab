@@ -2741,7 +2741,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
       if (!token) throw validationError("a manage token is required");
       const booking = await bookingStore.getByManageToken(request.params.siteId, request.params.bookingId, token);
       if (!booking) throw notFound("booking not found");
-      return { id: booking.id, startsAt: booking.startsAt, endsAt: booking.endsAt, visitorName: booking.visitorName, visitorTimezone: booking.visitorTimezone };
+      return { id: booking.id, startsAt: booking.startsAt, endsAt: booking.endsAt, visitorName: booking.visitorName, visitorTimezone: booking.visitorTimezone, status: booking.status };
     },
   );
 

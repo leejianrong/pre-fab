@@ -209,7 +209,7 @@ export async function rescheduleBookingByToken(
   const stillOffered = offered.some((s) => s.startMs === input.newStartsAtMs && s.endMs === newEndsAtMs);
   if (!stillOffered) return { status: "slot_taken" };
 
-  const result = await deps.bookings.reschedule(input.siteId, input.bookingId, input.newStartsAtMs, newEndsAtMs);
+  const result = await deps.bookings.reschedule(input.siteId, input.bookingId, input.newStartsAtMs, newEndsAtMs, input.manageToken);
   if (result.status !== "rescheduled") return result;
 
   try {

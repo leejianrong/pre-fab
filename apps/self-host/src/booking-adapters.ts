@@ -90,6 +90,7 @@ export function createSqliteBookingStore(db: SelfHostDb): BookingStore {
       notes: row.notes,
       manageToken,
       externalEventId: row.external_event_id,
+      status: row.status,
     };
   }
 
@@ -135,7 +136,7 @@ export function createSqliteBookingStore(db: SelfHostDb): BookingStore {
       return toRecord(row, "");
     },
 
-    async reschedule(siteId, bookingId, startsAtMs, endsAtMs) {
+    async reschedule(siteId, bookingId, startsAtMs, endsAtMs, manageToken) {
       const existing = db.prepare<[string, string], BookingRow>("SELECT * FROM bookings WHERE site_id = ? AND id = ? AND status = 'confirmed'").get(siteId, bookingId);
       if (!existing) return { status: "not_found" as const };
       try {
@@ -145,7 +146,11 @@ export function createSqliteBookingStore(db: SelfHostDb): BookingStore {
         throw error;
       }
       const row = db.prepare<[string], BookingRow>("SELECT * FROM bookings WHERE id = ?").get(bookingId)!;
-      return { status: "rescheduled" as const, booking: toRecord(row, "") };
+      // manageToken is the raw secret the caller already verified via
+      // getByManageToken before reaching reschedule (KAN-1256) — echoed back
+      // onto the record exactly like create() does, mirroring apps/api's
+      // adapter, so notifyRescheduled can build a working manage link.
+      return { status: "rescheduled" as const, booking: toRecord(row, manageToken) };
     },
 
     async setExternalEventId(_siteId, bookingId, externalEventId) {

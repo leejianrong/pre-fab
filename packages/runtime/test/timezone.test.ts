@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addDaysToDateString, dayOfWeekForDateString, timeZoneOffsetMs, utcMsToZonedWallTime, zonedDateString, zonedWallTimeToUtcMs } from "../src/timezone.js";
+import { addDaysToDateString, dayOfWeekForDateString, formatZonedDateTime, timeZoneOffsetMs, utcMsToZonedWallTime, zonedDateString, zonedWallTimeToUtcMs } from "../src/timezone.js";
 
 // 2026 DST transition dates used throughout this file (verified against the
 // US and EU rules): America/New_York spring-forward 2026-03-08, fall-back
@@ -84,6 +84,27 @@ describe("dayOfWeekForDateString", () => {
 
   it("returns 0-6 for Sunday through Saturday", () => {
     expect(dayOfWeekForDateString("2026-01-01")).toBe(4); // Thursday
+  });
+});
+
+describe("formatZonedDateTime — human-readable local time for booking emails/manage page (KAN-1259)", () => {
+  it("renders a UTC instant as a local wall-clock date and time, not the raw ISO instant", () => {
+    // 2026-09-07T16:30:00.000Z is noon in America/New_York (EDT, UTC-4).
+    const utcMs = Date.UTC(2026, 8, 7, 16, 30, 0);
+    expect(formatZonedDateTime(utcMs, "America/New_York")).toBe("Sep 7, 2026, 12:30 PM");
+  });
+
+  it("never leaves the raw UTC value looking like it's already local — Singapore is a full day ahead of the New York reading for the same instant", () => {
+    const utcMs = Date.UTC(2026, 8, 7, 16, 30, 0);
+    expect(formatZonedDateTime(utcMs, "Asia/Singapore")).toBe("Sep 8, 2026, 12:30 AM");
+  });
+
+  it("agrees with utcMsToZonedWallTime's own wall-clock reading (built on the same conversion, not new logic)", () => {
+    const utcMs = Date.UTC(2026, 5, 15, 21, 5, 0);
+    const { date, minuteOfDay } = utcMsToZonedWallTime(utcMs, "America/Los_Angeles");
+    expect(date).toBe("2026-06-15");
+    expect(minuteOfDay).toBe(14 * 60 + 5);
+    expect(formatZonedDateTime(utcMs, "America/Los_Angeles")).toBe("Jun 15, 2026, 2:05 PM");
   });
 });
 
