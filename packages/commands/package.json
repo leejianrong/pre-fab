@@ -16,7 +16,7 @@
     "@prefab/blocks": "workspace:*",
     "@prefab/publish": "workspace:*",
     "@prefab/api-client": "workspace:*",
-    "playwright": "1.62.1"
+    "playwright": "1.63.0"
   },
   "devDependencies": {
     "@prefab/api": "workspace:*",
