@@ -706,6 +706,121 @@ describe("host-based public routing (Slice 4, R1) — <slug>.<platformHost> and 
     const response = await app.inject({ method: "GET", url: "/", headers: { host: "nobody-has-this.example.test" } });
     expect(response.statusCode).toBe(404);
   });
+
+  // KAN-1262: a bundle route is a directory holding an index.html (Astro
+  // builds in directory format). Asking for the bare directory path used
+  // to `stat` the directory successfully and then try to stream it as a
+  // file, which Fastify rejects as FST_ERR_REP_INVALID_PAYLOAD_TYPE — an
+  // opaque 500 where every real static file server answers with a
+  // redirect to the canonical trailing-slash form.
+  it("redirects a bare directory-style path to its trailing-slash form instead of 500ing", async () => {
+    const { cookie } = await seedAccountAndLogin(`host-dirslash-${newUlid()}@example.com`);
+    const created = await app.inject({
+      method: "POST",
+      url: "/v1/sites",
+      headers: { cookie },
+      payload: { slug: `host-dirslash-${newUlid()}`, name: "Dir Slash" },
+    });
+    const { site } = created.json() as CreatedSite;
+
+    const extraPage = await app.inject({
+      method: "POST",
+      url: `/v1/sites/${site.id}/pages`,
+      headers: { cookie },
+      payload: { slug: "shop", title: "Shop" },
+    });
+    expect(extraPage.statusCode).toBe(200);
+    expect((await app.inject({ method: "POST", url: `/v1/sites/${site.id}/publish`, headers: { cookie } })).statusCode).toBe(200);
+
+    const host = `${site.slug}.${TEST_PLATFORM_HOST}`;
+    const bare = await app.inject({ method: "GET", url: "/shop", headers: { host } });
+    expect(bare.statusCode).toBe(302);
+    expect(bare.headers.location).toBe("/shop/");
+
+    const canonical = await app.inject({ method: "GET", url: "/shop/", headers: { host } });
+    expect(canonical.statusCode).toBe(200);
+
+    // A query string survives the redirect rather than being dropped.
+    const withQuery = await app.inject({ method: "GET", url: "/shop?utm=1", headers: { host } });
+    expect(withQuery.statusCode).toBe(302);
+    expect(withQuery.headers.location).toBe("/shop/?utm=1");
+
+    // A path that matches no file at all is still a plain 404, not a redirect.
+    const missing = await app.inject({ method: "GET", url: "/nothing-here", headers: { host } });
+    expect(missing.statusCode).toBe(404);
+  });
+});
+
+// KAN-1272: `pages(site_id, slug)` is UNIQUE, and a violation used to
+// propagate raw to the generic error handler as an opaque 500.
+describe("page.create / page.write slug uniqueness (KAN-1272)", () => {
+  it("rejects a duplicate page slug with a 409 naming the slug, not an opaque 500", async () => {
+    const { cookie } = await seedAccountAndLogin(`page-slug-${newUlid()}@example.com`);
+    const created = await app.inject({
+      method: "POST",
+      url: "/v1/sites",
+      headers: { cookie },
+      payload: { slug: `page-slug-${newUlid()}`, name: "Page slugs" },
+    });
+    const { site } = created.json() as CreatedSite;
+
+    const first = await app.inject({
+      method: "POST",
+      url: `/v1/sites/${site.id}/pages`,
+      headers: { cookie },
+      payload: { slug: "about", title: "About" },
+    });
+    expect(first.statusCode).toBe(200);
+
+    const duplicate = await app.inject({
+      method: "POST",
+      url: `/v1/sites/${site.id}/pages`,
+      headers: { cookie },
+      payload: { slug: "about", title: "About again" },
+    });
+    expect(duplicate.statusCode).toBe(409);
+    const body = duplicate.json() as { error: { code: string; message: string; details?: { slug?: string } } };
+    expect(body.error.code).toBe("conflict");
+    expect(body.error.message).toContain("about");
+    expect(body.error.details?.slug).toBe("about");
+
+    // The site's default "home" page is equally protected.
+    const homeClash = await app.inject({
+      method: "POST",
+      url: `/v1/sites/${site.id}/pages`,
+      headers: { cookie },
+      payload: { slug: "home", title: "Home again" },
+    });
+    expect(homeClash.statusCode).toBe(409);
+  });
+
+  it("rejects renaming a page onto another page's slug with the same 409", async () => {
+    const { cookie } = await seedAccountAndLogin(`page-rename-${newUlid()}@example.com`);
+    const created = await app.inject({
+      method: "POST",
+      url: "/v1/sites",
+      headers: { cookie },
+      payload: { slug: `page-rename-${newUlid()}`, name: "Page renames" },
+    });
+    const { site } = created.json() as CreatedSite;
+
+    const other = await app.inject({
+      method: "POST",
+      url: `/v1/sites/${site.id}/pages`,
+      headers: { cookie },
+      payload: { slug: "contact", title: "Contact" },
+    });
+    const otherPage = other.json() as PageDocument;
+
+    const renamed = await app.inject({
+      method: "PUT",
+      url: `/v1/sites/${site.id}/pages/${otherPage.id}`,
+      headers: { cookie },
+      payload: { title: "Contact", slug: "home", blocks: [], expectedVersion: otherPage.version },
+    });
+    expect(renamed.statusCode).toBe(409);
+    expect((renamed.json() as { error: { code: string } }).error.code).toBe("conflict");
+  });
 });
 
 describe("posts (Slice 5): collection CRUD, pagination, and publish visibility", () => {

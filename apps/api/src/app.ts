@@ -23,6 +23,9 @@ import {
   createPage,
   getPageDocument,
   writePageDocument,
+  // KAN-1272: classifying a raw pg error is @prefab/db's job, not this
+  // file's — see that package's pg-errors.ts.
+  isUniqueViolation,
   listPagesForSite,
   createPost,
   getPost,
@@ -376,6 +379,13 @@ async function serveBundleFile(
   contentHash: string,
   wildcardPath: string,
   reply: FastifyReply,
+  /**
+   * KAN-1262: the request's own path, used only to build the
+   * directory-redirect `Location` below. Optional so a caller with no
+   * meaningful URL of its own simply gets a clean 404 for a bare directory
+   * instead of a redirect.
+   */
+  requestUrl?: string,
 ): Promise<FastifyReply> {
   const relativePath = wildcardPath === "" || wildcardPath.endsWith("/") ? `${wildcardPath}index.html` : wildcardPath;
   const bundleDir = path.join(bundleStoreDir, contentHash);
@@ -383,13 +393,34 @@ async function serveBundleFile(
   if (!filePath.startsWith(bundleDir)) {
     throw notFound("not found");
   }
+  let stats;
   try {
-    await stat(filePath);
+    stats = await stat(filePath);
   } catch {
     throw notFound("not found");
   }
+  // KAN-1262: Astro builds in directory format, so every page route is a
+  // directory holding an `index.html`. A request for the bare directory
+  // path (`/shop`, no trailing slash) lands here with `stat` *succeeding*
+  // — a directory is a perfectly good stat target — and used to fall
+  // straight through to `createReadStream` on a directory, which Fastify
+  // rejects at send time as FST_ERR_REP_INVALID_PAYLOAD_TYPE: an opaque
+  // 500 for what every real static file server answers with a redirect to
+  // the canonical trailing-slash form. So: redirect, which also silently
+  // repairs any other non-trailing-slash link a bundle might carry.
+  if (stats.isDirectory()) {
+    if (requestUrl === undefined) throw notFound("not found");
+    const [pathname = "", query] = splitQuery(requestUrl);
+    return reply.redirect(`${pathname}/${query === undefined ? "" : `?${query}`}`, 302);
+  }
   reply.type(BUNDLE_CONTENT_TYPE_BY_EXTENSION[path.extname(filePath)] ?? "application/octet-stream");
   return reply.send(createReadStream(filePath));
+}
+
+/** `["/shop", undefined]` or `["/shop", "a=1"]` — the query string is carried through the directory redirect above rather than dropped. */
+function splitQuery(url: string): [string, string | undefined] {
+  const index = url.indexOf("?");
+  return index === -1 ? [url, undefined] : [url.slice(0, index), url.slice(index + 1)];
 }
 
 async function siteManifestFor(client: PoolClient, site: SiteRow): Promise<SiteManifest> {
@@ -869,9 +900,25 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     const principal = await requirePrincipal(request);
     const { siteId } = await authorizeSite(pool, principal, request.params.siteId, { minRole: "editor" });
     const body = parseBody(CreatePageBodySchema, request.body);
-    return withTenantContext(pool, { siteId }, (client) =>
-      createPage(client, { id: newUlid(), siteId, slug: body.slug, title: body.title }),
-    );
+    // KAN-1272: `pages(site_id, slug)` is UNIQUE, so a second page claiming
+    // a slug the site already uses is a plain, expected user error — not
+    // an internal fault. The database is the only thing that can actually
+    // arbitrate it (a SELECT-then-INSERT pre-check races), so the
+    // constraint stays the arbiter and its violation is translated here
+    // into the 409 the CLI already maps to exit code 2 (R13). Unlike
+    // posts/products, a page slug is never silently deduped: it *is* the
+    // page's public URL, so renaming it behind the author's back would be
+    // the wrong answer.
+    return withTenantContext(pool, { siteId }, async (client) => {
+      try {
+        return await createPage(client, { id: newUlid(), siteId, slug: body.slug, title: body.title });
+      } catch (error) {
+        if (isUniqueViolation(error)) {
+          throw conflict(`a page with the slug "${body.slug}" already exists on this site`, { slug: body.slug });
+        }
+        throw error;
+      }
+    });
   });
 
   app.get<{ Params: { siteId: string } }>("/v1/sites/:siteId/pages", async (request) => {
@@ -922,15 +969,29 @@ export function buildApp(deps: AppDeps): FastifyInstance {
       const existing = await getPageDocument(client, pageId);
       if (!existing || existing.siteId !== siteId) throw notFound("page not found");
 
-      const result = await writePageDocument(client, {
-        pageId,
-        siteId,
-        title: validated.document.title,
-        slug: validated.document.slug,
-        blocks: validated.document.blocks,
-        layoutMode: validated.document.layoutMode,
-        expectedVersion: body.expectedVersion,
-      });
+      // KAN-1272: renaming a page onto a slug another page on this site
+      // already holds trips the same `pages(site_id, slug)` UNIQUE
+      // constraint page.create does, and deserves the same clean 409
+      // rather than an opaque 500.
+      let result;
+      try {
+        result = await writePageDocument(client, {
+          pageId,
+          siteId,
+          title: validated.document.title,
+          slug: validated.document.slug,
+          blocks: validated.document.blocks,
+          layoutMode: validated.document.layoutMode,
+          expectedVersion: body.expectedVersion,
+        });
+      } catch (error) {
+        if (isUniqueViolation(error)) {
+          throw conflict(`a page with the slug "${validated.document.slug}" already exists on this site`, {
+            slug: validated.document.slug,
+          });
+        }
+        throw error;
+      }
 
       if (!result.ok) {
         // R17: stale-version writes are rejected with the current state and
@@ -2573,7 +2634,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   // ADR-0007) in slice 1 — content-addressed, so this route works
   // identically for the live pointer and for any preview build. ----
   app.get<{ Params: { hash: string; "*": string } }>("/v1/bundles/:hash/*", async (request, reply) => {
-    return serveBundleFile(bundleStoreDir, request.params.hash, request.params["*"] ?? "", reply);
+    return serveBundleFile(bundleStoreDir, request.params.hash, request.params["*"] ?? "", reply, request.url);
   });
 
   app.get<{ Params: { siteId: string; "*": string } }>("/v1/sites/:siteId/live/*", async (request, reply) => {
@@ -3121,7 +3182,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     }
 
     const wildcardPath = request.url.split("?")[0]?.replace(/^\//, "") ?? "";
-    return serveBundleFile(bundleStoreDir, live.contentHash, wildcardPath, reply);
+    return serveBundleFile(bundleStoreDir, live.contentHash, wildcardPath, reply, request.url);
   });
 
   return app;
