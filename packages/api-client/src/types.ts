@@ -21,6 +21,13 @@ export interface SiteSummary {
   schemaVersion: number;
   createdAt: string;
   updatedAt: string;
+  /**
+   * KAN-1253: the site's free, unauthenticated public address
+   * (`https://<slug>.<platformHost>`) — populated by `GET /v1/sites/:id`.
+   * Optional because other endpoints returning a `SiteSummary`-shaped
+   * object (site.create, site.list) don't compute it.
+   */
+  publicUrl?: string;
 }
 
 export interface PageSummary {
@@ -117,7 +124,16 @@ export interface PublishRecord {
 
 export interface PublishResult {
   publish: PublishRecord;
+  /**
+   * KAN-1253: an *authenticated* preview route, relative to the API's own
+   * base URL — requires the owner's own login, so it 401s for anyone else.
+   * Kept for the "preview as the owner" use case
+   * (packages/commands/test/commands.integration.test.ts exercises this
+   * route directly). Not shareable — use `publicUrl` for that.
+   */
   liveUrl: string;
+  /** The real, unauthenticated public address (`https://<slug>.<platformHost>`) — safe to share. */
+  publicUrl: string;
 }
 
 export interface PreviewResult {
