@@ -92,4 +92,18 @@ test.describe("editor UI accessibility (R6, KAN-1219)", () => {
     await page.getByRole("dialog", { name: /site pages/i }).waitFor({ timeout: 10_000 });
     await runAxeOn("pages side sheet", page);
   });
+
+  // KAN-1265: the new BYO-Stripe connect/disconnect + payment/subscription
+  // records panel — same SideSheet pattern as the pages side sheet above,
+  // checked the same way. Not-connected state (the "Connect Stripe" form)
+  // is the one exercised here, the same way the pages side sheet checks
+  // its own default state.
+  test("payments side sheet", async ({ page }) => {
+    const { site } = await authenticatedContext("axe-payments");
+    await loginInBrowser(page);
+    await openSiteByName(page, site.site.name);
+    await page.getByRole("button", { name: /^payments$/i }).click();
+    await page.getByRole("dialog", { name: /^payments$/i }).waitFor({ timeout: 10_000 });
+    await runAxeOn("payments side sheet", page);
+  });
 });
