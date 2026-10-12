@@ -95,15 +95,15 @@
         "columns": 3,
         "images": [
           {
-            "src": "https://images.unsplash.com/photo-1445116572660-236099ec97a0?w=900&q=80",
+            "src": "https://images.unsplash.com/photo-1445116572660-236099ec97a0?w=600&q=65",
             "alt": "Latte art on a wooden table"
           },
           {
-            "src": "https://images.unsplash.com/photo-1554118811-1e0d58224f24?w=900&q=80",
+            "src": "https://images.unsplash.com/photo-1554118811-1e0d58224f24?w=600&q=65",
             "alt": "Café interior seating area"
           },
           {
-            "src": "https://images.unsplash.com/photo-1509042239860-f550ce710b93?w=900&q=80",
+            "src": "https://images.unsplash.com/photo-1509042239860-f550ce710b93?w=600&q=65",
             "alt": "Pastries in a display case"
           }
         ]
