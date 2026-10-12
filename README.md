@@ -19,6 +19,15 @@ collections, forms and submissions, self-host and eject, billing, and
 scheduling and bookings all work end to end. `SLICES.md` has the build log
 for each slice; `docs/adr/` has the decisions behind them.
 
+Milestone 2 added one-off and recurring BYO-Stripe payment blocks, event
+sign-up blocks, free-positioning layout and scroll-reveal animation.
+Milestone 3 added the storefront: a product catalogue with grid and detail
+blocks, cart and multi-item BYO-Stripe checkout, orders with inventory and
+fulfillment, and self-host/export support for all of it (ADR-0018, PRs
+#58-#61). A UAT gate followed: `tools/uat-driver` lets agents drive a live
+instance as a first-time user would (PR #63); the resulting findings were
+fixed in PRs #72-#84, with editor UI/UX audit fixes in PRs #85 and #86.
+
 One caveat runs across most of that list: several third-party integrations
 (Cloudflare, Stripe, Resend, Turnstile, Google Calendar, Microsoft 365) only
 ever run against an in-memory fake provider here, because no live account
