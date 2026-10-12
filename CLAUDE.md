@@ -4,7 +4,7 @@ A no-code website builder where the site is a portable, diffable artifact the
 customer owns. Competes with Wix and Squarespace on the thing neither can do:
 hand over a working site.
 
-**Status: Slices 1–9 (milestone 1) and milestone 2 both complete.** One write
+**Status: Slices 1–9 (milestone 1), milestone 2 and milestone 3 are all complete.** One write
 path, the block library and theme tokens, templates/onboarding, custom
 domains/TLS, blog/collections, forms/submissions, self-host runtime/eject,
 accounts/plans/billing, and scheduling/bookings shipped in milestone 1.
@@ -13,7 +13,16 @@ blocks (ADR-0005, ADR-0016) with full webhook lifecycle handling, event
 sign-up blocks, free-positioning canvas layout (ADR-0014), scroll-reveal
 animation (ADR-0015), a 9th template plus an editorial craft pass on the
 original 8, WFP per-tenant billing resolved, and a concurrency cap on the
-publish orchestrator — see `README.md` for what each shipped, and the pandan
+publish orchestrator. Milestone 3 (EPIC-178, storefront blocks, ADR-0018)
+added a product catalogue collection with grid/detail blocks (PR #58), cart
+and multi-item BYO-Stripe checkout (PR #59), orders, inventory and
+fulfillment (PR #60), and self-host/export/eject support for e-commerce
+(PR #61). The UAT gate (EPIC-179) added `tools/uat-driver`, a Playwright REPL
+driver for agent-driven UAT (PR #63), and a six-scenario pass across
+milestones 1–3 whose findings were fixed in PRs #72–#84 (CORS, booking
+emails/timezones, list→detail routing, page navigation, and editor panels
+for payments, billing, webhooks and bookings); editor UI/UX audit fixes
+followed (PRs #85, #86) — see `README.md` for what each shipped, and the pandan
 board's `pre-fab` project for the day-to-day backlog. Slice 4 runs against a
 fake Cloudflare adapter, Slice 6's email/Turnstile/webhook, Slice 8's Stripe
 billing, and Slice 10/KAN-1154's tenant Stripe Connect adapters are likewise
