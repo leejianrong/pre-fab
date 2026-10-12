@@ -126,15 +126,15 @@
         "columns": 3,
         "images": [
           {
-            "src": "https://images.unsplash.com/photo-1545205597-3d9d02c29597?w=900&q=80",
+            "src": "https://images.unsplash.com/photo-1545205597-3d9d02c29597?w=600&q=65",
             "alt": "A group class in tree pose on the beach at low tide"
           },
           {
-            "src": "https://images.unsplash.com/photo-1506126613408-eca07ce68773?w=900&q=80",
+            "src": "https://images.unsplash.com/photo-1506126613408-eca07ce68773?w=600&q=65",
             "alt": "A student seated in meditation as the sun rises behind them"
           },
           {
-            "src": "https://images.unsplash.com/photo-1552196563-55cd4e45efb3?w=900&q=80",
+            "src": "https://images.unsplash.com/photo-1552196563-55cd4e45efb3?w=600&q=65",
             "alt": "A student in a seated stretch on a sunlit wooden studio floor"
           }
         ]
