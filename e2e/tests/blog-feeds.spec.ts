@@ -52,6 +52,16 @@ test("RSS validates and the sitemap lists every published post", async ({ reques
   for (const slug of slugs) {
     expect(sitemapBody).toContain(`blog/${slug}`);
   }
+
+  // KAN-1323: the postdetail page (/blog/) is a template with no route of
+  // its own, so it must not be listed; every listed <loc> must resolve.
+  const locs = [...sitemapBody.matchAll(/<loc>([^<]*)<\/loc>/g)].map((m) => new URL(m[1]!).pathname);
+  expect(locs).not.toContain("/blog/");
+  expect(locs.length).toBeGreaterThanOrEqual(slugs.length);
+  for (const loc of locs) {
+    const res = await fetchLive(request, site.site.id, token, `${loc.replace(/^\//, "")}index.html`);
+    expect(res.status(), `sitemap <loc> ${loc} should resolve`).toBe(200);
+  }
 });
 
 test("a scheduled or draft post is not reachable on the live site", async ({ request }) => {

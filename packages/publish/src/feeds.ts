@@ -83,7 +83,13 @@ export function generateSitemap(input: {
   const postDetailPage = findPostDetailPage(pages);
   const productDetailPage = findProductDetailPage(pages);
 
-  const pageUrls = pages.map((page) => pageUrl(baseUrl, page.slug));
+  // KAN-1323: a page carrying a postdetail/productdetail block is a
+  // *template* minted into one route per item (page-template.ts's
+  // getStaticPaths); the template page itself has no route and would 404.
+  const routablePages = pages.filter(
+    (page) => !page.blocks.some((block) => block.type === POSTDETAIL_BLOCK_TYPE || block.type === PRODUCTDETAIL_BLOCK_TYPE),
+  );
+  const pageUrls = routablePages.map((page) => pageUrl(baseUrl, page.slug));
   const postUrls = postDetailPage ? posts.map((post) => `${postUrl(baseUrl, postDetailPage, post)}`) : [];
   const productUrls = productDetailPage ? products.map((product) => `${productUrl(baseUrl, productDetailPage, product)}`) : [];
 
