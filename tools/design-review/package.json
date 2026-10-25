@@ -14,7 +14,7 @@
     "@prefab/schema": "workspace:*",
     "@prefab/templates": "workspace:*",
     "dotenv": "16.4.7",
-    "playwright": "1.62.1"
+    "playwright": "1.63.0"
   },
   "devDependencies": {
     "tsx": "4.19.2",
